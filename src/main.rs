@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
         let connection = node.connect(node_addr).await?;
         let mut stream = connection.accept_uni().await?;
         let bytes = stream.read_to_end(32).await?;
-        println!("received data: {:?}", bytes);
+        info!("received data: {:?}", bytes);
     }
 
     tokio::select! {
