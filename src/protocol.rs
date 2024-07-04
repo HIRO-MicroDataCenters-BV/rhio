@@ -7,6 +7,7 @@ use anyhow::Result;
 use futures_lite::future::Boxed as BoxedFuture;
 use futures_util::future::join_all;
 use iroh_net::endpoint::Connecting;
+use tracing::info;
 
 /// Handler for incoming connections.
 ///
@@ -78,5 +79,18 @@ impl ProtocolMap {
 impl ProtocolHandler for iroh_gossip::net::Gossip {
     fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
         Box::pin(async move { self.handle_connection(conn.await?).await })
+    }
+}
+
+// Our test protocol to check if things are working
+#[derive(Debug)]
+pub struct BubuProtocol;
+
+pub const BUBU_ALPN: &[u8] = b"/rioh/0";
+
+impl ProtocolHandler for BubuProtocol {
+    fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
+        info!("{}", conn.remote_address());
+        Box::pin(async move { Ok(()) })
     }
 }

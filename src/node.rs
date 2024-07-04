@@ -1,24 +1,27 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_blobs::protocol::Closed;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
-use iroh_net::endpoint::TransportConfig;
+use iroh_net::endpoint::{DirectAddr, TransportConfig};
 use iroh_net::key::SecretKey;
 use iroh_net::relay::RelayMode;
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{Endpoint, NodeId};
+use iroh_net::{Endpoint, NodeAddr, NodeId};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, error_span, warn, Instrument};
+use tracing::{debug, error, error_span, info, warn, Instrument};
 
 use crate::config::Config;
-use crate::protocol::ProtocolMap;
+use crate::protocol::{BubuProtocol, ProtocolMap, BUBU_ALPN};
 
 const MAX_RPC_STREAMS: u32 = 1024;
-
 const MAX_CONNECTIONS: u32 = 1024;
+
+/// How long we wait at most for some endpoints to be discovered.
+const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -137,23 +140,32 @@ impl Node {
         let builder = Endpoint::builder()
             .transport_config(transport_config)
             .secret_key(secret_key.clone())
-            .relay_mode(RelayMode::Disabled)
+            .relay_mode(RelayMode::Default)
             .concurrent_connections(MAX_CONNECTIONS);
 
         let endpoint = builder.bind(config.bind_port).await?;
         let addr = endpoint.node_addr().await?;
         let node_id = endpoint.node_id();
 
+        for node_addr in &config.direct_node_addresses {
+            endpoint.add_node_addr(node_addr.clone())?;
+        }
+
         let gossip = Gossip::from_endpoint(endpoint.clone(), Default::default(), &addr.info);
+
+        for node_addr in &config.direct_node_addresses {
+            endpoint.add_node_addr(node_addr.clone())?;
+        }
 
         let mut protocols = ProtocolMap::default();
         protocols.insert(GOSSIP_ALPN, Arc::new(gossip.clone()));
+        protocols.insert(BUBU_ALPN, Arc::new(BubuProtocol {}));
         let protocols = Arc::new(protocols);
 
         let inner = Arc::new(NodeInner {
             cancel_token: CancellationToken::new(),
             config,
-            endpoint,
+            endpoint: endpoint.clone(),
             gossip,
             secret_key,
         });
@@ -168,15 +180,51 @@ impl Node {
         let node = Node {
             inner,
             task: task.into(),
-            protocols,
+            protocols: protocols.clone(),
         };
 
+        // Update the endpoint with our ALPNs.
+        let alpns = protocols
+            .alpns()
+            .map(|alpn| alpn.to_vec())
+            .collect::<Vec<_>>();
+        if let Err(err) = endpoint.set_alpns(alpns) {
+            node.shutdown().await?;
+            return Err(err);
+        }
+
+        // Wait for a single direct address update, to make sure we found at least one direct
+        // address.
+        let wait_for_endpoints = {
+            async move {
+                tokio::time::timeout(ENDPOINT_WAIT, endpoint.direct_addresses().next())
+                    .await
+                    .context("waiting for endpoint")?
+                    .context("no endpoints")?;
+                Ok(())
+            }
+        };
+
+        if let Err(err) = wait_for_endpoints.await {
+            node.shutdown().await.ok();
+            return Err(err);
+        }
+
         Ok(node)
+    }
+
+    pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
+        self.inner.endpoint.direct_addresses().next().await
     }
 
     /// Returns the public key of the node.
     pub fn node_id(&self) -> NodeId {
         self.inner.secret_key.public()
+    }
+
+    pub async fn connect(&self, node_addr: NodeAddr) -> Result<()> {
+        self.inner.endpoint.connect(node_addr, BUBU_ALPN).await?;
+        Ok(())
     }
 
     pub async fn shutdown(self) -> Result<()> {
@@ -194,6 +242,7 @@ async fn handle_connection(
     mut connecting: iroh_net::endpoint::Connecting,
     protocols: Arc<ProtocolMap>,
 ) {
+    info!("New connection {:?}", connecting);
     let alpn = match connecting.alpn().await {
         Ok(alpn) => alpn,
         Err(err) => {
