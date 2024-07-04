@@ -4,7 +4,11 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_blobs::protocol::Closed;
+use iroh_blobs::protocol::ALPN as BLOBS_ALPN;
+use iroh_blobs::store::mem::Store as MemoryStore;
+use iroh_blobs::store::Store;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
+use iroh_net::endpoint::Connection;
 use iroh_net::endpoint::{DirectAddr, TransportConfig};
 use iroh_net::key::SecretKey;
 use iroh_net::relay::RelayMode;
@@ -12,10 +16,11 @@ use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 
 use crate::config::Config;
-use crate::protocol::{BubuProtocol, ProtocolMap, BUBU_ALPN};
+use crate::protocol::{BlobsProtocol, BubuProtocol, ProtocolMap, BUBU_ALPN};
 
 const MAX_RPC_STREAMS: u32 = 1024;
 const MAX_CONNECTIONS: u32 = 1024;
@@ -24,22 +29,27 @@ const MAX_CONNECTIONS: u32 = 1024;
 const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
-pub struct Node {
-    inner: Arc<NodeInner>,
+pub struct Node<D> {
+    inner: Arc<NodeInner<D>>,
     task: SharedAbortingJoinHandle<()>,
     protocols: Arc<ProtocolMap>,
 }
 
 #[derive(Debug)]
-struct NodeInner {
+struct NodeInner<D> {
     cancel_token: CancellationToken,
     config: Config,
+    db: D,
     endpoint: Endpoint,
     gossip: Gossip,
     secret_key: SecretKey,
+    pool_handle: LocalPoolHandle,
 }
 
-impl NodeInner {
+impl<D> NodeInner<D>
+where
+    D: Store,
+{
     async fn spawn(self: Arc<Self>, protocols: Arc<ProtocolMap>) {
         let (ipv4, ipv6) = self.endpoint.bound_sockets();
         debug!(
@@ -129,7 +139,7 @@ impl NodeInner {
     }
 }
 
-impl Node {
+impl Node<MemoryStore> {
     pub async fn spawn(config: Config) -> Result<Self> {
         let secret_key = SecretKey::generate();
         let mut transport_config = TransportConfig::default();
@@ -157,17 +167,26 @@ impl Node {
             endpoint.add_node_addr(node_addr.clone())?;
         }
 
+        let pool_handle = LocalPoolHandle::new(num_cpus::get());
+        let db = MemoryStore::new();
+
         let mut protocols = ProtocolMap::default();
         protocols.insert(GOSSIP_ALPN, Arc::new(gossip.clone()));
+        protocols.insert(
+            BLOBS_ALPN,
+            Arc::new(BlobsProtocol::new(db.clone(), pool_handle.clone())),
+        );
         protocols.insert(BUBU_ALPN, Arc::new(BubuProtocol {}));
         let protocols = Arc::new(protocols);
 
         let inner = Arc::new(NodeInner {
             cancel_token: CancellationToken::new(),
             config,
+            db,
             endpoint: endpoint.clone(),
             gossip,
             secret_key,
+            pool_handle,
         });
 
         let fut = inner
@@ -222,9 +241,8 @@ impl Node {
         self.inner.secret_key.public()
     }
 
-    pub async fn connect(&self, node_addr: NodeAddr) -> Result<()> {
-        self.inner.endpoint.connect(node_addr, BUBU_ALPN).await?;
-        Ok(())
+    pub async fn connect(&self, node_addr: NodeAddr) -> Result<Connection> {
+        self.inner.endpoint.connect(node_addr, BUBU_ALPN).await
     }
 
     pub async fn shutdown(self) -> Result<()> {

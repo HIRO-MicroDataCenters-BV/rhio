@@ -3348,6 +3348,7 @@ dependencies = [
  "iroh-blobs",
  "iroh-gossip",
  "iroh-net",
+ "num_cpus",
  "serde",
  "tokio",
  "tokio-util",

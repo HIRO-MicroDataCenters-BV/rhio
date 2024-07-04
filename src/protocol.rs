@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures_lite::future::Boxed as BoxedFuture;
 use futures_util::future::join_all;
-use iroh_net::endpoint::Connecting;
+use iroh_net::endpoint::{get_remote_node_id, Connecting};
 use tracing::info;
 
 /// Handler for incoming connections.
@@ -82,6 +82,42 @@ impl ProtocolHandler for iroh_gossip::net::Gossip {
     }
 }
 
+#[derive(Debug)]
+pub struct BlobsProtocol<S> {
+    rt: tokio_util::task::LocalPoolHandle,
+    store: S,
+}
+
+impl<S: iroh_blobs::store::Store> BlobsProtocol<S> {
+    pub fn new(store: S, rt: tokio_util::task::LocalPoolHandle) -> Self {
+        Self { rt, store }
+    }
+}
+
+impl<S: iroh_blobs::store::Store> ProtocolHandler for BlobsProtocol<S> {
+    fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
+        Box::pin(async move {
+            iroh_blobs::provider::handle_connection(
+                conn.await?,
+                self.store.clone(),
+                MockEventSender,
+                self.rt.clone(),
+            )
+            .await;
+            Ok(())
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MockEventSender;
+
+impl iroh_blobs::provider::EventSender for MockEventSender {
+    fn send(&self, _event: iroh_blobs::provider::Event) -> futures_lite::future::Boxed<()> {
+        Box::pin(std::future::ready(()))
+    }
+}
+
 // Our test protocol to check if things are working
 #[derive(Debug)]
 pub struct BubuProtocol;
@@ -89,8 +125,16 @@ pub struct BubuProtocol;
 pub const BUBU_ALPN: &[u8] = b"/rohi/0";
 
 impl ProtocolHandler for BubuProtocol {
-    fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
-        info!("{}", conn.remote_address());
-        Box::pin(async move { Ok(()) })
+    fn accept(self: Arc<Self>, connecting: Connecting) -> BoxedFuture<Result<()>> {
+        Box::pin(async move {
+            let connection = connecting.await?;
+            let peer = get_remote_node_id(&connection)?;
+            info!("accepted connection from {peer}");
+            let mut send_stream = connection.open_uni().await?;
+            send_stream.write_all(b"Hello, Bubu").await?;
+            send_stream.finish().await?;
+            info!("closing connection from {peer}");
+            Ok(())
+        })
     }
 }
