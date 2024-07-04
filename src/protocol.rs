@@ -86,7 +86,7 @@ impl ProtocolHandler for iroh_gossip::net::Gossip {
 #[derive(Debug)]
 pub struct BubuProtocol;
 
-pub const BUBU_ALPN: &[u8] = b"/rioh/0";
+pub const BUBU_ALPN: &[u8] = b"/rohi/0";
 
 impl ProtocolHandler for BubuProtocol {
     fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
