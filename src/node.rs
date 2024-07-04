@@ -1,15 +1,19 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use futures_lite::StreamExt;
-use iroh_blobs::protocol::Closed;
-use iroh_blobs::protocol::ALPN as BLOBS_ALPN;
+use futures_lite::{Stream, StreamExt};
+use iroh_blobs::downloader::Downloader;
+use iroh_blobs::get::db::DownloadProgress;
+use iroh_blobs::protocol::{Closed, ALPN as BLOBS_ALPN};
+use iroh_blobs::provider::AddProgress;
 use iroh_blobs::store::mem::Store as MemoryStore;
 use iroh_blobs::store::Store;
+use iroh_blobs::util::progress::{FlumeProgressSender, ProgressSender};
+use iroh_blobs::{BlobFormat, Hash, HashAndFormat};
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
-use iroh_net::endpoint::Connection;
-use iroh_net::endpoint::{DirectAddr, TransportConfig};
+use iroh_net::endpoint::{Connection, DirectAddr, TransportConfig};
 use iroh_net::key::SecretKey;
 use iroh_net::relay::RelayMode;
 use iroh_net::util::SharedAbortingJoinHandle;
@@ -17,8 +21,9 @@ use iroh_net::{Endpoint, NodeAddr, NodeId};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::LocalPoolHandle;
-use tracing::{debug, error, error_span, info, warn, Instrument};
+use tracing::{debug, error, error_span, warn, Instrument};
 
+use crate::blobs::{add_from_path, download_queued, BlobAddPathResponse, BlobDownloadResponse};
 use crate::config::Config;
 use crate::protocol::{BlobsProtocol, BubuProtocol, ProtocolMap, BUBU_ALPN};
 
@@ -44,6 +49,7 @@ struct NodeInner<D> {
     gossip: Gossip,
     secret_key: SecretKey,
     pool_handle: LocalPoolHandle,
+    downloader: Downloader,
 }
 
 impl<D> NodeInner<D>
@@ -169,6 +175,7 @@ impl Node<MemoryStore> {
 
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let db = MemoryStore::new();
+        let downloader = Downloader::new(db.clone(), endpoint.clone(), pool_handle.clone());
 
         let mut protocols = ProtocolMap::default();
         protocols.insert(GOSSIP_ALPN, Arc::new(gossip.clone()));
@@ -187,6 +194,7 @@ impl Node<MemoryStore> {
             gossip,
             secret_key,
             pool_handle,
+            downloader,
         });
 
         let fut = inner
@@ -242,7 +250,57 @@ impl Node<MemoryStore> {
     }
 
     pub async fn connect(&self, node_addr: NodeAddr) -> Result<Connection> {
-        self.inner.endpoint.connect(node_addr, BUBU_ALPN).await
+        self.inner.endpoint.connect(node_addr, BLOBS_ALPN).await
+    }
+
+    pub async fn add_blob(&self, path: PathBuf) -> impl Stream<Item = BlobAddPathResponse> {
+        let (sender, receiver) = flume::bounded(32);
+        let db = self.inner.db.clone();
+
+        {
+            let sender = sender.clone();
+            self.inner.pool_handle.spawn_pinned(|| async move {
+                if let Err(e) = add_from_path(db, path, sender.clone()).await {
+                    sender.send_async(AddProgress::Abort(e.into())).await.ok();
+                }
+            });
+        }
+
+        receiver.into_stream().map(BlobAddPathResponse)
+    }
+
+    pub async fn blob_download(&self, hash: Hash) -> impl Stream<Item = BlobDownloadResponse> {
+        let (sender, receiver) = flume::bounded(1024);
+        let progress = FlumeProgressSender::new(sender);
+        let downloader = self.inner.downloader.clone();
+        let endpoint = self.inner.endpoint.clone();
+        let nodes = self.inner.config.direct_node_addresses.clone();
+        let format = BlobFormat::Raw;
+        let hash_and_format = HashAndFormat { hash, format };
+
+        self.inner.pool_handle.spawn_pinned(move || async move {
+            match download_queued(
+                endpoint,
+                &downloader,
+                hash_and_format,
+                nodes,
+                progress.clone(),
+            )
+            .await
+            {
+                Ok(stats) => {
+                    progress.send(DownloadProgress::AllDone(stats)).await.ok();
+                }
+                Err(err) => {
+                    progress
+                        .send(DownloadProgress::Abort(err.into()))
+                        .await
+                        .ok();
+                }
+            }
+        });
+
+        receiver.into_stream().map(BlobDownloadResponse)
     }
 
     pub async fn shutdown(self) -> Result<()> {
@@ -260,7 +318,6 @@ async fn handle_connection(
     mut connecting: iroh_net::endpoint::Connecting,
     protocols: Arc<ProtocolMap>,
 ) {
-    info!("New connection {:?}", connecting);
     let alpn = match connecting.alpn().await {
         Ok(alpn) => alpn,
         Err(err) => {
