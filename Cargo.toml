@@ -7,6 +7,9 @@ edition = "2021"
 anyhow = "1.0.86"
 clap = { version = "4.5.8", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env"] }
+futures = "0.3.30"
+futures-lite = "2.3.0"
+futures-util = "0.3.30"
 iroh-base = "0.19.0"
 iroh-blobs = "0.19.0"
 iroh-gossip = "0.19.0"

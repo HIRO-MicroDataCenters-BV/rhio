@@ -1,6 +1,7 @@
 mod config;
 mod logging;
 mod node;
+mod protocol;
 
 use anyhow::Result;
 use tracing::info;
