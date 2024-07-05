@@ -122,7 +122,7 @@ impl iroh_blobs::provider::EventSender for MockEventSender {
 #[derive(Debug)]
 pub struct BubuProtocol;
 
-pub const BUBU_ALPN: &[u8] = b"/rohi/0";
+pub const BUBU_ALPN: &[u8] = b"/rhio/0";
 
 impl ProtocolHandler for BubuProtocol {
     fn accept(self: Arc<Self>, connecting: Connecting) -> BoxedFuture<Result<()>> {

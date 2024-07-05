@@ -18,8 +18,8 @@ pub struct Config {
 
 #[derive(Parser, Serialize, Debug)]
 #[command(
-    name = "rohi",
-    about = "HIRO Blob Syncing Node",
+    name = "rhio",
+    about = "p2p blob syncing node for minio databases",
     long_about = None,
     version
 )]

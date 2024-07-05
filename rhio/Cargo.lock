@@ -3306,7 +3306,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rohi"
+name = "rhio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
