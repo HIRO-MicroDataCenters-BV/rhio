@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(unused)]
 mod blobs;
 mod config;
 mod logging;
