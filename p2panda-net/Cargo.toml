@@ -14,7 +14,7 @@ iroh-gossip = "0.19.0"
 iroh-io = "0.6.0"
 iroh-net = "0.19.0"
 num_cpus = "1.16.0"
-p2panda-core = { path = "../../p2panda/p2panda/p2panda-core" }
+p2panda-core = { path = "../../p2panda/p2panda-core" }
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = "0.7.11"

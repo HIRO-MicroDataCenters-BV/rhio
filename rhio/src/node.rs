@@ -250,7 +250,7 @@ impl Node<MemoryStore> {
     }
 
     pub async fn connect(&self, node_addr: NodeAddr) -> Result<Connection> {
-        self.inner.endpoint.connect(node_addr, BLOBS_ALPN).await
+        self.inner.endpoint.connect(node_addr, BUBU_ALPN).await
     }
 
     pub async fn add_blob(&self, path: PathBuf) -> impl Stream<Item = BlobAddPathResponse> {
