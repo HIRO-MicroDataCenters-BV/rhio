@@ -8,18 +8,19 @@ use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
-use iroh_net::discovery::{ConcurrentDiscovery, Discovery};
-use iroh_net::endpoint::TransportConfig;
+use iroh_net::dns::node_info::NodeInfo;
+use iroh_net::endpoint::{self, TransportConfig};
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode, RelayUrl};
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{Endpoint, NodeAddr, NodeId};
+use iroh_net::{AddrInfo, Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 use url::Url;
 
+use crate::discovery::{Discovery, DiscoveryMap, DiscoveryNodeInfo, SecretNodeInfo};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::protocols::ProtocolMap;
 use crate::{NetworkId, TopicId};
@@ -45,24 +46,24 @@ pub enum RelayMode {
 // subscribe to multiple "topics" in this overlay and hook into a data stream per topic where
 // they'll receive from and send any data to.
 pub struct NetworkBuilder {
-    network_id: NetworkId,
     bind_port: Option<u16>,
-    discovery: Option<ConcurrentDiscovery>,
     direct_node_addresses: Vec<NodeAddr>,
+    discovery: Option<DiscoveryMap>,
     gossip_config: Option<GossipConfig>,
-    secret_key: Option<SecretKey>,
+    network_id: NetworkId,
     relay_mode: RelayMode,
+    secret_key: Option<SecretKey>,
 }
 
 impl NetworkBuilder {
     // Set a network identifier. It'll be used as an identifier for protocol handshake & discovery
     pub fn new(network_id: NetworkId) -> Self {
         Self {
-            network_id,
             bind_port: None,
-            discovery: None,
             direct_node_addresses: Vec::new(),
+            discovery: None,
             gossip_config: None,
+            network_id,
             relay_mode: RelayMode::Disabled,
             secret_key: None,
         }
@@ -116,7 +117,6 @@ impl NetworkBuilder {
     // Adds one or more discovery strategy. This can be for example:
     // * mDNS
     // * Rendesvouz / Boostrap Node
-    // * DNS + pkarr Nodes
     // * ...
     pub fn discovery(mut self, handler: impl Discovery + 'static) -> Self {
         self.discovery = match self.discovery {
@@ -124,7 +124,7 @@ impl NetworkBuilder {
                 list.add(handler);
                 Some(list)
             }
-            None => Some(ConcurrentDiscovery::from_services(vec![Box::new(handler)])),
+            None => Some(DiscoveryMap::from_services(vec![Box::new(handler)])),
         };
         self
     }
@@ -165,10 +165,6 @@ impl NetworkBuilder {
                 .relay_mode(relay_mode)
                 .concurrent_connections(MAX_CONNECTIONS);
 
-            if let Some(discovery) = self.discovery {
-                builder = builder.discovery(Box::new(discovery));
-            }
-
             let bind_port = self.bind_port.unwrap_or(DEFAULT_BIND_PORT);
             builder.bind(bind_port).await?
         };
@@ -183,7 +179,7 @@ impl NetworkBuilder {
         // Set up gossip overlay handler
         let gossip = Gossip::from_endpoint(
             endpoint.clone(),
-            self.gossip_config.unwrap_or(GossipConfig::default()),
+            self.gossip_config.unwrap_or_default(),
             &node_addr.info,
         );
 
@@ -191,8 +187,10 @@ impl NetworkBuilder {
 
         let inner = Arc::new(NetworkInner {
             cancel_token: CancellationToken::new(),
+            discovery: self.discovery,
             endpoint: endpoint.clone(),
             gossip: gossip.clone(),
+            network_id: self.network_id,
             secret_key,
         });
 
@@ -242,14 +240,16 @@ impl NetworkBuilder {
 
 pub struct Network {
     inner: Arc<NetworkInner>,
-    task: SharedAbortingJoinHandle<()>,
     protocols: Arc<ProtocolMap>,
+    task: SharedAbortingJoinHandle<()>,
 }
 
 struct NetworkInner {
     cancel_token: CancellationToken,
+    discovery: Option<DiscoveryMap>,
     endpoint: Endpoint,
     gossip: Gossip,
+    network_id: NetworkId,
     secret_key: SecretKey,
 }
 
@@ -264,7 +264,7 @@ impl NetworkInner {
 
         let mut join_set = JoinSet::<Result<()>>::new();
 
-        // Spawn a task that updates the gossip endpoints
+        // Spawn a task that updates the gossip endpoints and discovery services
         {
             let inner = self.clone();
             join_set.spawn(async move {
@@ -273,11 +273,36 @@ impl NetworkInner {
                     if let Err(err) = inner.gossip.update_direct_addresses(&eps) {
                         warn!("Failed to update direct addresses for gossip: {err:?}");
                     }
+
+                    if let Some(discovery) = &inner.discovery {
+                        let relay_url = inner.endpoint.home_relay();
+                        let direct_addresses = eps.iter().map(|a| a.addr).collect();
+                        let addr = NodeInfo {
+                            node_id: inner.endpoint.node_id(),
+                            relay_url: relay_url.map(|url| url.into()),
+                            direct_addresses,
+                        };
+
+                        // @TODO
+                        let encrypted =
+                            SecretNodeInfo::encrypt(addr, inner.endpoint.node_id().to_string());
+                        if let Err(err) =
+                            discovery.update_local_address(&DiscoveryNodeInfo::Secret(encrypted))
+                        {
+                            warn!("Failed to update direct addresses for discovery: {err:?}");
+                        }
+                    }
                 }
                 warn!("failed to retrieve local endpoints");
                 Ok(())
             });
         }
+
+        // Subscribe to all discovery channels where we might find new peers
+        let mut discovery = match self.discovery.as_ref() {
+            Some(discovery) => discovery.subscribe(self.network_id),
+            None => None,
+        };
 
         loop {
             tokio::select! {
@@ -294,6 +319,10 @@ impl NetworkInner {
                         handle_connection(connecting, protocols).await;
                         Ok(())
                     });
+                },
+                // Handle discovered peers
+                Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
+                    println!("{:?}", event);
                 },
                 // Handle task terminations and quit on panics
                 res = join_set.join_next(), if !join_set.is_empty() => {

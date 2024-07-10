@@ -6,7 +6,8 @@ mod handshake;
 pub mod network;
 mod protocols;
 
-pub use discovery::MulticastDNSDiscovery;
+#[cfg(feature = "mdns")]
+pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
 
 pub type NetworkId = [u8; 32];

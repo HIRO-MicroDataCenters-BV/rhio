@@ -3,19 +3,27 @@ name = "p2panda-net"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["mdns"]
+mdns = [
+  "dep:hickory-proto",
+  "dep:socket2",
+]
+
 [dependencies]
 anyhow = "1.0.86"
 flume = "0.11.0"
-futures = "0.3.30"
+futures-buffered = "0.2.6"
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
+hickory-proto = { version = "0.24.1", optional = true }
 iroh-base = "0.20.0"
 iroh-gossip = "0.20.0"
 iroh-io = "0.6.0"
 iroh-net = "0.20.0"
-num_cpus = "1.16.0"
 p2panda-core = { path = "../../p2panda/p2panda-core" }
 serde = { version = "1.0.203", features = ["derive"] }
+socket2 = { version = "0.5.7", optional = true }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = "0.7.11"
 tracing = "0.1.40"

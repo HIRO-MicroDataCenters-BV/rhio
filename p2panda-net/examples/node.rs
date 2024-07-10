@@ -1,5 +1,5 @@
 use anyhow::Result;
-use p2panda_net::{MulticastDNSDiscovery, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, NetworkBuilder};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 pub fn setup_logging() {
@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     let network_id = [0; 32];
     let topic_id = [1; 32];
 
-    let mdns = MulticastDNSDiscovery::new(network_id);
+    let mdns = LocalDiscovery::new()?;
     let network = NetworkBuilder::new(network_id)
         .discovery(mdns)
         .build()
