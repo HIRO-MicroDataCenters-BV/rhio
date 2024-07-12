@@ -212,7 +212,7 @@ impl NetworkBuilder {
             &node_addr.info,
         );
 
-        let peers = Peers::new();
+        let peers = Peers::new(endpoint.clone());
         let handshake = Handshake::new(gossip.clone());
 
         let inner = Arc::new(NetworkInner {

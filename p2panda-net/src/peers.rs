@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::NodeId;
+use iroh_net::{dns::node_info::NodeInfo, endpoint};
+use iroh_net::{Endpoint, NodeId};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, error_span, trace, Instrument};
+use tracing::{debug, error, error_span, trace, warn, Instrument};
 
 pub struct PeerState {}
 
@@ -18,11 +18,17 @@ enum ToPeersActor {
 
 struct PeersActor {
     inbox: mpsc::Receiver<ToPeersActor>,
+    known_peers: HashMap<NodeId, NodeInfo>,
+    endpoint: Endpoint,
 }
 
 impl PeersActor {
-    pub fn new(inbox: mpsc::Receiver<ToPeersActor>) -> Self {
-        Self { inbox }
+    pub fn new(inbox: mpsc::Receiver<ToPeersActor>, endpoint: Endpoint) -> Self {
+        Self {
+            inbox,
+            known_peers: HashMap::new(),
+            endpoint,
+        }
     }
 
     pub async fn run(mut self) -> Result<()> {
@@ -62,10 +68,29 @@ impl PeersActor {
     async fn on_actor_message(&mut self, msg: ToPeersActor) {
         match msg {
             ToPeersActor::AddPeer { node_info } => {
-                println!("{node_info:?}");
+                self.add_peer(node_info);
             }
             ToPeersActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
+            }
+        }
+    }
+
+    fn add_peer(&mut self, node_info: NodeInfo) {
+        let node_id = node_info.node_id;
+
+        // Make sure the endpoint also knows about this address
+        match self.endpoint.add_node_addr(node_info.clone().into()) {
+            Ok(_) => {
+                if self.known_peers.insert(node_id, node_info).is_none() {
+                    debug!("added new peer to handler {}", node_id);
+                }
+            }
+            Err(err) => {
+                debug!(
+                    "tried to add invalid node {} to known peers list: {err}",
+                    node_id
+                );
             }
         }
     }
@@ -82,9 +107,9 @@ pub struct Peers {
 }
 
 impl Peers {
-    pub fn new() -> Self {
+    pub fn new(endpoint: Endpoint) -> Self {
         let (actor_tx, actor_rx) = mpsc::channel(64);
-        let actor = PeersActor::new(actor_rx);
+        let actor = PeersActor::new(actor_rx, endpoint);
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = actor.run().await {
