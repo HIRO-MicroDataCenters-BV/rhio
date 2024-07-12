@@ -22,6 +22,7 @@ use url::Url;
 
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
+use crate::peers::Peers;
 use crate::protocols::ProtocolMap;
 use crate::{NetworkId, TopicId};
 
@@ -182,6 +183,7 @@ impl NetworkBuilder {
             &node_addr.info,
         );
 
+        let peers = Peers::new();
         let handshake = Handshake::new(gossip.clone());
 
         let inner = Arc::new(NetworkInner {
@@ -190,6 +192,7 @@ impl NetworkBuilder {
             endpoint: endpoint.clone(),
             gossip: gossip.clone(),
             network_id: self.network_id,
+            peers,
             secret_key,
         });
 
@@ -249,6 +252,7 @@ struct NetworkInner {
     endpoint: Endpoint,
     gossip: Gossip,
     network_id: NetworkId,
+    peers: Peers,
     secret_key: SecretKey,
 }
 
@@ -316,7 +320,18 @@ impl NetworkInner {
                 },
                 // Handle discovered peers
                 Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
-                    println!("{:?}", event);
+                    match event {
+                        Ok(event) => {
+                            if let Err(err) = self.peers.add_peer(event.node_info).await {
+                                error!("Peers handler failed on add_peer: {err:?}");
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            error!("Discovery service failed: {err:?}");
+                            break;
+                        },
+                    }
                 },
                 // Handle task terminations and quit on panics
                 res = join_set.join_next(), if !join_set.is_empty() => {
@@ -357,6 +372,8 @@ impl NetworkInner {
             self.endpoint
                 .clone()
                 .close(1u32.into(), b"provider terminating"),
+            // Shutdown peers handler
+            self.peers.shutdown(),
             // Shutdown protocol handlers
             protocols.shutdown(),
         );

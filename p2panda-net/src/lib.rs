@@ -4,6 +4,7 @@
 pub mod discovery;
 mod handshake;
 pub mod network;
+mod peers;
 mod protocols;
 
 #[cfg(feature = "mdns")]
