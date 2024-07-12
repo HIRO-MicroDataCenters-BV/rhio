@@ -15,6 +15,8 @@ use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
+use tokio::sync::broadcast::{self, Receiver, Sender};
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
@@ -426,9 +428,14 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe(&self, topic: TopicId) -> Result<(Sender, Receiver)> {
-        self.inner.engine.subscribe(topic).await?;
-        Ok((Sender {}, Receiver {}))
+    pub async fn subscribe(
+        &self,
+        topic: TopicId,
+    ) -> Result<(mpsc::Sender<InEvent>, broadcast::Receiver<OutEvent>)> {
+        let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
+        let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
+        self.inner.engine.subscribe(topic, out_tx, in_rx).await?;
+        Ok((in_tx, out_rx))
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -447,20 +454,18 @@ impl Network {
     }
 }
 
-// Sink to write data into a channel, scoped by a "topic id".
-//
-// Since this networking layer is independent of any persistance, users of this API will need to
-// persist new data they've created themselves and make the sync layer aware of this database
-pub struct Sender {}
+#[derive(Clone, Debug)]
+pub enum InEvent {
+    Message { bytes: Vec<u8> },
+}
 
-// Stream to read data from a channel, scoped by a "topic id". This is commonly used by any given
-// sync protocol and gossiping layer, everything will "land" here, independent of where it came
-// from and in what way, the only guarantee here is that it came from our overlay network scoped by
-// "network id" and "topic id".
-//
-// Since this networking layer is independent of any persistance users of this API will need to
-// persist incoming data themselves and make the sync layer aware of this database
-pub struct Receiver {}
+#[derive(Clone, Debug)]
+pub enum OutEvent {
+    Message {
+        bytes: Vec<u8>,
+        delivered_from: PublicKey,
+    },
+}
 
 async fn handle_connection(
     mut connecting: iroh_net::endpoint::Connecting,

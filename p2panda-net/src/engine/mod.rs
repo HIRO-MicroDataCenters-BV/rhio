@@ -9,13 +9,16 @@ use iroh_gossip::net::Gossip;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::Endpoint;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
 use engine::{EngineActor, ToEngineActor};
 use gossip::GossipActor;
 
-use crate::{NetworkId, TopicId};
+use crate::{
+    network::{InEvent, OutEvent},
+    NetworkId, TopicId,
+};
 
 pub struct Engine {
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
@@ -65,10 +68,17 @@ impl Engine {
         Ok(())
     }
 
-    pub async fn subscribe(&self, topic: TopicId) -> Result<()> {
+    pub async fn subscribe(
+        &self,
+        topic: TopicId,
+        out_tx: broadcast::Sender<OutEvent>,
+        in_rx: mpsc::Receiver<InEvent>,
+    ) -> Result<()> {
         self.engine_actor_tx
             .send(ToEngineActor::Subscribe {
                 topic: topic.into(),
+                out_tx,
+                in_rx,
             })
             .await?;
         Ok(())

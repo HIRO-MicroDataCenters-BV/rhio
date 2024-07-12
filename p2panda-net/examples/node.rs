@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use anyhow::Result;
+use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::{LocalDiscovery, NetworkBuilder};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -22,7 +25,31 @@ async fn main() -> Result<()> {
         .build()
         .await?;
 
-    network.subscribe(topic_id).await?;
+    let (tx, mut rx) = network.subscribe(topic_id).await?;
+
+    tokio::task::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            tx.send(InEvent::Message {
+                bytes: vec![1, 2, 3],
+            })
+            .await
+            .ok();
+        }
+    });
+
+    tokio::task::spawn(async move {
+        while let Ok(event) = rx.recv().await {
+            match event {
+                OutEvent::Message {
+                    bytes,
+                    delivered_from,
+                } => {
+                    println!("{:?} {}", bytes, delivered_from);
+                }
+            }
+        }
+    });
 
     tokio::signal::ctrl_c().await?;
 

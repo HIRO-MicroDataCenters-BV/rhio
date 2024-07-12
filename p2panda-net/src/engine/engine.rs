@@ -3,16 +3,19 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use iroh_gossip::net::Gossip;
 use iroh_gossip::proto::TopicId;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::key::PublicKey;
 use iroh_net::{Endpoint, NodeId};
+use p2panda_core::PublicKey as PandaPublicKey;
 use rand::seq::IteratorRandom;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::interval;
 use tracing::{debug, error};
+
+use crate::network::{InEvent, OutEvent};
 
 use super::gossip::{GossipActor, ToGossipActor};
 use super::message::NetworkMessage;
@@ -53,6 +56,8 @@ pub enum ToEngineActor {
     },
     Subscribe {
         topic: TopicId,
+        out_tx: broadcast::Sender<OutEvent>,
+        in_rx: mpsc::Receiver<InEvent>,
     },
     Received {
         bytes: Vec<u8>,
@@ -63,6 +68,8 @@ pub enum ToEngineActor {
         reply: oneshot::Sender<()>,
     },
 }
+
+type SubscriptionChannels = broadcast::Sender<OutEvent>;
 
 pub struct EngineActor {
     endpoint: Endpoint,
@@ -82,10 +89,10 @@ pub struct EngineActor {
     /// List of inactive subscriptions we've announced to be interested in. We will use the
     /// network-wide gossip overlay to announce our topic interests and hopefully find peers we can
     /// sync with over these topics.
-    pending_subscriptions: Vec<TopicId>,
+    pending_subscriptions: HashMap<TopicId, SubscriptionChannels>,
 
     /// Currently active subscriptions.
-    subscriptions: Vec<TopicId>,
+    subscriptions: HashMap<TopicId, SubscriptionChannels>,
 }
 
 impl EngineActor {
@@ -104,8 +111,8 @@ impl EngineActor {
             known_topics: HashMap::new(),
             known_peers: HashMap::new(),
             network_id,
-            pending_subscriptions: Vec::new(),
-            subscriptions: Vec::new(),
+            pending_subscriptions: HashMap::new(),
+            subscriptions: HashMap::new(),
         }
     }
 
@@ -177,8 +184,12 @@ impl EngineActor {
             ToEngineActor::NeighborDown { topic, peer } => {
                 // @TODO
             }
-            ToEngineActor::Subscribe { topic } => {
-                self.pending_subscribe(topic);
+            ToEngineActor::Subscribe {
+                topic,
+                out_tx,
+                in_rx,
+            } => {
+                self.pending_subscribe(topic, out_tx, in_rx);
             }
             ToEngineActor::Received {
                 bytes,
@@ -248,7 +259,7 @@ impl EngineActor {
     }
 
     async fn subscribe_to_topics(&mut self) -> Result<()> {
-        for topic in &self.pending_subscriptions {
+        for topic in self.pending_subscriptions.keys() {
             self.subscribe_to_topic(*topic).await?;
         }
 
@@ -270,6 +281,8 @@ impl EngineActor {
                 return Ok(());
             }
 
+            println!("JOIN TOPIC {}", topic);
+
             self.gossip_actor_tx
                 .send(ToGossipActor::Join { topic, peers })
                 .await?;
@@ -278,22 +291,54 @@ impl EngineActor {
         Ok(())
     }
 
-    fn pending_subscribe(&mut self, topic: TopicId) {
-        if self.subscriptions.contains(&topic) {
+    fn pending_subscribe(
+        &mut self,
+        topic: TopicId,
+        out_tx: broadcast::Sender<OutEvent>,
+        mut in_rx: mpsc::Receiver<InEvent>,
+    ) {
+        if self.subscriptions.contains_key(&topic) {
             return;
         }
 
-        if self.pending_subscriptions.contains(&topic) {
+        if self.pending_subscriptions.contains_key(&topic) {
             return;
         }
 
-        self.pending_subscriptions.push(topic);
+        // @TODO: Refactor this, this is just a POC hack, we want the whole subscription logic to
+        // live in its own struct
+        let gossip = self.gossip.clone();
+        let gossip_actor_tx = self.gossip_actor_tx.clone();
+        tokio::task::spawn(async move {
+            while let Some(event) = in_rx.recv().await {
+                let (reply, reply_rx) = oneshot::channel();
+                gossip_actor_tx
+                    .send(ToGossipActor::HasJoined { topic, reply })
+                    .await
+                    .ok();
+                let result = reply_rx.await.unwrap().unwrap();
+                if !result {
+                    continue;
+                }
+
+                match event {
+                    InEvent::Message { bytes } => {
+                        gossip
+                            .broadcast_neighbors(topic, bytes.into())
+                            .await
+                            .unwrap();
+                    }
+                }
+            }
+        });
+
+        self.pending_subscriptions.insert(topic, out_tx);
     }
 
     async fn announce_topics(&mut self) -> Result<()> {
         let mut topics = Vec::new();
-        topics.extend(&self.pending_subscriptions);
-        topics.extend(&self.subscriptions);
+        topics.extend(self.pending_subscriptions.keys());
+        topics.extend(self.subscriptions.keys());
         topics.sort_unstable();
         self.broadcast_to_network(NetworkMessage::Announcement(topics))
             .await?;
@@ -342,9 +387,16 @@ impl EngineActor {
                     self.on_announcement_message(topics, delivered_from);
                 }
             }
-        } else if self.subscriptions.contains(&topic) {
+        // @TODO: It's wrong that we're checking pending subscriptions here. We need to move
+        // pending into active subscriptions at one point!
+        } else if self.pending_subscriptions.contains_key(&topic) {
             // Message coming from a subscribed topic
-            // @TODO
+            let out_tx = self.pending_subscriptions.get(&topic).unwrap();
+            out_tx.send(OutEvent::Message {
+                bytes,
+                // @TODO: Do this more efficiently
+                delivered_from: PandaPublicKey::from_bytes(delivered_from.as_bytes())?,
+            })?;
         } else {
             debug!("Received message for unknown topic {}", topic);
         }
