@@ -27,7 +27,13 @@ impl Engine {
         let (engine_actor_tx, engine_actor_rx) = mpsc::channel(64);
         let (gossip_actor_tx, gossip_actor_rx) = mpsc::channel(256);
 
-        let engine_actor = EngineActor::new(network_id, engine_actor_rx, gossip_actor_tx, endpoint);
+        let engine_actor = EngineActor::new(
+            endpoint,
+            gossip.clone(),
+            gossip_actor_tx,
+            engine_actor_rx,
+            network_id,
+        );
         let gossip_actor = GossipActor::new(gossip_actor_rx, gossip, engine_actor_tx.clone());
 
         let actor_handle = tokio::task::spawn(async move {

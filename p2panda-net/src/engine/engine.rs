@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use iroh_gossip::net::Gossip;
 use iroh_gossip::proto::TopicId;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::key::PublicKey;
@@ -43,6 +44,7 @@ pub enum ToEngineActor {
 pub struct EngineActor {
     inbox: mpsc::Receiver<ToEngineActor>,
     endpoint: Endpoint,
+    gossip: Gossip,
     gossip_actor_tx: mpsc::Sender<ToGossipActor>,
     known_peers: HashMap<NodeId, NodeInfo>,
     network_id: NetworkId,
@@ -50,14 +52,16 @@ pub struct EngineActor {
 
 impl EngineActor {
     pub fn new(
-        network_id: NetworkId,
-        inbox: mpsc::Receiver<ToEngineActor>,
-        gossip_actor_tx: mpsc::Sender<ToGossipActor>,
         endpoint: Endpoint,
+        gossip: Gossip,
+        gossip_actor_tx: mpsc::Sender<ToGossipActor>,
+        inbox: mpsc::Receiver<ToEngineActor>,
+        network_id: NetworkId,
     ) -> Self {
         Self {
             inbox,
             endpoint,
+            gossip,
             gossip_actor_tx,
             known_peers: HashMap::new(),
             network_id,
