@@ -12,18 +12,17 @@ use flume::Sender;
 use futures_lite::StreamExt;
 use hickory_proto::rr::Name;
 use iroh_base::base32;
-use iroh_net::key::SecretKey;
+use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::AbortingJoinHandle;
+use iroh_net::NodeId;
 
 use crate::discovery::mdns::dns::{make_query, make_response, parse_message, MulticastDNSMessage};
 use crate::discovery::mdns::socket::{send, socket_v4};
-use crate::discovery::{BoxedStream, Discovery, DiscoveryEvent, DiscoveryNodeInfo};
+use crate::discovery::{BoxedStream, Discovery, DiscoveryEvent};
 use crate::NetworkId;
 
 const MDNS_PROVENANCE: &str = "mdns";
 const MDNS_QUERY_INTERVAL: Duration = Duration::from_secs(5);
-
-pub type PeerId = String;
 
 pub type ServiceName = Name;
 
@@ -31,7 +30,7 @@ type SubscribeSender = Sender<Result<DiscoveryEvent>>;
 
 enum Message {
     Subscribe(ServiceName, SubscribeSender),
-    UpdateLocalAddress(DiscoveryNodeInfo),
+    UpdateLocalAddress(NodeInfo),
 }
 
 #[derive(Debug)]
@@ -45,17 +44,10 @@ impl LocalDiscovery {
         let (tx, rx) = flume::bounded(64);
         let tx_clone = tx.clone();
 
-        // Use a random peer id for announcement, we don't need to leak our public key
-        let my_peer_id = {
-            // @TODO: That's a hack right now to get some random byte string
-            let random_bytes = SecretKey::generate().to_bytes();
-            base32::fmt(random_bytes)
-        };
-
         let socket = socket_v4()?;
 
-        let mut subscribers: HashMap<Name, Vec<SubscribeSender>> = HashMap::new();
-        let mut node_info: Option<DiscoveryNodeInfo> = None;
+        let mut subscribers: HashMap<ServiceName, Vec<SubscribeSender>> = HashMap::new();
+        let mut my_node_info: Option<NodeInfo> = None;
 
         let handle = tokio::task::spawn(async move {
             let mut interval = tokio::time::interval(MDNS_QUERY_INTERVAL);
@@ -67,36 +59,32 @@ impl LocalDiscovery {
                     Ok((len, addr)) = socket.recv_from(&mut buf) => {
                         if let Some(msg) = parse_message(&buf[..len], addr.ip()) {
                             match msg {
-                                MulticastDNSMessage::QueryV4(service_name) => {
-                                    match &node_info {
-                                        Some(node_info) => {
-                                            if subscribers.contains_key(&service_name) {
-                                                let response = make_response(&my_peer_id, &service_name, node_info);
-                                                send(&socket, response).await;
-                                            }
+                                MulticastDNSMessage::Query(service_name) => {
+                                    if let Some(my_node_info) = &my_node_info {
+                                        if subscribers.contains_key(&service_name) {
+                                            let response = make_response(&service_name, my_node_info);
+                                            send(&socket, response).await;
                                         }
-                                        // No info about our node yet, nothing to respond
-                                        None => continue,
                                     }
-
                                 },
-                                MulticastDNSMessage::QueryV6(_) => {
-                                    // @TODO: Do not handle IPv6 for now
-                                },
-                                MulticastDNSMessage::Response(service_name, peer_id, node_info) => {
-                                    if peer_id == my_peer_id {
-                                        continue;
-                                    }
+                                MulticastDNSMessage::Response(service_name, node_infos) => {
+                                    if let Some(my_node_info) = &my_node_info {
+                                        if let Some(subscribers) = subscribers.get(&service_name) {
+                                            for subscribe_tx in subscribers {
+                                                for node_info in &node_infos {
+                                                    if node_info.node_id == my_node_info.node_id {
+                                                        continue;
+                                                    }
 
-                                    if let Some(subscribers) = subscribers.get(&service_name) {
-                                        for subscribe_tx in subscribers {
-                                            subscribe_tx
-                                                .send_async(Ok(DiscoveryEvent {
-                                                    provenance: MDNS_PROVENANCE,
-                                                    node_info: node_info.clone(),
-                                                }))
-                                                .await
-                                                .ok();
+                                                    subscribe_tx
+                                                        .send_async(Ok(DiscoveryEvent {
+                                                            provenance: MDNS_PROVENANCE,
+                                                            node_info: node_info.clone(),
+                                                        }))
+                                                        .await
+                                                        .ok();
+                                                }
+                                            }
                                         }
                                     }
                                 },
@@ -118,7 +106,7 @@ impl LocalDiscovery {
                                 }
                             }
                             Message::UpdateLocalAddress(ref info) => {
-                                node_info = Some(info.clone());
+                                my_node_info = Some(info.clone());
                             }
                         }
                     }
@@ -151,7 +139,7 @@ impl Discovery for LocalDiscovery {
         Some(subscribe_rx.into_stream().boxed())
     }
 
-    fn update_local_address(&self, info: &DiscoveryNodeInfo) -> Result<()> {
+    fn update_local_address(&self, info: &NodeInfo) -> Result<()> {
         let tx = self.tx.clone();
         let info = info.clone();
         tokio::spawn(async move {

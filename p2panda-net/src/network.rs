@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 use url::Url;
 
-use crate::discovery::{Discovery, DiscoveryMap, DiscoveryNodeInfo, SecretNodeInfo};
+use crate::discovery::{Discovery, DiscoveryMap};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::protocols::ProtocolMap;
 use crate::{NetworkId, TopicId};
@@ -283,12 +283,7 @@ impl NetworkInner {
                             direct_addresses,
                         };
 
-                        // @TODO
-                        let encrypted =
-                            SecretNodeInfo::encrypt(addr, inner.endpoint.node_id().to_string());
-                        if let Err(err) =
-                            discovery.update_local_address(&DiscoveryNodeInfo::Secret(encrypted))
-                        {
+                        if let Err(err) = discovery.update_local_address(&addr) {
                             warn!("Failed to update direct addresses for discovery: {err:?}");
                         }
                     }

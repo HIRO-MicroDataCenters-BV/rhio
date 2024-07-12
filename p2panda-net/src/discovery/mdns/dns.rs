@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::borrow::Cow;
-use std::net::IpAddr;
+use std::collections::{BTreeMap, BTreeSet};
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 
 use hickory_proto::op::{Message, MessageType, Query};
 use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
-use hickory_proto::serialize::binary::BinEncodable;
+use hickory_proto::serialize::binary::BinDecodable;
+use iroh_net::dns::node_info::NodeInfo;
+use iroh_net::NodeId;
 use tracing::{debug, trace};
 
-use crate::discovery::mdns::{PeerId, ServiceName};
-use crate::discovery::{DiscoveryNodeInfo, SecretNodeInfo};
+use crate::discovery::mdns::ServiceName;
 
 pub enum MulticastDNSMessage {
-    QueryV4(ServiceName),
-    QueryV6(ServiceName),
-    Response(ServiceName, PeerId, DiscoveryNodeInfo),
+    Query(ServiceName),
+    Response(ServiceName, Vec<NodeInfo>),
 }
 
-pub fn make_query(service_name: &Name) -> Message {
+pub fn make_query(service_name: &ServiceName) -> Message {
     let mut msg = Message::new();
     msg.set_message_type(MessageType::Query);
     let mut query = Query::new();
@@ -28,30 +30,51 @@ pub fn make_query(service_name: &Name) -> Message {
     msg
 }
 
-pub fn make_response(
-    peer_id: &PeerId,
-    service_name: &ServiceName,
-    addr_info: &DiscoveryNodeInfo,
-) -> Message {
+pub fn make_response(service_name: &ServiceName, node_info: &NodeInfo) -> Message {
     let mut msg = Message::new();
     msg.set_message_type(MessageType::Response);
     msg.set_authoritative(true);
 
-    let my_srv_name = Name::from_utf8(peer_id)
-        .expect("was checked already")
-        .clone()
+    let node_id_str = node_info.node_id.to_string();
+
+    let my_srv_name = Name::from_str(&node_id_str)
+        .expect("node id was checked already")
         .append_domain(service_name)
         .expect("was checked already");
 
-    match addr_info {
-        // @TODO
-        DiscoveryNodeInfo::NodeInfo(_) => todo!(),
-        DiscoveryNodeInfo::Secret(ciphertext) => {
-            msg.add_answer(Record::from_rdata(
-                my_srv_name.to_owned(),
-                0,
-                RData::TXT(rdata::TXT::new(vec![ciphertext.to_string()])),
-            ));
+    let mut srv_map = BTreeMap::new();
+    for addr in &node_info.direct_addresses {
+        srv_map
+            .entry(addr.port())
+            .or_insert_with(Vec::new)
+            .push(addr.ip());
+    }
+
+    for (port, addrs) in srv_map {
+        let target = Name::from_str(&format!("{}-{}.local.", node_id_str, port))
+            .expect("node was checked already");
+        msg.add_answer(Record::from_rdata(
+            my_srv_name.clone(),
+            0,
+            RData::SRV(rdata::SRV::new(0, 0, port, target.clone())),
+        ));
+        for addr in addrs {
+            match addr {
+                IpAddr::V4(addr) => {
+                    msg.add_additional(Record::from_rdata(
+                        target.clone(),
+                        0,
+                        RData::A(rdata::A::from(addr)),
+                    ));
+                }
+                IpAddr::V6(addr) => {
+                    msg.add_additional(Record::from_rdata(
+                        target.clone(),
+                        0,
+                        RData::AAAA(rdata::AAAA::from(addr)),
+                    ));
+                }
+            }
         }
     }
 
@@ -59,7 +82,7 @@ pub fn make_response(
 }
 
 pub fn parse_message(bytes: &[u8], addr: IpAddr) -> Option<MulticastDNSMessage> {
-    let packet = match Message::from_vec(bytes) {
+    let message = match Message::from_vec(bytes) {
         Ok(packet) => packet,
         Err(err) => {
             debug!("error parsing mdns packet: {}", err);
@@ -67,84 +90,154 @@ pub fn parse_message(bytes: &[u8], addr: IpAddr) -> Option<MulticastDNSMessage> 
         }
     };
 
-    // Handle query
-    for question in packet.queries() {
-        if question.query_class() != DNSClass::IN {
+    if let Some(query) = parse_query(&message, addr) {
+        return Some(query);
+    }
+
+    if let Some(response) = parse_response(&message) {
+        return Some(response);
+    }
+
+    None
+}
+
+fn parse_query(message: &Message, addr: IpAddr) -> Option<MulticastDNSMessage> {
+    for query in message.queries() {
+        if query.query_class() != DNSClass::IN {
             trace!(
                 "received mdns query with wrong class {}",
-                question.query_class()
+                query.query_class()
             );
             continue;
         }
-        if question.query_type() != RecordType::PTR {
+        if query.query_type() != RecordType::PTR {
+            trace!("received mDNS query with wrong type {}", query.query_type());
+            continue;
+        }
+
+        let service_name = query.name();
+
+        trace!("received mDNS query for {}", query.name());
+        return Some(MulticastDNSMessage::Query(service_name.clone()));
+    }
+
+    None
+}
+
+fn parse_response(message: &Message) -> Option<MulticastDNSMessage> {
+    let mut peer_ports: BTreeMap<Name, Vec<(u16, NodeId)>> = BTreeMap::new();
+    let mut service_name: Option<ServiceName> = None;
+
+    for answer in message.answers() {
+        if answer.dns_class() != DNSClass::IN {
             trace!(
-                "received mDNS query with wrong type {}",
-                question.query_type()
+                "received mdns response with wrong class {:?}",
+                answer.dns_class()
             );
             continue;
         }
-
-        let service_name = question.name();
-
-        trace!("received mDNS query for {}", question.name());
-        return Some(match addr {
-            IpAddr::V4(_) => MulticastDNSMessage::QueryV4(service_name.clone()),
-            IpAddr::V6(_) => MulticastDNSMessage::QueryV6(service_name.clone()),
-        });
+        let name = answer.name();
+        service_name = match service_name {
+            Some(name) => {
+                if name != name.base_name() {
+                    trace!("received mdns response with wrong service {}", name);
+                }
+                Some(name)
+            }
+            None => Some(name.base_name()),
+        };
+        debug!("received mdns response for {}", name);
+        let node_id = {
+            let Some(node_id_bytes) = name.iter().next() else {
+                continue;
+            };
+            let Cow::Borrowed(node_id_str) = String::from_utf8_lossy(node_id_bytes) else {
+                debug!(
+                    "received mdns response with invalid node id {:?}",
+                    node_id_bytes
+                );
+                continue;
+            };
+            let Ok(node_id) = NodeId::from_str(&node_id_str) else {
+                debug!(
+                    "received mdns response with invalid node id {:?}",
+                    node_id_bytes
+                );
+                continue;
+            };
+            node_id
+        };
+        let Some(RData::SRV(srv)) = answer.data() else {
+            trace!("received mdns response with wrong data {:?}", answer.data());
+            continue;
+        };
+        peer_ports
+            .entry(srv.target().clone())
+            .or_default()
+            .push((srv.port(), node_id));
     }
 
-    // Handle responses
-    if packet.answers().len() != 1 {
-        debug!("received mdns response with too many answers");
+    let local = Name::from_str("local.").unwrap();
+    let mut peer_addrs: BTreeMap<NodeId, Vec<(IpAddr, u16)>> = BTreeMap::new();
+    for additional in message.additionals() {
+        if additional.dns_class() != DNSClass::IN {
+            trace!(
+                "received mdns additional with wrong class {:?}",
+                additional.dns_class()
+            );
+            continue;
+        }
+        let name = additional.name();
+        if name.base_name() != local {
+            trace!("received mdns additional for wrong service {}", name);
+            continue;
+        }
+        trace!("received mdns additional for {}", name);
+        let ip: IpAddr = match additional.data() {
+            Some(RData::A(addr)) => addr.0.into(),
+            Some(RData::AAAA(addr)) => addr.0.into(),
+            _ => {
+                debug!(
+                    "received mdns additional with wrong data {:?}",
+                    additional.data()
+                );
+                continue;
+            }
+        };
+        for (port, peer_id) in peer_ports.get(name).map(|x| &**x).unwrap_or(&[]) {
+            peer_addrs
+                .entry(peer_id.clone())
+                .or_default()
+                .push((ip, *port));
+        }
+    }
+
+    if peer_addrs.is_empty() {
         return None;
     }
-    let response = &packet.answers()[0];
 
-    if response.dns_class() != DNSClass::IN {
-        trace!(
-            "received mdns response with wrong class {:?}",
-            response.dns_class()
-        );
-        return None;
+    let mut deduped = BTreeMap::new();
+    for (peer_id, mut addrs) in peer_addrs {
+        addrs.sort_unstable();
+        addrs.dedup();
+        deduped.insert(peer_id, addrs);
     }
 
-    let name = response.name();
-    let service_name = name.base_name();
+    let mut ret = Vec::new();
+    for (peer_id, addrs) in deduped.into_iter() {
+        let direct_addresses: BTreeSet<SocketAddr> = addrs
+            .iter()
+            .map(|(ip, port)| SocketAddr::new(*ip, *port))
+            .collect();
 
-    let Some(peer_id_bytes) = name.iter().next() else {
-        return None;
-    };
-    let Cow::Borrowed(peer_id) = String::from_utf8_lossy(peer_id_bytes) else {
-        tracing::debug!(
-            "received mDNS response with invalid peer ID {:?}",
-            peer_id_bytes
-        );
-        return None;
-    };
+        ret.push(NodeInfo::new(peer_id, None, direct_addresses));
+    }
 
-    tracing::debug!("received mDNS response for {}", service_name);
-    let Some(RData::TXT(txt)) = response.data() else {
-        trace!(
-            "received mdns response with wrong data {:?}",
-            response.data()
-        );
-        return None;
-    };
-
-    let Ok(addr_info_bytes) = txt.to_bytes() else {
-        trace!(
-            "received mdns with response with invalid bytes in txt {:?}",
-            response.data()
-        );
-        return None;
-    };
-
-    // @TODO: Also handle unencrypted addr info
-    let addr_info = DiscoveryNodeInfo::Secret(SecretNodeInfo::new(addr_info_bytes));
-
-    Some(MulticastDNSMessage::Response(
-        service_name.clone(),
-        peer_id.to_owned(),
-        addr_info,
-    ))
+    match service_name {
+        Some(service_name) => Some(MulticastDNSMessage::Response(service_name.clone(), ret)),
+        None => {
+            debug!("received mdns response without service name");
+            None
+        }
+    }
 }
