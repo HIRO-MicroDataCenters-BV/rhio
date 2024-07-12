@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use iroh_gossip::net::Gossip;
 use iroh_gossip::proto::TopicId;
 use iroh_net::dns::node_info::NodeInfo;
@@ -21,7 +21,7 @@ use super::message::NetworkMessage;
 ///
 /// The larger the number the less likely joining the gossip will fail as we get more chances to
 /// establish connections. As soon as we've joined the gossip we will learn about more peers.
-const JOIN_NETWORK_PEERS_SAMPLE_LEN: usize = 7;
+const JOIN_PEERS_SAMPLE_LEN: usize = 7;
 
 /// In what frequency do we attempt joining the network-wide gossip overlay over a newly, randomly
 /// sampled set of peers.
@@ -33,6 +33,9 @@ const JOIN_NETWORK_INTERVAL: Duration = Duration::from_secs(9);
 
 /// How often do we announce the list of our subscribed topics.
 const ANNOUNCE_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
+
+/// How often do we try to join the topics we're interested in.
+const JOIN_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
 
 type Reply<T> = oneshot::Sender<Result<T>>;
 
@@ -67,6 +70,8 @@ pub struct EngineActor {
     gossip_actor_tx: mpsc::Sender<ToGossipActor>,
     inbox: mpsc::Receiver<ToEngineActor>,
 
+    known_topics: HashMap<TopicId, Vec<PublicKey>>,
+
     /// Address book of known peers.
     known_peers: HashMap<NodeId, NodeInfo>,
 
@@ -96,6 +101,7 @@ impl EngineActor {
             gossip,
             gossip_actor_tx,
             inbox,
+            known_topics: HashMap::new(),
             known_peers: HashMap::new(),
             network_id,
             pending_subscriptions: Vec::new(),
@@ -128,6 +134,7 @@ impl EngineActor {
     async fn run_inner(&mut self) -> Result<oneshot::Sender<()>> {
         let mut join_network_interval = interval(JOIN_NETWORK_INTERVAL);
         let mut announce_topics_interval = interval(ANNOUNCE_TOPICS_INTERVAL);
+        let mut join_topics_interval = interval(JOIN_TOPICS_INTERVAL);
 
         loop {
             tokio::select! {
@@ -148,6 +155,9 @@ impl EngineActor {
                 _ = announce_topics_interval.tick() => {
                     self.announce_topics().await?;
                 },
+                _ = join_topics_interval.tick() => {
+                    self.subscribe_to_topics().await?;
+                },
                 _ = join_network_interval.tick() => {
                     self.subscribe_to_network().await?;
                 },
@@ -158,18 +168,17 @@ impl EngineActor {
     async fn on_actor_message(&mut self, msg: ToEngineActor) -> Result<()> {
         match msg {
             ToEngineActor::AddPeer { node_info } => {
-                self.add_peer(node_info);
+                self.add_peer(node_info).await?;
             }
             ToEngineActor::NeighborUp { topic, peer } => {
-                println!("Found gossip partner for {:?} {:?}", topic, peer);
+                println!("found peer {} for topic {}", peer, topic);
                 // @TODO
             }
             ToEngineActor::NeighborDown { topic, peer } => {
-                println!("Gossip partner left for {:?} {:?}", topic, peer);
                 // @TODO
             }
             ToEngineActor::Subscribe { topic } => {
-                self.subscribe(topic);
+                self.pending_subscribe(topic);
             }
             ToEngineActor::Received {
                 bytes,
@@ -187,7 +196,7 @@ impl EngineActor {
     }
 
     /// Adds a new peer to our address book.
-    fn add_peer(&mut self, node_info: NodeInfo) {
+    async fn add_peer(&mut self, node_info: NodeInfo) -> Result<()> {
         let node_id = node_info.node_id;
 
         // Make sure the endpoint also knows about this address
@@ -195,6 +204,11 @@ impl EngineActor {
             Ok(_) => {
                 if self.known_peers.insert(node_id, node_info).is_none() {
                     debug!("added new peer to handler {}", node_id);
+
+                    // Attempt joining network when trying for the first time
+                    if !self.has_joined_topic(self.network_id).await? {
+                        self.subscribe_to_network().await?;
+                    }
                 }
             }
             Err(err) => {
@@ -205,6 +219,8 @@ impl EngineActor {
                 );
             }
         }
+
+        Ok(())
     }
 
     /// Join the network-wide gossip overlay by picking a random sample set from the currently
@@ -216,7 +232,7 @@ impl EngineActor {
         let peers = self
             .known_peers
             .values()
-            .choose_multiple(&mut rand::thread_rng(), JOIN_NETWORK_PEERS_SAMPLE_LEN)
+            .choose_multiple(&mut rand::thread_rng(), JOIN_PEERS_SAMPLE_LEN)
             .iter()
             .map(|peer| peer.node_id)
             .collect();
@@ -231,7 +247,38 @@ impl EngineActor {
         Ok(())
     }
 
-    fn subscribe(&mut self, topic: TopicId) {
+    async fn subscribe_to_topics(&mut self) -> Result<()> {
+        for topic in &self.pending_subscriptions {
+            self.subscribe_to_topic(*topic).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn subscribe_to_topic(&self, topic: TopicId) -> Result<()> {
+        if self.has_joined_topic(topic).await? {
+            return Ok(());
+        }
+
+        if let Some(known_topic) = self.known_topics.get(&topic) {
+            let peers = known_topic
+                .to_owned()
+                .into_iter()
+                .choose_multiple(&mut rand::thread_rng(), JOIN_PEERS_SAMPLE_LEN);
+
+            if peers.is_empty() {
+                return Ok(());
+            }
+
+            self.gossip_actor_tx
+                .send(ToGossipActor::Join { topic, peers })
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    fn pending_subscribe(&mut self, topic: TopicId) {
         if self.subscriptions.contains(&topic) {
             return;
         }
@@ -262,14 +309,16 @@ impl EngineActor {
             return Ok(());
         }
         debug!("broadcast to network {:?}", message);
+
         let bytes = message.to_bytes()?;
         self.gossip
             .broadcast_neighbors(self.network_id, bytes.into())
             .await?;
+
         Ok(())
     }
 
-    async fn has_joined_topic(&mut self, topic: TopicId) -> Result<bool> {
+    async fn has_joined_topic(&self, topic: TopicId) -> Result<bool> {
         let (reply, reply_rx) = oneshot::channel();
         self.gossip_actor_tx
             .send(ToGossipActor::HasJoined { topic, reply })
@@ -284,21 +333,41 @@ impl EngineActor {
         delivered_from: PublicKey,
         topic: TopicId,
     ) -> Result<()> {
-        // Message coming from network-wide gossip overlay
         if topic == self.network_id {
+            // Message coming from network-wide gossip overlay
             let message = NetworkMessage::from_bytes(&bytes)
                 .context("parsing network-wide gossip message")?;
             match message {
                 NetworkMessage::Announcement(topics) => {
-                    debug!(
-                        "Received announcement of peer {} {:?}",
-                        delivered_from, topics
-                    );
+                    self.on_announcement_message(topics, delivered_from);
                 }
             }
+        } else if self.subscriptions.contains(&topic) {
+            // Message coming from a subscribed topic
+            // @TODO
+        } else {
+            debug!("Received message for unknown topic {}", topic);
         }
 
         Ok(())
+    }
+
+    fn on_announcement_message(&mut self, topics: Vec<TopicId>, delivered_from: PublicKey) {
+        debug!(
+            "Received announcement of peer {} {:?}",
+            delivered_from, topics
+        );
+
+        for topic in &topics {
+            match self.known_topics.get_mut(topic) {
+                Some(node_ids) => {
+                    node_ids.push(delivered_from);
+                }
+                None => {
+                    self.known_topics.insert(*topic, vec![delivered_from]);
+                }
+            }
+        }
     }
 
     async fn shutdown(&mut self) -> Result<()> {
@@ -306,6 +375,7 @@ impl EngineActor {
             .send(ToGossipActor::Shutdown)
             .await
             .ok();
+
         Ok(())
     }
 }

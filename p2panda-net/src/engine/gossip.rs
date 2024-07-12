@@ -115,7 +115,7 @@ impl GossipActor {
                 self.pending_joins.spawn(fut);
             }
             ToGossipActor::HasJoined { topic, reply } => {
-                let result = self.joined.contains(&topic);
+                let result = self.joined.contains(&topic) || self.want_join.contains(&topic);
                 reply.send(Ok(result)).ok();
             }
             ToGossipActor::Leave { topic } => {
