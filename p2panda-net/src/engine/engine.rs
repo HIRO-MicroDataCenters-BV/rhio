@@ -10,6 +10,7 @@ use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::key::PublicKey;
 use iroh_net::{Endpoint, NodeId};
 use rand::seq::IteratorRandom;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::interval;
 use tracing::{debug, error};
@@ -30,24 +31,59 @@ const JOIN_NETWORK_PEERS_SAMPLE_LEN: usize = 7;
 // found early on but also re-try at a later stage after we've maybe discovered more peers. Is
 // there a better way to do this than just trying forever, probably we want to keep some more state
 // about the "health" of our connection to the network-wide overlay?
-const JOIN_NETWORK_INTERVAL: Duration = Duration::from_secs(10);
+const JOIN_NETWORK_INTERVAL: Duration = Duration::from_secs(9);
+
+/// How often do we announce the list of our subscribed topics.
+const ANNOUNCE_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
 
 type Reply = oneshot::Sender<Result<()>>;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum NetworkMessage {
+    Announcement(Vec<TopicId>),
+}
+
+impl NetworkMessage {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let message: Self = ciborium::de::from_reader(&bytes[..])?;
+        Ok(message)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        let mut bytes: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&self, &mut bytes)?;
+        Ok(bytes)
+    }
+}
+
 pub enum ToEngineActor {
     AddPeer { node_info: NodeInfo },
-    Shutdown { reply: oneshot::Sender<()> },
-    NeighborUp { topic: TopicId, peer: PublicKey },
     NeighborDown { topic: TopicId, peer: PublicKey },
+    NeighborUp { topic: TopicId, peer: PublicKey },
+    Shutdown { reply: oneshot::Sender<()> },
+    Subscribe { topic: TopicId },
 }
 
 pub struct EngineActor {
-    inbox: mpsc::Receiver<ToEngineActor>,
     endpoint: Endpoint,
     gossip: Gossip,
     gossip_actor_tx: mpsc::Sender<ToGossipActor>,
+    inbox: mpsc::Receiver<ToEngineActor>,
+
+    /// Address book of known peers.
     known_peers: HashMap<NodeId, NodeInfo>,
+
+    /// Identifier for the whole network. This serves as the topic for the network-wide gossip
+    /// overlay.
     network_id: NetworkId,
+
+    /// List of inactive subscriptions we've announced to be interested in. We will use the
+    /// network-wide gossip overlay to announce our topic interests and hopefully find peers we can
+    /// sync with over these topics.
+    pending_subscriptions: Vec<TopicId>,
+
+    /// Currently active subscriptions.
+    subscriptions: Vec<TopicId>,
 }
 
 impl EngineActor {
@@ -59,12 +95,14 @@ impl EngineActor {
         network_id: NetworkId,
     ) -> Self {
         Self {
-            inbox,
             endpoint,
             gossip,
             gossip_actor_tx,
+            inbox,
             known_peers: HashMap::new(),
             network_id,
+            pending_subscriptions: Vec::new(),
+            subscriptions: Vec::new(),
         }
     }
 
@@ -92,6 +130,7 @@ impl EngineActor {
 
     async fn run_inner(&mut self) -> Result<oneshot::Sender<()>> {
         let mut join_network_interval = interval(JOIN_NETWORK_INTERVAL);
+        let mut announce_topics_interval = interval(ANNOUNCE_TOPICS_INTERVAL);
 
         loop {
             tokio::select! {
@@ -106,6 +145,9 @@ impl EngineActor {
                             self.on_actor_message(msg).await;
                         }
                     }
+                },
+                _ = announce_topics_interval.tick() => {
+                    self.announce_topics().await?;
                 },
                 _ = join_network_interval.tick() => {
                     self.subscribe_to_network().await?;
@@ -126,6 +168,9 @@ impl EngineActor {
             ToEngineActor::NeighborDown { topic, peer } => {
                 println!("Gossip partner left for {:?} {:?}", topic, peer);
                 // @TODO
+            }
+            ToEngineActor::Subscribe { topic } => {
+                self.subscribe(topic);
             }
             ToEngineActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
@@ -175,6 +220,38 @@ impl EngineActor {
             })
             .await?;
 
+        Ok(())
+    }
+
+    async fn subscribe(&mut self, topic: TopicId) {
+        if self.subscriptions.contains(&topic) {
+            return;
+        }
+
+        if self.pending_subscriptions.contains(&topic) {
+            return;
+        }
+
+        self.pending_subscriptions.push(topic);
+    }
+
+    async fn announce_topics(&mut self) -> Result<()> {
+        let mut topics = Vec::new();
+        topics.extend(&self.pending_subscriptions);
+        topics.extend(&self.subscriptions);
+        topics.sort_unstable();
+
+        self.broadcast_to_network(NetworkMessage::Announcement(topics))
+            .await?;
+
+        Ok(())
+    }
+
+    async fn broadcast_to_network(&mut self, message: NetworkMessage) -> Result<()> {
+        let bytes = message.to_bytes()?;
+        self.gossip
+            .broadcast(self.network_id.into(), bytes.into())
+            .await?;
         Ok(())
     }
 

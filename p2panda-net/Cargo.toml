@@ -12,6 +12,7 @@ mdns = [
 
 [dependencies]
 anyhow = "1.0.86"
+ciborium = "0.2.2"
 flume = "0.11.0"
 futures-buffered = "0.2.6"
 futures-lite = "2.3.0"
@@ -27,7 +28,7 @@ serde = { version = "1.0.203", features = ["derive"] }
 socket2 = { version = "0.5.7", optional = true }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
-tokio-util = "0.7.11"
+tokio-util = { version = "0.7", features = ["codec", "io-util", "io"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = "2.5.2"

@@ -426,15 +426,8 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe(&self, id: TopicId) -> Result<(Sender, Receiver)> {
-        let mut receiver = self.inner.gossip.subscribe(id.into()).await?;
-
-        tokio::task::spawn(async move {
-            while let Ok(item) = receiver.recv().await {
-                info!("gossip: {:?}", item);
-            }
-        });
-
+    pub async fn subscribe(&self, topic: TopicId) -> Result<(Sender, Receiver)> {
+        self.inner.engine.subscribe(topic).await?;
         Ok((Sender {}, Receiver {}))
     }
 

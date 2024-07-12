@@ -14,7 +14,7 @@ use tracing::error;
 use engine::{EngineActor, ToEngineActor};
 use gossip::GossipActor;
 
-use crate::NetworkId;
+use crate::{NetworkId, TopicId};
 
 pub struct Engine {
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
@@ -61,6 +61,13 @@ impl Engine {
             .send(ToEngineActor::Shutdown { reply })
             .await?;
         reply_rx.await?;
+        Ok(())
+    }
+
+    pub async fn subscribe(&self, topic: TopicId) -> Result<()> {
+        self.engine_actor_tx
+            .send(ToEngineActor::Subscribe { topic })
+            .await?;
         Ok(())
     }
 }
