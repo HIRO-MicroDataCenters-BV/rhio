@@ -5,8 +5,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures_lite::future::Boxed as BoxedFuture;
 use iroh_gossip::net::Gossip;
-use iroh_net::endpoint::{get_remote_node_id, Connecting, Connection};
-use tracing::{debug_span, Instrument};
+use iroh_net::endpoint::{Connecting, Connection};
+use tracing::debug_span;
 
 use crate::protocols::ProtocolHandler;
 

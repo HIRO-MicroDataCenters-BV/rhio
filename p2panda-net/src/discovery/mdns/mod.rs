@@ -14,7 +14,6 @@ use hickory_proto::rr::Name;
 use iroh_base::base32;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::AbortingJoinHandle;
-use iroh_net::NodeId;
 
 use crate::discovery::mdns::dns::{make_query, make_response, parse_message, MulticastDNSMessage};
 use crate::discovery::mdns::socket::{send, socket_v4};
@@ -35,6 +34,7 @@ enum Message {
 
 #[derive(Debug)]
 pub struct LocalDiscovery {
+    #[allow(dead_code)]
     handle: AbortingJoinHandle<()>,
     tx: Sender<Message>,
 }
@@ -42,7 +42,6 @@ pub struct LocalDiscovery {
 impl LocalDiscovery {
     pub fn new() -> Result<Self> {
         let (tx, rx) = flume::bounded(64);
-        let tx_clone = tx.clone();
 
         let socket = socket_v4()?;
 
@@ -56,8 +55,8 @@ impl LocalDiscovery {
             loop {
                 tokio::select! {
                     biased;
-                    Ok((len, addr)) = socket.recv_from(&mut buf) => {
-                        let Some(msg) = parse_message(&buf[..len], addr.ip()) else {
+                    Ok(len) = socket.recv(&mut buf) => {
+                        let Some(msg) = parse_message(&buf[..len]) else {
                             continue;
                         };
 

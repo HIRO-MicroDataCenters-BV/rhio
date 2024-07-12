@@ -9,7 +9,6 @@ use std::pin::Pin;
 use anyhow::Result;
 use futures_lite::stream::Stream;
 use iroh_net::dns::node_info::NodeInfo;
-use iroh_net::NodeId;
 
 use crate::NetworkId;
 
@@ -58,7 +57,7 @@ pub struct DiscoveryEvent {
 pub trait Discovery: Debug + Send + Sync {
     fn update_local_address(&self, node_info: &NodeInfo) -> Result<()>;
 
-    fn subscribe(&self, network_id: NetworkId) -> Option<BoxedStream<Result<DiscoveryEvent>>> {
+    fn subscribe(&self, _network_id: NetworkId) -> Option<BoxedStream<Result<DiscoveryEvent>>> {
         None
     }
 }

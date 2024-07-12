@@ -7,7 +7,6 @@ use std::str::FromStr;
 
 use hickory_proto::op::{Message, MessageType, Query};
 use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
-use hickory_proto::serialize::binary::BinDecodable;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::NodeId;
 use tracing::{debug, trace};
@@ -81,7 +80,7 @@ pub fn make_response(service_name: &ServiceName, node_info: &NodeInfo) -> Messag
     msg
 }
 
-pub fn parse_message(bytes: &[u8], addr: IpAddr) -> Option<MulticastDNSMessage> {
+pub fn parse_message(bytes: &[u8]) -> Option<MulticastDNSMessage> {
     let message = match Message::from_vec(bytes) {
         Ok(packet) => packet,
         Err(err) => {
@@ -90,7 +89,7 @@ pub fn parse_message(bytes: &[u8], addr: IpAddr) -> Option<MulticastDNSMessage> 
         }
     };
 
-    if let Some(query) = parse_query(&message, addr) {
+    if let Some(query) = parse_query(&message) {
         return Some(query);
     }
 
@@ -101,7 +100,7 @@ pub fn parse_message(bytes: &[u8], addr: IpAddr) -> Option<MulticastDNSMessage> 
     None
 }
 
-fn parse_query(message: &Message, addr: IpAddr) -> Option<MulticastDNSMessage> {
+fn parse_query(message: &Message) -> Option<MulticastDNSMessage> {
     for query in message.queries() {
         if query.query_class() != DNSClass::IN {
             trace!(
@@ -158,7 +157,7 @@ fn parse_response(message: &Message) -> Option<MulticastDNSMessage> {
                 );
                 continue;
             };
-            let Ok(node_id) = NodeId::from_str(&node_id_str) else {
+            let Ok(node_id) = NodeId::from_str(node_id_str) else {
                 debug!(
                     "received mdns response with invalid node id {:?}",
                     node_id_bytes
@@ -205,10 +204,7 @@ fn parse_response(message: &Message) -> Option<MulticastDNSMessage> {
             }
         };
         for (port, peer_id) in peer_ports.get(name).map(|x| &**x).unwrap_or(&[]) {
-            peer_addrs
-                .entry(peer_id.clone())
-                .or_default()
-                .push((ip, *port));
+            peer_addrs.entry(*peer_id).or_default().push((ip, *port));
         }
     }
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,11 +9,11 @@ use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
 use iroh_net::dns::node_info::NodeInfo;
-use iroh_net::endpoint::{self, TransportConfig};
+use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
-use iroh_net::relay::{RelayMap, RelayNode, RelayUrl};
+use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{AddrInfo, Endpoint, NodeAddr, NodeId};
+use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -159,7 +159,7 @@ impl NetworkBuilder {
                 ),
             };
 
-            let mut builder = Endpoint::builder()
+            let builder = Endpoint::builder()
                 .transport_config(transport_config)
                 .secret_key(secret_key.clone())
                 .relay_mode(relay_mode)
