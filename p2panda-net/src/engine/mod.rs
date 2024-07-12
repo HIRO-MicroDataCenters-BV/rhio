@@ -14,6 +14,8 @@ use tracing::error;
 use engine::{EngineActor, ToEngineActor};
 use gossip::GossipActor;
 
+use crate::NetworkId;
+
 pub struct Engine {
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
     #[allow(dead_code)]
@@ -21,11 +23,11 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(endpoint: Endpoint, gossip: Gossip) -> Self {
+    pub fn new(network_id: NetworkId, endpoint: Endpoint, gossip: Gossip) -> Self {
         let (engine_actor_tx, engine_actor_rx) = mpsc::channel(64);
         let (gossip_actor_tx, gossip_actor_rx) = mpsc::channel(256);
 
-        let engine_actor = EngineActor::new(engine_actor_rx, gossip_actor_tx, endpoint);
+        let engine_actor = EngineActor::new(network_id, engine_actor_rx, gossip_actor_tx, endpoint);
         let gossip_actor = GossipActor::new(gossip_actor_rx, gossip, engine_actor_tx.clone());
 
         let actor_handle = tokio::task::spawn(async move {

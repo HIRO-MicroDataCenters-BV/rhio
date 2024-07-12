@@ -56,7 +56,8 @@ impl GossipActor {
             gossip_events: Default::default(),
         }
     }
-    pub async fn run(&mut self) -> anyhow::Result<()> {
+
+    pub async fn run(&mut self) -> Result<()> {
         loop {
             tokio::select! {
                 next = self.gossip_events.next(), if !self.gossip_events.is_empty() => {
@@ -93,14 +94,8 @@ impl GossipActor {
         Ok(())
     }
 
-    async fn on_actor_message(&mut self, msg: ToGossipActor) -> anyhow::Result<bool> {
+    async fn on_actor_message(&mut self, msg: ToGossipActor) -> Result<bool> {
         match msg {
-            ToGossipActor::Shutdown => {
-                for topic in self.joined.iter() {
-                    self.gossip.quit((*topic).into()).await.ok();
-                }
-                return Ok(false);
-            }
             ToGossipActor::Join { topic, peers } => {
                 let gossip = self.gossip.clone();
                 let fut = async move {
@@ -117,7 +112,14 @@ impl GossipActor {
                 self.joined.remove(&topic);
                 self.want_join.remove(&topic);
             }
+            ToGossipActor::Shutdown => {
+                for topic in self.joined.iter() {
+                    self.gossip.quit((*topic).into()).await.ok();
+                }
+                return Ok(false);
+            }
         }
+
         Ok(true)
     }
 
