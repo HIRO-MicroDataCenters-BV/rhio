@@ -57,40 +57,48 @@ impl LocalDiscovery {
                 tokio::select! {
                     biased;
                     Ok((len, addr)) = socket.recv_from(&mut buf) => {
-                        if let Some(msg) = parse_message(&buf[..len], addr.ip()) {
-                            match msg {
-                                MulticastDNSMessage::Query(service_name) => {
-                                    if let Some(my_node_info) = &my_node_info {
-                                        if subscribers.contains_key(&service_name) {
-                                            let response = make_response(&service_name, my_node_info);
-                                            send(&socket, response).await;
-                                        }
-                                    }
-                                },
-                                MulticastDNSMessage::Response(service_name, node_infos) => {
-                                    if let Some(my_node_info) = &my_node_info {
-                                        if let Some(subscribers) = subscribers.get(&service_name) {
-                                            for subscribe_tx in subscribers {
-                                                for node_info in &node_infos {
-                                                    if node_info.node_id == my_node_info.node_id {
-                                                        continue;
-                                                    }
+                        let Some(msg) = parse_message(&buf[..len], addr.ip()) else {
+                            continue;
+                        };
 
-                                                    subscribe_tx
-                                                        .send_async(Ok(DiscoveryEvent {
-                                                            provenance: MDNS_PROVENANCE,
-                                                            node_info: node_info.clone(),
-                                                        }))
-                                                        .await
-                                                        .ok();
-                                                }
-                                            }
+                        match msg {
+                            MulticastDNSMessage::Query(service_name) => {
+                                let Some(my_node_info) = &my_node_info else {
+                                    continue;
+                                };
+
+                                if subscribers.contains_key(&service_name) {
+                                    let response = make_response(&service_name, my_node_info);
+                                    send(&socket, response).await;
+                                }
+                            },
+                            MulticastDNSMessage::Response(service_name, node_infos) => {
+                                let Some(my_node_info) = &my_node_info else {
+                                    continue;
+                                };
+
+                                let Some(subscribers) = subscribers.get(&service_name) else {
+                                    continue;
+                                };
+
+                                for subscribe_tx in subscribers {
+                                    for node_info in &node_infos {
+                                        if node_info.node_id == my_node_info.node_id {
+                                            continue;
                                         }
+
+                                        subscribe_tx
+                                            .send_async(Ok(DiscoveryEvent {
+                                                provenance: MDNS_PROVENANCE,
+                                                node_info: node_info.clone(),
+                                            }))
+                                            .await
+                                            .ok();
                                     }
-                                },
+                                }
                             }
                         }
-                    }
+                    },
                     _ = interval.tick() => {
                         for service_name in subscribers.keys() {
                             send(&socket, make_query(service_name)).await;
@@ -109,7 +117,7 @@ impl LocalDiscovery {
                                 my_node_info = Some(info.clone());
                             }
                         }
-                    }
+                    },
                     else => break,
                 }
             }
