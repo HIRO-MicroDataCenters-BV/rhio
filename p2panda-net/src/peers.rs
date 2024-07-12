@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use iroh_gossip::net::Gossip;
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{dns::node_info::NodeInfo, endpoint};
 use iroh_net::{Endpoint, NodeId};
@@ -20,14 +21,16 @@ struct PeersActor {
     inbox: mpsc::Receiver<ToPeersActor>,
     known_peers: HashMap<NodeId, NodeInfo>,
     endpoint: Endpoint,
+    gossip: Gossip,
 }
 
 impl PeersActor {
-    pub fn new(inbox: mpsc::Receiver<ToPeersActor>, endpoint: Endpoint) -> Self {
+    pub fn new(inbox: mpsc::Receiver<ToPeersActor>, endpoint: Endpoint, gossip: Gossip) -> Self {
         Self {
             inbox,
             known_peers: HashMap::new(),
             endpoint,
+            gossip,
         }
     }
 
@@ -107,9 +110,9 @@ pub struct Peers {
 }
 
 impl Peers {
-    pub fn new(endpoint: Endpoint) -> Self {
+    pub fn new(endpoint: Endpoint, gossip: Gossip) -> Self {
         let (actor_tx, actor_rx) = mpsc::channel(64);
-        let actor = PeersActor::new(actor_rx, endpoint);
+        let actor = PeersActor::new(actor_rx, endpoint, gossip);
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = actor.run().await {
