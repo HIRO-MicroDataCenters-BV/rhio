@@ -159,14 +159,13 @@ impl NetworkBuilder {
                 ),
             };
 
-            let builder = Endpoint::builder()
+            Endpoint::builder()
                 .transport_config(transport_config)
                 .secret_key(secret_key.clone())
                 .relay_mode(relay_mode)
-                .concurrent_connections(MAX_CONNECTIONS);
-
-            let bind_port = self.bind_port.unwrap_or(DEFAULT_BIND_PORT);
-            builder.bind(bind_port).await?
+                .concurrent_connections(MAX_CONNECTIONS)
+                .bind(self.bind_port.unwrap_or(DEFAULT_BIND_PORT))
+                .await?
         };
 
         let node_addr = endpoint.node_addr().await?;
