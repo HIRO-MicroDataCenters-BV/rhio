@@ -17,17 +17,14 @@ async fn main() -> Result<()> {
     let network_id = [0; 32];
     let topic_id = [1; 32];
 
-    let mdns = LocalDiscovery::new()?;
     let network = NetworkBuilder::new(network_id)
-        .discovery(mdns)
+        .discovery(LocalDiscovery::new()?)
         .build()
         .await?;
 
     network.subscribe(topic_id).await?;
 
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => (),
-    }
+    tokio::signal::ctrl_c().await?;
 
     network.shutdown().await?;
 
