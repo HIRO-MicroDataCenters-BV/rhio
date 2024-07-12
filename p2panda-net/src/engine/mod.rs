@@ -2,6 +2,7 @@
 
 mod engine;
 mod gossip;
+mod message;
 
 use anyhow::Result;
 use iroh_gossip::net::Gossip;
@@ -32,7 +33,7 @@ impl Engine {
             gossip.clone(),
             gossip_actor_tx,
             engine_actor_rx,
-            network_id,
+            network_id.into(),
         );
         let gossip_actor = GossipActor::new(gossip_actor_rx, gossip, engine_actor_tx.clone());
 
@@ -66,7 +67,9 @@ impl Engine {
 
     pub async fn subscribe(&self, topic: TopicId) -> Result<()> {
         self.engine_actor_tx
-            .send(ToEngineActor::Subscribe { topic })
+            .send(ToEngineActor::Subscribe {
+                topic: topic.into(),
+            })
             .await?;
         Ok(())
     }

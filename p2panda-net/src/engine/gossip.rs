@@ -9,6 +9,7 @@ use iroh_gossip::net::Event;
 use iroh_gossip::net::Gossip;
 use iroh_gossip::proto::TopicId;
 use iroh_net::key::PublicKey;
+use tokio::sync::oneshot;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
@@ -18,11 +19,17 @@ use tracing::{error, warn};
 
 use super::engine::ToEngineActor;
 
+type Reply<T> = oneshot::Sender<Result<T>>;
+
 #[derive(Debug)]
 pub enum ToGossipActor {
     Join {
         topic: TopicId,
         peers: Vec<PublicKey>,
+    },
+    HasJoined {
+        topic: TopicId,
+        reply: Reply<bool>,
     },
     Leave {
         topic: TopicId,
@@ -107,6 +114,10 @@ impl GossipActor {
                 self.want_join.insert(topic);
                 self.pending_joins.spawn(fut);
             }
+            ToGossipActor::HasJoined { topic, reply } => {
+                let result = self.joined.contains(&topic);
+                reply.send(Ok(result)).ok();
+            }
             ToGossipActor::Leave { topic } => {
                 self.gossip.quit(topic.into()).await?;
                 self.joined.remove(&topic);
@@ -150,8 +161,14 @@ impl GossipActor {
 
     async fn on_gossip_event_inner(&mut self, topic: TopicId, event: Event) -> Result<()> {
         match event {
-            Event::Received(_msg) => {
-                // @TODO
+            Event::Received(msg) => {
+                self.engine_actor_tx
+                    .send(ToEngineActor::Received {
+                        bytes: msg.content.into(),
+                        delivered_from: msg.delivered_from,
+                        topic,
+                    })
+                    .await?;
             }
             Event::NeighborUp(peer) => {
                 self.engine_actor_tx

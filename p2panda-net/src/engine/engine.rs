@@ -10,14 +10,12 @@ use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::key::PublicKey;
 use iroh_net::{Endpoint, NodeId};
 use rand::seq::IteratorRandom;
-use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::interval;
 use tracing::{debug, error};
 
-use crate::NetworkId;
-
 use super::gossip::{GossipActor, ToGossipActor};
+use super::message::NetworkMessage;
 
 /// Maximum size of random sample set when choosing peers to join network-wide gossip overlay.
 ///
@@ -36,32 +34,31 @@ const JOIN_NETWORK_INTERVAL: Duration = Duration::from_secs(9);
 /// How often do we announce the list of our subscribed topics.
 const ANNOUNCE_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
 
-type Reply = oneshot::Sender<Result<()>>;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-enum NetworkMessage {
-    Announcement(Vec<TopicId>),
-}
-
-impl NetworkMessage {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let message: Self = ciborium::de::from_reader(&bytes[..])?;
-        Ok(message)
-    }
-
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&self, &mut bytes)?;
-        Ok(bytes)
-    }
-}
+type Reply<T> = oneshot::Sender<Result<T>>;
 
 pub enum ToEngineActor {
-    AddPeer { node_info: NodeInfo },
-    NeighborDown { topic: TopicId, peer: PublicKey },
-    NeighborUp { topic: TopicId, peer: PublicKey },
-    Shutdown { reply: oneshot::Sender<()> },
-    Subscribe { topic: TopicId },
+    AddPeer {
+        node_info: NodeInfo,
+    },
+    NeighborDown {
+        topic: TopicId,
+        peer: PublicKey,
+    },
+    NeighborUp {
+        topic: TopicId,
+        peer: PublicKey,
+    },
+    Subscribe {
+        topic: TopicId,
+    },
+    Received {
+        bytes: Vec<u8>,
+        delivered_from: PublicKey,
+        topic: TopicId,
+    },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
 }
 
 pub struct EngineActor {
@@ -75,7 +72,7 @@ pub struct EngineActor {
 
     /// Identifier for the whole network. This serves as the topic for the network-wide gossip
     /// overlay.
-    network_id: NetworkId,
+    network_id: TopicId,
 
     /// List of inactive subscriptions we've announced to be interested in. We will use the
     /// network-wide gossip overlay to announce our topic interests and hopefully find peers we can
@@ -92,7 +89,7 @@ impl EngineActor {
         gossip: Gossip,
         gossip_actor_tx: mpsc::Sender<ToGossipActor>,
         inbox: mpsc::Receiver<ToEngineActor>,
-        network_id: NetworkId,
+        network_id: TopicId,
     ) -> Self {
         Self {
             endpoint,
@@ -136,13 +133,15 @@ impl EngineActor {
             tokio::select! {
                 biased;
                 msg = self.inbox.recv() => {
-                    let msg = msg.context("to_actor closed")?;
+                    let msg = msg.context("inbox closed")?;
                     match msg {
                         ToEngineActor::Shutdown { reply } => {
                             break Ok(reply);
                         }
                         msg => {
-                            self.on_actor_message(msg).await;
+                            if let Err(err) = self.on_actor_message(msg).await {
+                                break Err(err);
+                            }
                         }
                     }
                 },
@@ -156,7 +155,7 @@ impl EngineActor {
         }
     }
 
-    async fn on_actor_message(&mut self, msg: ToEngineActor) {
+    async fn on_actor_message(&mut self, msg: ToEngineActor) -> Result<()> {
         match msg {
             ToEngineActor::AddPeer { node_info } => {
                 self.add_peer(node_info);
@@ -172,10 +171,19 @@ impl EngineActor {
             ToEngineActor::Subscribe { topic } => {
                 self.subscribe(topic);
             }
+            ToEngineActor::Received {
+                bytes,
+                delivered_from,
+                topic,
+            } => {
+                self.on_gossip_message(bytes, delivered_from, topic)?;
+            }
             ToEngineActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
             }
         }
+
+        Ok(())
     }
 
     /// Adds a new peer to our address book.
@@ -215,7 +223,7 @@ impl EngineActor {
 
         self.gossip_actor_tx
             .send(ToGossipActor::Join {
-                topic: self.network_id.into(),
+                topic: self.network_id,
                 peers,
             })
             .await?;
@@ -223,7 +231,7 @@ impl EngineActor {
         Ok(())
     }
 
-    async fn subscribe(&mut self, topic: TopicId) {
+    fn subscribe(&mut self, topic: TopicId) {
         if self.subscriptions.contains(&topic) {
             return;
         }
@@ -240,18 +248,56 @@ impl EngineActor {
         topics.extend(&self.pending_subscriptions);
         topics.extend(&self.subscriptions);
         topics.sort_unstable();
-
         self.broadcast_to_network(NetworkMessage::Announcement(topics))
             .await?;
-
         Ok(())
     }
 
     async fn broadcast_to_network(&mut self, message: NetworkMessage) -> Result<()> {
+        if !self.has_joined_topic(self.network_id).await? {
+            debug!(
+                "Has not joined network id {} yet, skip broadcasting",
+                self.network_id
+            );
+            return Ok(());
+        }
+        debug!("broadcast to network {:?}", message);
         let bytes = message.to_bytes()?;
         self.gossip
-            .broadcast(self.network_id.into(), bytes.into())
+            .broadcast_neighbors(self.network_id, bytes.into())
             .await?;
+        Ok(())
+    }
+
+    async fn has_joined_topic(&mut self, topic: TopicId) -> Result<bool> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.gossip_actor_tx
+            .send(ToGossipActor::HasJoined { topic, reply })
+            .await
+            .ok();
+        reply_rx.await?
+    }
+
+    fn on_gossip_message(
+        &mut self,
+        bytes: Vec<u8>,
+        delivered_from: PublicKey,
+        topic: TopicId,
+    ) -> Result<()> {
+        // Message coming from network-wide gossip overlay
+        if topic == self.network_id {
+            let message = NetworkMessage::from_bytes(&bytes)
+                .context("parsing network-wide gossip message")?;
+            match message {
+                NetworkMessage::Announcement(topics) => {
+                    debug!(
+                        "Received announcement of peer {} {:?}",
+                        delivered_from, topics
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
