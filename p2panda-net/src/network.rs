@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
@@ -20,12 +20,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 use url::Url;
 
-use crate::config::{Config, DEFAULT_BIND_PORT};
+use crate::config::Config;
 use crate::discovery::{Discovery, DiscoveryMap};
+use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
-use crate::peers::Peers;
 use crate::protocols::{ProtocolHandler, ProtocolMap};
-use crate::{LocalDiscovery, NetworkId, TopicId};
+use crate::{NetworkId, TopicId};
+
+/// Default port of a node socket.
+const DEFAULT_BIND_PORT: u16 = 2022;
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -212,7 +215,7 @@ impl NetworkBuilder {
             &node_addr.info,
         );
 
-        let peers = Peers::new(endpoint.clone(), gossip.clone());
+        let engine = Engine::new(endpoint.clone(), gossip.clone());
         let handshake = Handshake::new(gossip.clone());
 
         let inner = Arc::new(NetworkInner {
@@ -221,7 +224,7 @@ impl NetworkBuilder {
             endpoint: endpoint.clone(),
             gossip: gossip.clone(),
             network_id: self.network_id,
-            peers,
+            engine,
             secret_key,
         });
 
@@ -280,7 +283,7 @@ struct NetworkInner {
     endpoint: Endpoint,
     gossip: Gossip,
     network_id: NetworkId,
-    peers: Peers,
+    engine: Engine,
     secret_key: SecretKey,
 }
 
@@ -350,8 +353,8 @@ impl NetworkInner {
                 Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
                     match event {
                         Ok(event) => {
-                            if let Err(err) = self.peers.add_peer(event.node_info).await {
-                                error!("Peers handler failed on add_peer: {err:?}");
+                            if let Err(err) = self.engine.add_peer(event.node_info).await {
+                                error!("Engine failed on add_peer: {err:?}");
                                 break;
                             }
                         }
@@ -400,8 +403,8 @@ impl NetworkInner {
             self.endpoint
                 .clone()
                 .close(1u32.into(), b"provider terminating"),
-            // Shutdown peers handler
-            self.peers.shutdown(),
+            // Shutdown engine
+            self.engine.shutdown(),
             // Shutdown protocol handlers
             protocols.shutdown(),
         );

@@ -25,6 +25,7 @@ p2panda-core = { path = "../../p2panda/p2panda-core" }
 serde = { version = "1.0.203", features = ["derive"] }
 socket2 = { version = "0.5.7", optional = true }
 tokio = { version = "1.38.0", features = ["full"] }
+tokio-stream = { version = "0.1.15", features = ["sync"] }
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

@@ -3,42 +3,55 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use iroh_gossip::net::Gossip;
-use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{dns::node_info::NodeInfo, endpoint};
+use iroh_gossip::proto::TopicId;
+use iroh_net::dns::node_info::NodeInfo;
+use iroh_net::key::PublicKey;
 use iroh_net::{Endpoint, NodeId};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, error_span, trace, warn, Instrument};
+use tracing::{debug, error};
 
-pub struct PeerState {}
+use super::gossip::{GossipActor, ToGossipActor};
 
-enum ToPeersActor {
+pub enum ToEngineActor {
     AddPeer { node_info: NodeInfo },
     Shutdown { reply: oneshot::Sender<()> },
+    NeighborUp { topic: TopicId, peer: PublicKey },
+    NeighborDown { topic: TopicId, peer: PublicKey },
 }
 
-struct PeersActor {
-    inbox: mpsc::Receiver<ToPeersActor>,
-    known_peers: HashMap<NodeId, NodeInfo>,
+pub struct EngineActor {
+    inbox: mpsc::Receiver<ToEngineActor>,
     endpoint: Endpoint,
-    gossip: Gossip,
+    gossip_actor_tx: mpsc::Sender<ToGossipActor>,
+    known_peers: HashMap<NodeId, NodeInfo>,
 }
 
-impl PeersActor {
-    pub fn new(inbox: mpsc::Receiver<ToPeersActor>, endpoint: Endpoint, gossip: Gossip) -> Self {
+impl EngineActor {
+    pub fn new(
+        inbox: mpsc::Receiver<ToEngineActor>,
+        gossip_actor_tx: mpsc::Sender<ToGossipActor>,
+        endpoint: Endpoint,
+    ) -> Self {
         Self {
             inbox,
-            known_peers: HashMap::new(),
             endpoint,
-            gossip,
+            gossip_actor_tx,
+            known_peers: HashMap::new(),
         }
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(mut self, mut gossip_actor: GossipActor) -> Result<()> {
+        let gossip_handle = tokio::task::spawn(async move {
+            if let Err(err) = gossip_actor.run().await {
+                error!("gossip recv actor failed: {err:?}");
+            }
+        });
+
         let shutdown_completed_signal = self.run_inner().await;
         if let Err(err) = self.shutdown().await {
             error!(?err, "Error during shutdown");
         }
+        gossip_handle.await?;
         drop(self);
         match shutdown_completed_signal {
             Ok(reply_tx) => {
@@ -56,7 +69,7 @@ impl PeersActor {
                 msg = self.inbox.recv() => {
                     let msg = msg.context("to_actor closed")?;
                     match msg {
-                        ToPeersActor::Shutdown { reply } => {
+                        ToEngineActor::Shutdown { reply } => {
                             break Ok(reply);
                         }
                         msg => {
@@ -68,14 +81,16 @@ impl PeersActor {
         }
     }
 
-    async fn on_actor_message(&mut self, msg: ToPeersActor) {
+    async fn on_actor_message(&mut self, msg: ToEngineActor) {
         match msg {
-            ToPeersActor::AddPeer { node_info } => {
+            ToEngineActor::AddPeer { node_info } => {
                 self.add_peer(node_info);
             }
-            ToPeersActor::Shutdown { .. } => {
+            ToEngineActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
             }
+            ToEngineActor::NeighborUp { topic, peer } => todo!(),
+            ToEngineActor::NeighborDown { topic, peer } => todo!(),
         }
     }
 
@@ -99,44 +114,11 @@ impl PeersActor {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
-        Ok(())
-    }
-}
+        self.gossip_actor_tx
+            .send(ToGossipActor::Shutdown)
+            .await
+            .ok();
 
-pub struct Peers {
-    actor_tx: mpsc::Sender<ToPeersActor>,
-    #[allow(dead_code)]
-    actor_handle: SharedAbortingJoinHandle<()>,
-}
-
-impl Peers {
-    pub fn new(endpoint: Endpoint, gossip: Gossip) -> Self {
-        let (actor_tx, actor_rx) = mpsc::channel(64);
-        let actor = PeersActor::new(actor_rx, endpoint, gossip);
-
-        let actor_handle = tokio::task::spawn(async move {
-            if let Err(err) = actor.run().await {
-                error!("peers actor failed: {err:?}");
-            }
-        });
-
-        Self {
-            actor_tx,
-            actor_handle: actor_handle.into(),
-        }
-    }
-
-    pub async fn add_peer(&self, node_info: NodeInfo) -> Result<()> {
-        self.actor_tx
-            .send(ToPeersActor::AddPeer { node_info })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn shutdown(&self) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.actor_tx.send(ToPeersActor::Shutdown { reply }).await?;
-        reply_rx.await?;
         Ok(())
     }
 }

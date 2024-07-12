@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-#![allow(unused)]
 pub mod config;
 pub mod discovery;
+mod engine;
 mod handshake;
 pub mod network;
-mod peers;
 mod protocols;
 
 #[cfg(feature = "mdns")]
