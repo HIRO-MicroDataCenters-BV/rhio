@@ -38,8 +38,8 @@ impl MapMut for MinioStore {
 }
 
 impl Map for MinioStore {
-    // @TODO: this uses the memory store from iroh_blobs::store::mem but we will probably
-    // need to implement our own.
+    // @TODO: this uses `Entry` from iroh_blobs::store::mem but we will probably
+    // need to make our own custom struct.
     type Entry = Entry;
 
     async fn get(&self, hash: &Hash) -> io::Result<Option<Self::Entry>> {
