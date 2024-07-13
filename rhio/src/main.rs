@@ -10,7 +10,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use futures_lite::StreamExt;
 use iroh_base::node_addr::AddrInfoOptions;
-use iroh_net::defaults::EU_RELAY_HOSTNAME;
+use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
 use iroh_net::relay::{RelayMode, RelayUrl};
 use tracing::info;
 

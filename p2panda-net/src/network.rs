@@ -399,6 +399,10 @@ impl Network {
         Ok((Sender {}, Receiver {}))
     }
 
+    pub fn endpoint(&self) -> &Endpoint {
+        &self.inner.endpoint
+    }
+
     // Shutdown of the whole network and all subscriptions and connections
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
