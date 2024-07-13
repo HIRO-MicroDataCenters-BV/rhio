@@ -11,12 +11,14 @@ flume = "0.11.0"
 futures = "0.3.30"
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
-iroh-base = "0.19.0"
-iroh-blobs = { version = "0.19.0", features = ["downloader"], default-features = false }
-iroh-gossip = "0.19.0"
+iroh-base = "0.20.0"
+iroh-blobs = { version = "0.20.0", features = ["downloader"], default-features = false }
+iroh-gossip = "0.20.0"
 iroh-io = "0.6.0"
-iroh-net = "0.19.0"
+iroh-net = "0.20.0"
 num_cpus = "1.16.0"
+p2panda-net = {path = "../p2panda-net"}
+p2panda-core = {path = "../../p2panda/p2panda-core"}
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = "0.7.11"

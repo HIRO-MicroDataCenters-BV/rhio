@@ -1842,9 +1842,9 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 
 [[package]]
 name = "iroh-base"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23110fcb84b1b8c797768db88d1ef0696f53a249d0c6aa78bf6a5fedef19c9b2"
+checksum = "3250b5f701f733c73bd936b200ee95b95b0efc226a56ad2aab73f58a6b8e0541"
 dependencies = [
  "aead",
  "anyhow",
@@ -1870,34 +1870,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iroh-base"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3250b5f701f733c73bd936b200ee95b95b0efc226a56ad2aab73f58a6b8e0541"
-dependencies = [
- "aead",
- "anyhow",
- "crypto_box",
- "data-encoding",
- "derive_more",
- "ed25519-dalek",
- "getrandom",
- "hex",
- "iroh-blake3",
- "once_cell",
- "postcard",
- "rand",
- "rand_core",
- "serde",
- "serde-error",
- "ssh-key",
- "thiserror",
- "ttl_cache",
- "url",
- "zeroize",
-]
-
-[[package]]
 name = "iroh-blake3"
 version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1912,9 +1884,9 @@ dependencies = [
 
 [[package]]
 name = "iroh-blobs"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed4dbc80349ff769c0bc0f634f747130de2e3e201ff52b6266ca5459e8ebbb44"
+checksum = "76c4ffe9b98eb1f71d8ee9e4b541a6f6ab342731ba9b90e6d12d6713a42be33f"
 dependencies = [
  "anyhow",
  "bao-tree",
@@ -1927,9 +1899,9 @@ dependencies = [
  "genawaiter",
  "hashlink",
  "hex",
- "iroh-base 0.19.0",
+ "iroh-base",
  "iroh-io",
- "iroh-net 0.19.0",
+ "iroh-net",
  "num_cpus",
  "parking_lot",
  "postcard",
@@ -1947,32 +1919,6 @@ dependencies = [
 
 [[package]]
 name = "iroh-gossip"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2dcd328c13e90bb86deebd76cf5e922caca31f5cc8bbfeeda52657c94f145b"
-dependencies = [
- "anyhow",
- "bytes",
- "derive_more",
- "ed25519-dalek",
- "futures-lite 2.3.0",
- "genawaiter",
- "indexmap",
- "iroh-base 0.19.0",
- "iroh-blake3",
- "iroh-metrics 0.19.0",
- "iroh-net 0.19.0",
- "postcard",
- "rand",
- "rand_core",
- "serde",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "iroh-gossip"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3287dd543a4d12d6d2410fd2833cde5a497e01176f7e85c22b6224813fc40885"
@@ -1986,10 +1932,10 @@ dependencies = [
  "futures-util",
  "genawaiter",
  "indexmap",
- "iroh-base 0.20.0",
+ "iroh-base",
  "iroh-blake3",
- "iroh-metrics 0.20.0",
- "iroh-net 0.20.0",
+ "iroh-metrics",
+ "iroh-net",
  "postcard",
  "rand",
  "rand_core",
@@ -2014,27 +1960,6 @@ dependencies = [
 
 [[package]]
 name = "iroh-metrics"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c29fb720e7327eefd813adcdd7ccae550dcef601ec9f6a77b97491eb3bd6bb18"
-dependencies = [
- "anyhow",
- "erased_set",
- "http-body-util",
- "hyper 1.4.0",
- "hyper-util",
- "once_cell",
- "prometheus-client",
- "reqwest 0.12.5",
- "serde",
- "struct_iterable",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "iroh-metrics"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c53025ea97928ae0cfa032c795c66bfcd6adb00ef7083812c4f4f84d047a239"
@@ -2052,83 +1977,6 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "iroh-net"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ff7e91d529120256fa2f74026aebd201ba0743b8ab2a8c486c39b17ed606c99"
-dependencies = [
- "aead",
- "anyhow",
- "axum",
- "backoff",
- "base64 0.22.1",
- "bytes",
- "der",
- "derive_more",
- "duct",
- "flume",
- "futures-buffered",
- "futures-concurrency",
- "futures-lite 2.3.0",
- "futures-sink",
- "futures-util",
- "governor",
- "hex",
- "hickory-proto",
- "hickory-resolver",
- "hostname",
- "http 1.1.0",
- "http-body-util",
- "hyper 1.4.0",
- "hyper-util",
- "igd-next",
- "iroh-base 0.19.0",
- "iroh-metrics 0.19.0",
- "iroh-quinn",
- "iroh-quinn-proto",
- "iroh-quinn-udp",
- "libc",
- "netdev 0.27.0",
- "netlink-packet-core",
- "netlink-packet-route",
- "netlink-sys",
- "num_enum",
- "once_cell",
- "parking_lot",
- "pin-project",
- "pkarr 1.1.5",
- "postcard",
- "rand",
- "rand_core",
- "rcgen",
- "reqwest 0.12.5",
- "ring",
- "rtnetlink",
- "rustls 0.21.12",
- "rustls-webpki 0.101.7",
- "serde",
- "smallvec",
- "socket2",
- "strum",
- "stun-rs",
- "surge-ping",
- "thiserror",
- "time",
- "tokio",
- "tokio-rustls 0.24.1",
- "tokio-rustls-acme",
- "tokio-util",
- "tracing",
- "url",
- "watchable",
- "webpki-roots 0.25.4",
- "windows 0.51.1",
- "wmi",
- "x509-parser 0.15.1",
- "z32",
 ]
 
 [[package]]
@@ -2162,13 +2010,13 @@ dependencies = [
  "hyper 1.4.0",
  "hyper-util",
  "igd-next",
- "iroh-base 0.20.0",
- "iroh-metrics 0.20.0",
+ "iroh-base",
+ "iroh-metrics",
  "iroh-quinn",
  "iroh-quinn-proto",
  "iroh-quinn-udp",
  "libc",
- "netdev 0.29.0",
+ "netdev",
  "netlink-packet-core",
  "netlink-packet-route",
  "netlink-sys",
@@ -2176,7 +2024,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "pin-project",
- "pkarr 2.0.3",
+ "pkarr",
  "postcard",
  "rand",
  "rand_core",
@@ -2422,23 +2270,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
 dependencies = [
  "getrandom",
-]
-
-[[package]]
-name = "netdev"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e12d9f49b8d4b9d7f97525ce65f6527079e549e8b2f010f15b921764e73d4baa"
-dependencies = [
- "dlopen2",
- "libc",
- "memalloc",
- "netlink-packet-core",
- "netlink-packet-route",
- "netlink-sys",
- "once_cell",
- "system-configuration 0.6.0",
- "windows 0.54.0",
 ]
 
 [[package]]
@@ -2767,10 +2598,10 @@ dependencies = [
  "futures-lite 2.3.0",
  "futures-util",
  "hickory-proto",
- "iroh-base 0.20.0",
- "iroh-gossip 0.20.0",
+ "iroh-base",
+ "iroh-gossip",
  "iroh-io",
- "iroh-net 0.20.0",
+ "iroh-net",
  "p2panda-core",
  "serde",
  "socket2",
@@ -2970,23 +2801,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "pkarr"
-version = "1.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "242ae92dfb9d2ba3aaa9caf4723e72043bc50729ad05a763771771ba03196ffb"
-dependencies = [
- "bytes",
- "ed25519-dalek",
- "rand",
- "reqwest 0.11.27",
- "self_cell",
- "simple-dns",
- "thiserror",
- "url",
- "z32",
-]
 
 [[package]]
 name = "pkarr"
@@ -3625,12 +3439,14 @@ dependencies = [
  "futures",
  "futures-lite 2.3.0",
  "futures-util",
- "iroh-base 0.19.0",
+ "iroh-base",
  "iroh-blobs",
- "iroh-gossip 0.19.0",
+ "iroh-gossip",
  "iroh-io",
- "iroh-net 0.19.0",
+ "iroh-net",
  "num_cpus",
+ "p2panda-core",
+ "p2panda-net",
  "serde",
  "tokio",
  "tokio-util",
@@ -5024,16 +4840,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows"
-version = "0.54.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9252e5725dbed82865af151df558e754e4a3c2c30818359eb17465f1346a1b49"
-dependencies = [
- "windows-core 0.54.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
 name = "windows-core"
 version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5048,16 +4854,6 @@ version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
 dependencies = [
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.54.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12661b9c89351d684a50a8a643ce5f608e20243b9fb84687800163429f161d65"
-dependencies = [
- "windows-result",
  "windows-targets 0.52.6",
 ]
 
@@ -5081,15 +4877,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.68",
-]
-
-[[package]]
-name = "windows-result"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e383302e8ec8515204254685643de10811af0ed97ea37210dc26fb0032647f8"
-dependencies = [
- "windows-targets 0.52.6",
 ]
 
 [[package]]
