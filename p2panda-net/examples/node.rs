@@ -28,13 +28,15 @@ async fn main() -> Result<()> {
     let (tx, mut rx) = network.subscribe(topic_id).await?;
 
     tokio::task::spawn(async move {
+        let mut counter: usize = 0;
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             tx.send(InEvent::Message {
-                bytes: vec![1, 2, 3],
+                bytes: counter.to_le_bytes().to_vec(),
             })
             .await
             .ok();
+            counter += 1;
         }
     });
 

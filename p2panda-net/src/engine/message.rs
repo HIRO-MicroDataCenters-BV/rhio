@@ -11,7 +11,7 @@ pub enum NetworkMessage {
 
 impl NetworkMessage {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let message: Self = ciborium::de::from_reader(&bytes[..])?;
+        let message: Self = ciborium::de::from_reader(bytes)?;
         Ok(message)
     }
 

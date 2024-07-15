@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+#[allow(clippy::module_inception)]
 mod engine;
 mod gossip;
 mod message;
@@ -12,9 +13,8 @@ use iroh_net::Endpoint;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use engine::{EngineActor, ToEngineActor};
-use gossip::GossipActor;
-
+use crate::engine::engine::{EngineActor, ToEngineActor};
+use crate::engine::gossip::GossipActor;
 use crate::network::{InEvent, OutEvent};
 use crate::{NetworkId, TopicId};
 

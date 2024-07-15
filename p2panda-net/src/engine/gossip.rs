@@ -9,16 +9,14 @@ use iroh_gossip::net::{Event, Gossip};
 use iroh_gossip::proto::TopicId;
 use iroh_net::key::PublicKey;
 use tokio::sync::broadcast::Receiver;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamMap;
 use tracing::{error, warn};
 
-use super::engine::ToEngineActor;
-
-type Reply<T> = oneshot::Sender<Result<T>>;
+use crate::engine::ToEngineActor;
 
 #[derive(Debug)]
 pub enum ToGossipActor {
@@ -98,8 +96,8 @@ impl GossipActor {
             ToGossipActor::Join { topic, peers } => {
                 let gossip = self.gossip.clone();
                 let fut = async move {
-                    let stream = gossip.subscribe(topic.into()).await?;
-                    let _topic = gossip.join(topic.into(), peers).await?.await?;
+                    let stream = gossip.subscribe(topic).await?;
+                    let _topic = gossip.join(topic, peers).await?.await?;
                     Ok(stream)
                 };
                 let fut = fut.map(move |res| (topic, res));
@@ -107,13 +105,13 @@ impl GossipActor {
                 self.pending_joins.spawn(fut);
             }
             ToGossipActor::Leave { topic } => {
-                self.gossip.quit(topic.into()).await?;
+                self.gossip.quit(topic).await?;
                 self.joined.remove(&topic);
                 self.want_join.remove(&topic);
             }
             ToGossipActor::Shutdown => {
                 for topic in self.joined.iter() {
-                    self.gossip.quit((*topic).into()).await.ok();
+                    self.gossip.quit(*topic).await.ok();
                 }
                 return Ok(false);
             }
@@ -163,11 +161,7 @@ impl GossipActor {
                     .send(ToEngineActor::NeighborUp { topic, peer })
                     .await?;
             }
-            Event::NeighborDown(peer) => {
-                self.engine_actor_tx
-                    .send(ToEngineActor::NeighborDown { topic, peer })
-                    .await?;
-            }
+            _ => (),
         }
         Ok(())
     }
