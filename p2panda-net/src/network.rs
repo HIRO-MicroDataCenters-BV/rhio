@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
@@ -20,14 +20,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 use url::Url;
 
+use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::peers::Peers;
 use crate::protocols::{ProtocolHandler, ProtocolMap};
-use crate::{NetworkId, TopicId};
-
-/// Default port of a node socket.
-const DEFAULT_BIND_PORT: u16 = 2022;
+use crate::{LocalDiscovery, NetworkId, TopicId};
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -38,6 +36,7 @@ const MAX_CONNECTIONS: u32 = 1024;
 /// How long we wait at most for some endpoints to be discovered.
 const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, PartialEq)]
 pub enum RelayMode {
     Disabled,
     Custom(Vec<RelayNode>),
@@ -70,6 +69,41 @@ impl NetworkBuilder {
             relay_mode: RelayMode::Disabled,
             secret_key: None,
         }
+    }
+
+    // Instantiate a network builder from a network configuration.
+    pub fn from_config(config: Config) -> Self {
+        let private_key = if let Some(private_key) = config.private_key {
+            private_key
+        } else {
+            PrivateKey::new()
+        };
+
+        let mut network_builder = Self::new(config.network_key)
+            .private_key(private_key)
+            .bind_port(config.bind_port);
+
+        #[cfg(feature = "mdns")]
+        if config.local_discovery {
+            // @TODO: When does this error, maybe we should prefer that from_config returns
+            // a result.
+            if let Ok(handler) = LocalDiscovery::new() {
+                network_builder = network_builder.discovery(handler)
+            }
+        };
+
+        for (public_key, addresses) in config.direct_node_addresses {
+            network_builder = network_builder.direct_address(public_key, addresses)
+        }
+
+        for url in config.relay_addresses {
+            // If a port is not given we fallback to 0 which signifies the default stun port
+            // should be used.
+            let port = url.port().unwrap_or(0);
+            network_builder = network_builder.relay(url, false, port)
+        }
+
+        network_builder
     }
 
     pub fn bind_port(mut self, port: u16) -> Self {
@@ -463,3 +497,53 @@ async fn handle_connection(
 
 // @TODO: This needs more thought + probably should move to `p2panda-sync`
 pub trait Syncing {}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+
+    use iroh_net::key::{PublicKey, SecretKey};
+    use iroh_net::relay::{RelayNode, RelayUrl};
+    use p2panda_core::PrivateKey;
+    use url::Url;
+
+    use crate::config::Config;
+    use crate::{NetworkBuilder, RelayMode};
+
+    #[tokio::test]
+    async fn config() {
+        let private_key = PrivateKey::new();
+        let direct_node_public_key = PrivateKey::new().public_key();
+        let relay_address: Url = "https://example.net".parse().unwrap();
+
+        let config = Config {
+            bind_port: 2024,
+            network_key: [1; 32],
+            private_key: Some(private_key.clone()),
+            local_discovery: true,
+            direct_node_addresses: HashMap::from([(
+                direct_node_public_key,
+                vec!["0.0.0.0:2026".parse().unwrap()],
+            )]),
+            relay_addresses: vec![relay_address.clone()],
+        };
+
+        let builder = NetworkBuilder::from_config(config);
+
+        assert_eq!(builder.bind_port, Some(2024));
+        assert_eq!(builder.network_id, [1; 32]);
+        assert_eq!(
+            builder.secret_key.map(|sk| sk.public()),
+            Some(SecretKey::from_bytes(private_key.as_bytes()).public())
+        );
+        assert_eq!(builder.direct_node_addresses.len(), 1);
+        let relay_node = RelayNode {
+            url: RelayUrl::from(relay_address),
+            stun_only: false,
+            stun_port: 0,
+        };
+        assert_eq!(builder.relay_mode, RelayMode::Custom(vec![relay_node]));
+        assert!(builder.discovery.is_some());
+    }
+}

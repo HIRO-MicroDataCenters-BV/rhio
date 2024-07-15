@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #![allow(unused)]
+pub mod config;
 pub mod discovery;
 mod handshake;
 pub mod network;
