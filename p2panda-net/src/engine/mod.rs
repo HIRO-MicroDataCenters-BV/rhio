@@ -15,10 +15,8 @@ use tracing::error;
 use engine::{EngineActor, ToEngineActor};
 use gossip::GossipActor;
 
-use crate::{
-    network::{InEvent, OutEvent},
-    NetworkId, TopicId,
-};
+use crate::network::{InEvent, OutEvent};
+use crate::{NetworkId, TopicId};
 
 pub struct Engine {
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
@@ -59,15 +57,6 @@ impl Engine {
         Ok(())
     }
 
-    pub async fn shutdown(&self) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.engine_actor_tx
-            .send(ToEngineActor::Shutdown { reply })
-            .await?;
-        reply_rx.await?;
-        Ok(())
-    }
-
     pub async fn subscribe(
         &self,
         topic: TopicId,
@@ -81,6 +70,15 @@ impl Engine {
                 in_rx,
             })
             .await?;
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.engine_actor_tx
+            .send(ToEngineActor::Shutdown { reply })
+            .await?;
+        reply_rx.await?;
         Ok(())
     }
 }

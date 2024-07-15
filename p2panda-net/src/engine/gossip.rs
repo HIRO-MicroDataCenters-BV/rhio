@@ -5,12 +5,11 @@ use std::collections::HashSet;
 use anyhow::{Context, Result};
 use futures_lite::StreamExt;
 use futures_util::FutureExt;
-use iroh_gossip::net::Event;
-use iroh_gossip::net::Gossip;
+use iroh_gossip::net::{Event, Gossip};
 use iroh_gossip::proto::TopicId;
 use iroh_net::key::PublicKey;
-use tokio::sync::oneshot;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast::Receiver;
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
@@ -27,10 +26,6 @@ pub enum ToGossipActor {
         topic: TopicId,
         peers: Vec<PublicKey>,
     },
-    HasJoined {
-        topic: TopicId,
-        reply: Reply<bool>,
-    },
     Leave {
         topic: TopicId,
     },
@@ -38,13 +33,13 @@ pub enum ToGossipActor {
 }
 
 pub struct GossipActor {
-    inbox: mpsc::Receiver<ToGossipActor>,
-    gossip: Gossip,
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
-    joined: HashSet<TopicId>,
-    want_join: HashSet<TopicId>,
-    pending_joins: JoinSet<(TopicId, Result<broadcast::Receiver<Event>>)>,
+    gossip: Gossip,
     gossip_events: StreamMap<TopicId, BroadcastStream<Event>>,
+    inbox: mpsc::Receiver<ToGossipActor>,
+    joined: HashSet<TopicId>,
+    pending_joins: JoinSet<(TopicId, Result<broadcast::Receiver<Event>>)>,
+    want_join: HashSet<TopicId>,
 }
 
 impl GossipActor {
@@ -54,13 +49,13 @@ impl GossipActor {
         engine_actor_tx: mpsc::Sender<ToEngineActor>,
     ) -> Self {
         Self {
-            inbox,
-            gossip,
             engine_actor_tx,
-            joined: Default::default(),
-            want_join: Default::default(),
-            pending_joins: Default::default(),
+            gossip,
             gossip_events: Default::default(),
+            inbox,
+            joined: Default::default(),
+            pending_joins: Default::default(),
+            want_join: Default::default(),
         }
     }
 
@@ -74,18 +69,16 @@ impl GossipActor {
                     }
                 },
                 msg = self.inbox.recv() => {
-                    let msg = msg.context("to_actor closed")?;
+                    let msg = msg.context("inbox closed")?;
                     if !self.on_actor_message(msg).await.context("on_actor_message")? {
                         break;
                     }
-                }
+                },
                 Some(res) = self.pending_joins.join_next(), if !self.pending_joins.is_empty() => {
                     let (topic, res) = res.context("pending_joins closed")?;
                     match res {
                         Ok(stream) => {
-                            self.joined.insert(topic);
-                            let stream = BroadcastStream::new(stream);
-                            self.gossip_events.insert(topic, stream);
+                            self.on_joined(topic, stream).await?;
                         },
                         Err(err) => {
                             if self.want_join.contains(&topic) {
@@ -93,8 +86,7 @@ impl GossipActor {
                             }
                         }
                     }
-                }
-
+                },
             }
         }
 
@@ -113,10 +105,6 @@ impl GossipActor {
                 let fut = fut.map(move |res| (topic, res));
                 self.want_join.insert(topic);
                 self.pending_joins.spawn(fut);
-            }
-            ToGossipActor::HasJoined { topic, reply } => {
-                let result = self.joined.contains(&topic) || self.want_join.contains(&topic);
-                reply.send(Ok(result)).ok();
             }
             ToGossipActor::Leave { topic } => {
                 self.gossip.quit(topic.into()).await?;
@@ -181,6 +169,18 @@ impl GossipActor {
                     .await?;
             }
         }
+        Ok(())
+    }
+
+    async fn on_joined(&mut self, topic: TopicId, stream: Receiver<Event>) -> Result<()> {
+        self.joined.insert(topic);
+        let stream = BroadcastStream::new(stream);
+        self.gossip_events.insert(topic, stream);
+
+        self.engine_actor_tx
+            .send(ToEngineActor::TopicJoined { topic })
+            .await?;
+
         Ok(())
     }
 }

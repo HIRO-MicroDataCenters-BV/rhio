@@ -15,11 +15,10 @@ use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
-use tokio::sync::broadcast::{self, Receiver, Sender};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, error_span, info, warn, Instrument};
+use tracing::{debug, error, error_span, warn, Instrument};
 use url::Url;
 
 use crate::config::Config;
