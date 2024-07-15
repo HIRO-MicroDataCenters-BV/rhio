@@ -29,7 +29,7 @@ use tracing::{debug, error, error_span, warn, Instrument};
 
 use crate::blobs::{add_from_path, download_queued, BlobAddPathResponse, BlobDownloadResponse};
 use crate::config::Config;
-use crate::protocol::{BlobsProtocol, BubuProtocol, ProtocolMap, BUBU_ALPN};
+use crate::protocol::{BlobsProtocol, BubuProtocol, BUBU_ALPN};
 
 const MAX_RPC_STREAMS: u32 = 1024;
 const MAX_CONNECTIONS: u32 = 1024;
@@ -55,7 +55,7 @@ impl Node<MemoryStore> {
             .bind_port(config.bind_port)
             .discovery(LocalDiscovery::new()?)
             .gossip(Default::default());
-            // @TODO: configure relay node(s).
+        // @TODO: configure relay node(s).
 
         for direct_node in &config.direct_node_addresses {
             // @TODO: update config to directly parse to p2panda types.
@@ -70,9 +70,16 @@ impl Node<MemoryStore> {
             )
         }
 
-        let network = network_builder.build().await?;
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let db = MemoryStore::new();
+
+        network_builder = network_builder.protocol(
+            BLOBS_ALPN,
+            BlobsProtocol::new(db.clone(), pool_handle.clone()),
+        );
+
+        let network = network_builder.build().await?;
+
         let downloader =
             Downloader::new(db.clone(), network.endpoint().clone(), pool_handle.clone());
 

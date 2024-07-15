@@ -23,7 +23,7 @@ use url::Url;
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::peers::Peers;
-use crate::protocols::ProtocolMap;
+use crate::protocols::{ProtocolHandler, ProtocolMap};
 use crate::{NetworkId, TopicId};
 
 /// Default port of a node socket.
@@ -52,6 +52,7 @@ pub struct NetworkBuilder {
     discovery: Option<DiscoveryMap>,
     gossip_config: Option<GossipConfig>,
     network_id: NetworkId,
+    protocols: ProtocolMap,
     relay_mode: RelayMode,
     secret_key: Option<SecretKey>,
 }
@@ -65,6 +66,7 @@ impl NetworkBuilder {
             discovery: None,
             gossip_config: None,
             network_id,
+            protocols: Default::default(),
             relay_mode: RelayMode::Disabled,
             secret_key: None,
         }
@@ -143,7 +145,17 @@ impl NetworkBuilder {
         self
     }
 
-    pub async fn build(self) -> Result<Network> {
+    // Add protocols which this node will accept.
+    pub fn protocol(
+        mut self,
+        alpn: &'static [u8],
+        handler: impl ProtocolHandler + 'static,
+    ) -> Self {
+        self.protocols.insert(alpn, Arc::new(handler));
+        self
+    }
+
+    pub async fn build(mut self) -> Result<Network> {
         let secret_key = self.secret_key.unwrap_or(SecretKey::generate());
 
         // Build p2p endpoint and bind the QUIC socket
@@ -196,11 +208,10 @@ impl NetworkBuilder {
             secret_key,
         });
 
-        // Register protocols this node will accept
-        let mut protocols = ProtocolMap::default();
-        protocols.insert(GOSSIP_ALPN, Arc::new(gossip));
-        protocols.insert(HANDSHAKE_ALPN, Arc::new(handshake));
-        let protocols = Arc::new(protocols);
+        // Register core protocols all nodes accept
+        self.protocols.insert(GOSSIP_ALPN, Arc::new(gossip));
+        self.protocols.insert(HANDSHAKE_ALPN, Arc::new(handshake));
+        let protocols = Arc::new(self.protocols);
         if let Err(err) = inner.endpoint.set_alpns(protocols.alpns()) {
             inner.shutdown(protocols).await;
             return Err(err);
