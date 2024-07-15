@@ -1,7 +1,8 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use iroh_net::{NodeAddr as IrohNodeAddr, NodeId};
-use p2panda_core::{PrivateKey, PublicKey};
+use p2panda_core::PublicKey;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -17,7 +18,7 @@ pub type NodeAddr = (PublicKey, Vec<SocketAddr>);
 pub struct Config {
     pub bind_port: u16,
     pub network_key: [u8; 32],
-    pub private_key: Option<PrivateKey>,
+    pub private_key: Option<PathBuf>,
     pub direct_node_addresses: Vec<NodeAddr>,
     pub relay_addresses: Vec<Url>,
 }

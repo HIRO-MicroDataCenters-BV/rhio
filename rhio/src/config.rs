@@ -1,4 +1,5 @@
 use std::net::{AddrParseError, SocketAddr};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
@@ -27,6 +28,11 @@ struct Cli {
     #[arg(short = 'n', long, value_name = "\"NODE_ID|IP_ADDR|...\"", num_args = 0.., value_parser = parse_node_addr)]
     #[serde(skip_serializing_if = "Option::is_none")]
     direct_node_addresses: Option<Vec<NodeAddr>>,
+
+    #[arg(short = 'k', long, value_name = "PATH")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    private_key: Option<PathBuf>,
+
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {
@@ -51,6 +57,8 @@ pub fn load_config() -> Result<Config> {
         .merge(Env::raw())
         .merge(Serialized::defaults(Cli::parse()))
         .extract()?;
+
+    println!("{config:?}");
 
     Ok(config)
 }

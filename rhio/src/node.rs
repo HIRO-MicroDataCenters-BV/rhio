@@ -47,11 +47,12 @@ pub struct Node<D> {
 }
 
 impl Node<MemoryStore> {
-    pub async fn spawn(config: Config) -> Result<Self> {
+    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let db = MemoryStore::new();
 
         let mut network_builder = NetworkBuilder::from_config(config.clone())
+            .private_key(private_key)
             .discovery(LocalDiscovery::new()?)
             .gossip(Default::default())
             .protocol(
@@ -113,7 +114,8 @@ impl Node<MemoryStore> {
             .config
             .direct_node_addresses
             .iter()
-            .map(|(public_key, addresses)| to_node_addr(public_key, addresses)).collect();
+            .map(|(public_key, addresses)| to_node_addr(public_key, addresses))
+            .collect();
         let format = BlobFormat::Raw;
         let hash_and_format = HashAndFormat { hash, format };
 

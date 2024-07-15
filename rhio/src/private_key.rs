@@ -52,18 +52,20 @@ fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<(
 #[cfg(not(target_os = "unix"))]
 fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<()> {
     let mut file = File::create(path)?;
-    file.write_all(private_key.as_bytes())?;
+    file.write_all(private_key.to_hex().as_bytes())?;
     file.sync_all()?;
 
     Ok(())
 }
 
 /// Loads a private key from a file at the given path and derives ed25519 private key from it.
+///
+/// The private key in the file needs to be represented as a hex-encoded string.
 fn load_private_key_from_file(path: PathBuf) -> Result<PrivateKey> {
     let mut file = File::open(path)?;
-    let mut private_key_bytes = [0; 32];
-    file.read(&mut private_key_bytes)?;
-    let private_key = PrivateKey::from_bytes(&private_key_bytes);
+    let mut private_key_hex = String::new();
+    file.read_to_string(&mut private_key_hex)?;
+    let private_key = PrivateKey::try_from(&hex::decode(&private_key_hex)?[..])?;
     Ok(private_key)
 }
 

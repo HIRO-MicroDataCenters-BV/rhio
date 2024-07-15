@@ -73,15 +73,7 @@ impl NetworkBuilder {
 
     // Instantiate a network builder from a network configuration.
     pub fn from_config(config: Config) -> Self {
-        let private_key = if let Some(private_key) = config.private_key {
-            private_key
-        } else {
-            PrivateKey::new()
-        };
-
-        let mut network_builder = Self::new(config.network_key)
-            .private_key(private_key)
-            .bind_port(config.bind_port);
+        let mut network_builder = Self::new(config.network_key).bind_port(config.bind_port);
 
         for (public_key, addresses) in config.direct_node_addresses {
             network_builder = network_builder.direct_address(public_key, addresses)
@@ -493,6 +485,7 @@ pub trait Syncing {}
 mod tests {
     use std::collections::HashMap;
     use std::net::SocketAddr;
+    use std::path::PathBuf;
 
     use iroh_net::key::{PublicKey, SecretKey};
     use iroh_net::relay::{RelayNode, RelayUrl};
@@ -511,7 +504,7 @@ mod tests {
         let config = Config {
             bind_port: 2024,
             network_key: [1; 32],
-            private_key: Some(private_key.clone()),
+            private_key: Some(PathBuf::new().join("secret-key.txt")),
             direct_node_addresses: vec![(
                 direct_node_public_key,
                 vec!["0.0.0.0:2026".parse().unwrap()],
@@ -524,10 +517,7 @@ mod tests {
 
         assert_eq!(builder.bind_port, Some(2024));
         assert_eq!(builder.network_id, [1; 32]);
-        assert_eq!(
-            builder.secret_key.map(|sk| sk.public()),
-            Some(SecretKey::from_bytes(private_key.as_bytes()).public())
-        );
+        assert!(builder.secret_key.is_none());
         assert_eq!(builder.direct_node_addresses.len(), 1);
         let relay_node = RelayNode {
             url: RelayUrl::from(relay_address),
