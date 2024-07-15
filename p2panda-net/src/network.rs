@@ -83,15 +83,6 @@ impl NetworkBuilder {
             .private_key(private_key)
             .bind_port(config.bind_port);
 
-        #[cfg(feature = "mdns")]
-        if config.local_discovery {
-            // @TODO: When does this error, maybe we should prefer that from_config returns
-            // a result.
-            if let Ok(handler) = LocalDiscovery::new() {
-                network_builder = network_builder.discovery(handler)
-            }
-        };
-
         for (public_key, addresses) in config.direct_node_addresses {
             network_builder = network_builder.direct_address(public_key, addresses)
         }
@@ -521,7 +512,6 @@ mod tests {
             bind_port: 2024,
             network_key: [1; 32],
             private_key: Some(private_key.clone()),
-            local_discovery: true,
             direct_node_addresses: vec![(
                 direct_node_public_key,
                 vec!["0.0.0.0:2026".parse().unwrap()],
@@ -545,6 +535,5 @@ mod tests {
             stun_port: 0,
         };
         assert_eq!(builder.relay_mode, RelayMode::Custom(vec![relay_node]));
-        assert!(builder.discovery.is_some());
     }
 }
