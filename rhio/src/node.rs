@@ -157,23 +157,3 @@ impl Node<MemoryStore> {
         Ok(())
     }
 }
-
-async fn handle_connection(
-    mut connecting: iroh_net::endpoint::Connecting,
-    protocols: Arc<ProtocolMap>,
-) {
-    let alpn = match connecting.alpn().await {
-        Ok(alpn) => alpn,
-        Err(err) => {
-            warn!("Ignoring connection: invalid handshake: {:?}", err);
-            return;
-        }
-    };
-    let Some(handler) = protocols.get(&alpn) else {
-        warn!("Ignoring connection: unsupported ALPN protocol");
-        return;
-    };
-    if let Err(err) = handler.accept(connecting).await {
-        warn!("Handling incoming connection ended with error: {err}");
-    }
-}
