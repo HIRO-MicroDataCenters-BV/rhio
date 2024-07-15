@@ -10,6 +10,7 @@ mod protocols;
 #[cfg(feature = "mdns")]
 pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
+pub use protocols::ProtocolHandler;
 
 pub type NetworkId = [u8; 32];
 
