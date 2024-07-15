@@ -5,16 +5,12 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use iroh_net::{NodeAddr, NodeId};
+use iroh_net::NodeId;
+use p2panda_core::PublicKey;
+use p2panda_net::config::{Config, NodeAddr};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_BIND_PORT: u16 = 4012;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Config {
-    pub bind_port: u16,
-    pub direct_node_addresses: Vec<NodeAddr>,
-}
 
 #[derive(Parser, Serialize, Debug)]
 #[command(
@@ -39,23 +35,14 @@ fn parse_node_addr(value: &str) -> Result<NodeAddr> {
         bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
     }
 
-    let node_id = NodeId::from_str(parts[0])?;
+    let node_id = NodeId::from_str(&parts[0])?;
+    let public_key = PublicKey::from_bytes(node_id.as_bytes())?;
     let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
         .iter()
         .map(|addr| SocketAddr::from_str(addr))
         .collect();
 
-    let node_addr = NodeAddr::from_parts(node_id, None, socket_addrs?);
-    Ok(node_addr)
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            bind_port: DEFAULT_BIND_PORT,
-            direct_node_addresses: Vec::new(),
-        }
-    }
+    Ok((public_key, socket_addrs?))
 }
 
 pub fn load_config() -> Result<Config> {

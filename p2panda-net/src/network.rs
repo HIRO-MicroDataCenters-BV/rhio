@@ -522,10 +522,11 @@ mod tests {
             network_key: [1; 32],
             private_key: Some(private_key.clone()),
             local_discovery: true,
-            direct_node_addresses: HashMap::from([(
+            direct_node_addresses: vec![(
                 direct_node_public_key,
                 vec!["0.0.0.0:2026".parse().unwrap()],
-            )]),
+            )
+                .into()],
             relay_addresses: vec![relay_address.clone()],
         };
 

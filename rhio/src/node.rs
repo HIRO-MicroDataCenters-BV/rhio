@@ -21,6 +21,7 @@ use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::identity::PublicKey;
 use p2panda_core::PrivateKey;
+use p2panda_net::config::{to_node_addr, Config};
 use p2panda_net::{network, LocalDiscovery, Network, NetworkBuilder};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -28,7 +29,6 @@ use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, error_span, warn, Instrument};
 
 use crate::blobs::{add_from_path, download_queued, BlobAddPathResponse, BlobDownloadResponse};
-use crate::config::Config;
 use crate::protocol::{BlobsProtocol, BubuProtocol, BUBU_ALPN};
 
 const MAX_RPC_STREAMS: u32 = 1024;
@@ -48,35 +48,16 @@ pub struct Node<D> {
 
 impl Node<MemoryStore> {
     pub async fn spawn(config: Config) -> Result<Self> {
-        let private_key = PrivateKey::new();
-
-        let mut network_builder = NetworkBuilder::new(NETWORK_ID)
-            .private_key(private_key.clone())
-            .bind_port(config.bind_port)
-            .discovery(LocalDiscovery::new()?)
-            .gossip(Default::default());
-        // @TODO: configure relay node(s).
-
-        for direct_node in &config.direct_node_addresses {
-            // @TODO: update config to directly parse to p2panda types.
-            let public_key =
-                PublicKey::from_bytes(direct_node.node_id.as_bytes()).expect("invalid public key");
-            network_builder = network_builder.direct_address(
-                public_key,
-                direct_node
-                    .direct_addresses()
-                    .cloned()
-                    .collect::<Vec<SocketAddr>>(),
-            )
-        }
-
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let db = MemoryStore::new();
 
-        network_builder = network_builder.protocol(
-            BLOBS_ALPN,
-            BlobsProtocol::new(db.clone(), pool_handle.clone()),
-        );
+        let mut network_builder = NetworkBuilder::from_config(config.clone())
+            .discovery(LocalDiscovery::new()?)
+            .gossip(Default::default())
+            .protocol(
+                BLOBS_ALPN,
+                BlobsProtocol::new(db.clone(), pool_handle.clone()),
+            );
 
         let network = network_builder.build().await?;
 
@@ -128,7 +109,11 @@ impl Node<MemoryStore> {
         let progress = FlumeProgressSender::new(sender);
         let downloader = self.downloader.clone();
         let endpoint = self.network.endpoint().clone();
-        let nodes = self.config.direct_node_addresses.clone();
+        let nodes = self
+            .config
+            .direct_node_addresses
+            .iter()
+            .map(|(public_key, addresses)| to_node_addr(public_key, addresses)).collect();
         let format = BlobFormat::Raw;
         let hash_and_format = HashAndFormat { hash, format };
 
