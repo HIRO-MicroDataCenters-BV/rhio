@@ -1,6 +1,7 @@
 #![allow(unused)]
 mod blobs;
 mod config;
+mod private_key;
 mod logging;
 mod node;
 mod protocol;
