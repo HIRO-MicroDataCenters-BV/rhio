@@ -182,10 +182,10 @@ impl NetworkBuilder {
     // Add protocols which this node will accept.
     pub fn protocol(
         mut self,
-        alpn: &'static [u8],
+        protocol_name: &'static [u8],
         handler: impl ProtocolHandler + 'static,
     ) -> Self {
-        self.protocols.insert(alpn, Arc::new(handler));
+        self.protocols.insert(protocol_name, Arc::new(handler));
         self
     }
 
