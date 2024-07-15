@@ -32,7 +32,6 @@ struct Cli {
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
-
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {
@@ -41,7 +40,7 @@ fn parse_node_addr(value: &str) -> Result<NodeAddr> {
         bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
     }
 
-    let node_id = NodeId::from_str(&parts[0])?;
+    let node_id = NodeId::from_str(parts[0])?;
     let public_key = PublicKey::from_bytes(node_id.as_bytes())?;
     let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
         .iter()
