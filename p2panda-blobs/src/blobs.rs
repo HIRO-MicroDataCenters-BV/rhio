@@ -6,7 +6,6 @@ use anyhow::Result;
 use futures_util::Stream;
 use iroh_blobs::downloader::Downloader;
 use iroh_blobs::store::Store;
-use iroh_net::Endpoint;
 use p2panda_core::Hash;
 use p2panda_net::{Network, NetworkBuilder};
 use tokio_util::task::LocalPoolHandle;
@@ -21,7 +20,7 @@ where
     S: Store,
 {
     downloader: Downloader,
-    endpoint: Endpoint,
+    network: Network,
     pool_handle: LocalPoolHandle,
     store: S,
 }
@@ -52,7 +51,7 @@ where
 
         let blobs = Self {
             downloader,
-            endpoint: network.endpoint().to_owned(),
+            network: network.clone(),
             pool_handle,
             store,
         };
@@ -66,7 +65,7 @@ where
 
     pub async fn download_blob(&self, hash: Hash) -> impl Stream<Item = DownloadBlobEvent> {
         download_blob(
-            self.endpoint.clone(),
+            self.network.endpoint().clone(),
             self.downloader.clone(),
             self.pool_handle.clone(),
             vec![],

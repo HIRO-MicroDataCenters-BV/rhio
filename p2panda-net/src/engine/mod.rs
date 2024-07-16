@@ -18,6 +18,7 @@ use crate::engine::gossip::GossipActor;
 use crate::network::{InEvent, OutEvent};
 use crate::{NetworkId, TopicId};
 
+#[derive(Debug)]
 pub struct Engine {
     engine_actor_tx: mpsc::Sender<ToEngineActor>,
     #[allow(dead_code)]

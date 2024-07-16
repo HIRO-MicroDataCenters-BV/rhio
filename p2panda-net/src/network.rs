@@ -269,12 +269,14 @@ impl NetworkBuilder {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Network {
     inner: Arc<NetworkInner>,
     protocols: Arc<ProtocolMap>,
     task: SharedAbortingJoinHandle<()>,
 }
 
+#[derive(Debug)]
 struct NetworkInner {
     cancel_token: CancellationToken,
     discovery: Option<DiscoveryMap>,
