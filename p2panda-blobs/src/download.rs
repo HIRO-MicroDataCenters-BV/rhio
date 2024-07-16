@@ -22,7 +22,7 @@ pub async fn download_blob(
     let (sender, receiver) = flume::bounded(1024);
     let progress = FlumeProgressSender::new(sender);
     let hash_and_format = HashAndFormat {
-        hash: IrohHash::new(hash.as_bytes()),
+        hash: IrohHash::from_bytes(*hash.as_bytes()),
         format: BlobFormat::Raw,
     };
 
