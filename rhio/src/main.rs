@@ -27,10 +27,8 @@ async fn main() -> Result<()> {
     let config = load_config()?;
 
     let private_key = match &config.private_key {
-        Some(path) => {
-            generate_or_load_private_key(path.clone())
-                .context("Could not load private key from file")?
-        }
+        Some(path) => generate_or_load_private_key(path.clone())
+            .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
 
