@@ -440,6 +440,10 @@ impl Network {
         &self.inner.endpoint
     }
 
+    pub async fn known_peers(&self) -> Result<Vec<NodeInfo>> {
+        self.inner.engine.known_peers().await
+    }
+
     // Shutdown of the whole network and all subscriptions and connections
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token

@@ -59,6 +59,9 @@ pub enum ToEngineActor {
     TopicJoined {
         topic: TopicId,
     },
+    KnownPeers {
+        reply: oneshot::Sender<Result<Vec<NodeInfo>>>,
+    },
 }
 
 pub struct EngineActor {
@@ -181,6 +184,10 @@ impl EngineActor {
             }
             ToEngineActor::TopicJoined { topic } => {
                 self.on_topic_joined(topic).await?;
+            }
+            ToEngineActor::KnownPeers { reply } => {
+                let list = self.peers.known_peers();
+                reply.send(Ok(list)).ok();
             }
             ToEngineActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
@@ -488,6 +495,10 @@ impl PeerMap {
             known_peers: HashMap::new(),
             topics: HashMap::new(),
         }
+    }
+
+    pub fn known_peers(&self) -> Vec<NodeInfo> {
+        self.known_peers.values().cloned().collect()
     }
 
     pub fn add_peer(&mut self, topic: TopicId, node_info: NodeInfo) -> Option<NodeInfo> {

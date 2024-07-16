@@ -58,6 +58,14 @@ impl Engine {
         Ok(())
     }
 
+    pub async fn known_peers(&self) -> Result<Vec<NodeInfo>> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.engine_actor_tx
+            .send(ToEngineActor::KnownPeers { reply })
+            .await?;
+        reply_rx.await?
+    }
+
     pub async fn subscribe(
         &self,
         topic: TopicId,

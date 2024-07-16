@@ -65,11 +65,9 @@ where
 
     pub async fn download_blob(&self, hash: Hash) -> impl Stream<Item = DownloadBlobEvent> {
         download_blob(
-            self.network.endpoint().clone(),
+            self.network.clone(),
             self.downloader.clone(),
             self.pool_handle.clone(),
-            // @TODO: Get currently known peers from network and use them here
-            vec![],
             hash,
         )
         .await
