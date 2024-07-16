@@ -1,14 +1,9 @@
-use std::any::Any;
-use std::collections::BTreeMap;
-use std::fmt;
 use std::sync::Arc;
 
 use anyhow::Result;
 use futures_lite::future::Boxed as BoxedFuture;
-use futures_util::future::join_all;
-use iroh_net::endpoint::{get_remote_node_id, Connecting};
+use iroh_net::endpoint::Connecting;
 use p2panda_net::ProtocolHandler;
-use tracing::info;
 
 #[derive(Debug)]
 pub struct BlobsProtocol<S> {

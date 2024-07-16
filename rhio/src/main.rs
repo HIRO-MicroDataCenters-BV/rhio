@@ -1,4 +1,3 @@
-#![allow(unused)]
 mod blobs;
 mod config;
 mod logging;
@@ -6,14 +5,7 @@ mod node;
 mod private_key;
 mod protocol;
 
-use std::str::FromStr;
-
 use anyhow::{Context, Result};
-use futures_lite::StreamExt;
-use iroh_base::node_addr::AddrInfoOptions;
-use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
-use iroh_net::relay::{RelayMode, RelayUrl};
-use p2panda_net::config::to_node_addr;
 use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use tracing::info;
 

@@ -9,9 +9,7 @@ use figment::Figment;
 use iroh_net::NodeId;
 use p2panda_core::PublicKey;
 use p2panda_net::config::{Config, NodeAddr};
-use serde::{Deserialize, Serialize};
-
-const DEFAULT_BIND_PORT: u16 = 4012;
+use serde::Serialize;
 
 #[derive(Parser, Serialize, Debug)]
 #[command(
@@ -35,7 +33,7 @@ struct Cli {
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {
-    let parts: Vec<&str> = value.split("|").collect();
+    let parts: Vec<&str> = value.split('|').collect();
     if parts.len() < 2 {
         bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
     }

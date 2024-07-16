@@ -1,43 +1,25 @@
-use std::net::{self, SocketAddr};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use futures_lite::{Stream, StreamExt};
 use iroh_blobs::downloader::Downloader;
 use iroh_blobs::get::db::DownloadProgress;
-use iroh_blobs::protocol::{Closed, ALPN as BLOBS_ALPN};
+use iroh_blobs::protocol::ALPN as BLOBS_ALPN;
 use iroh_blobs::provider::AddProgress;
 use iroh_blobs::store::mem::Store as MemoryStore;
-use iroh_blobs::store::Store;
 use iroh_blobs::util::progress::{FlumeProgressSender, ProgressSender};
 use iroh_blobs::{BlobFormat, Hash, HashAndFormat};
-use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
-use iroh_net::endpoint::{Connection, DirectAddr, TransportConfig};
-use iroh_net::key::SecretKey;
-use iroh_net::relay::RelayMode;
-use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{Endpoint, NodeAddr, NodeId};
-use p2panda_core::identity::PublicKey;
+use iroh_net::endpoint::DirectAddr;
+use iroh_net::NodeId;
 use p2panda_core::PrivateKey;
 use p2panda_net::config::{to_node_addr, Config};
-use p2panda_net::{network, LocalDiscovery, Network, NetworkBuilder};
-use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use tokio_util::task::LocalPoolHandle;
-use tracing::{debug, error, error_span, warn, Instrument};
 
 use crate::blobs::{add_from_path, download_queued, BlobAddPathResponse, BlobDownloadResponse};
 use crate::protocol::BlobsProtocol;
 
-const MAX_RPC_STREAMS: u32 = 1024;
-const MAX_CONNECTIONS: u32 = 1024;
-const NETWORK_ID: [u8; 32] = [0; 32];
-
-/// How long we wait at most for some endpoints to be discovered.
-const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
-
+#[allow(dead_code)]
 pub struct Node<D> {
     config: Config,
     db: D,
@@ -51,7 +33,7 @@ impl Node<MemoryStore> {
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let db = MemoryStore::new();
 
-        let mut network_builder = NetworkBuilder::from_config(config.clone())
+        let network_builder = NetworkBuilder::from_config(config.clone())
             .private_key(private_key)
             .discovery(LocalDiscovery::new()?)
             .gossip(Default::default())
@@ -142,7 +124,7 @@ impl Node<MemoryStore> {
 
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token.
-        self.network.shutdown().await;
+        self.network.shutdown().await?;
 
         Ok(())
     }
