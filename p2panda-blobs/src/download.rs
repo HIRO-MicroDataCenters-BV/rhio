@@ -48,12 +48,10 @@ async fn download_queued(
     hash_and_format: HashAndFormat,
     progress: FlumeProgressSender<DownloadProgress>,
 ) -> Result<Stats> {
-    let node_addrs = network.known_peers().await?;
+    let addrs = network.known_peers().await?;
+    ensure!(!addrs.is_empty(), "no way to reach a node for download");
 
-    let can_download = !node_addrs.is_empty() && network.endpoint().discovery().is_some();
-    ensure!(can_download, "no way to reach a node for download");
-
-    let req = DownloadRequest::new(hash_and_format, node_addrs).progress_sender(progress);
+    let req = DownloadRequest::new(hash_and_format, addrs).progress_sender(progress);
     let handle = downloader.queue(req).await;
 
     let stats = handle.await?;
