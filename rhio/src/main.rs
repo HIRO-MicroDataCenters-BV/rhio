@@ -1,9 +1,7 @@
-mod blobs;
 mod config;
 mod logging;
 mod node;
 mod private_key;
-mod protocol;
 
 use anyhow::{Context, Result};
 use tracing::info;
