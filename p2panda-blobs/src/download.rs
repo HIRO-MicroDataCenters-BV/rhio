@@ -21,9 +21,10 @@ pub async fn download_blob(
 ) -> impl Stream<Item = DownloadBlobEvent> {
     let (sender, receiver) = flume::bounded(1024);
     let progress = FlumeProgressSender::new(sender);
-    let format = BlobFormat::Raw;
-    let hash = IrohHash::new(hash.as_bytes());
-    let hash_and_format = HashAndFormat { hash, format };
+    let hash_and_format = HashAndFormat {
+        hash: IrohHash::new(hash.as_bytes()),
+        format: BlobFormat::Raw,
+    };
 
     pool_handle.spawn_pinned(move || async move {
         match download_queued(network, &downloader, hash_and_format, progress.clone()).await {

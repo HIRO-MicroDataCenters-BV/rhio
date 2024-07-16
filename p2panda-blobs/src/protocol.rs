@@ -8,12 +8,13 @@ use iroh_blobs::protocol::ALPN;
 use iroh_blobs::store::Store;
 use iroh_net::endpoint::Connecting;
 use p2panda_net::ProtocolHandler;
+use tokio_util::task::LocalPoolHandle;
 
 pub const BLOBS_ALPN: &[u8] = ALPN;
 
 #[derive(Debug)]
 pub struct BlobsProtocol<S> {
-    rt: tokio_util::task::LocalPoolHandle,
+    rt: LocalPoolHandle,
     store: S,
 }
 
