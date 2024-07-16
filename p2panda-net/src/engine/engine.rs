@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use iroh_gossip::net::Gossip;
 use iroh_gossip::proto::TopicId;
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::key::PublicKey;
-use iroh_net::{Endpoint, NodeId};
+use iroh_net::{Endpoint, NodeAddr, NodeId};
 use rand::seq::IteratorRandom;
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
 use tokio::time::interval;
@@ -37,7 +36,7 @@ const JOIN_TOPICS_INTERVAL: Duration = Duration::from_millis(1200);
 
 pub enum ToEngineActor {
     AddPeer {
-        node_info: NodeInfo,
+        node_addr: NodeAddr,
     },
     NeighborUp {
         topic: TopicId,
@@ -60,7 +59,7 @@ pub enum ToEngineActor {
         topic: TopicId,
     },
     KnownPeers {
-        reply: oneshot::Sender<Result<Vec<NodeInfo>>>,
+        reply: oneshot::Sender<Result<Vec<NodeAddr>>>,
     },
 }
 
@@ -162,8 +161,8 @@ impl EngineActor {
 
     async fn on_actor_message(&mut self, msg: ToEngineActor) -> Result<()> {
         match msg {
-            ToEngineActor::AddPeer { node_info } => {
-                self.add_peer(node_info).await?;
+            ToEngineActor::AddPeer { node_addr } => {
+                self.add_peer(node_addr).await?;
             }
             ToEngineActor::NeighborUp { topic, peer } => {
                 self.on_peer_joined(topic, peer).await?;
@@ -198,13 +197,13 @@ impl EngineActor {
     }
 
     /// Adds peer to our address book.
-    async fn add_peer(&mut self, node_info: NodeInfo) -> Result<()> {
-        let node_id = node_info.node_id;
+    async fn add_peer(&mut self, node_addr: NodeAddr) -> Result<()> {
+        let node_id = node_addr.node_id;
 
         // Make sure the endpoint also knows about this address
-        match self.endpoint.add_node_addr(node_info.clone().into()) {
+        match self.endpoint.add_node_addr(node_addr.clone()) {
             Ok(_) => {
-                if self.peers.add_peer(self.network_id, node_info).is_none() {
+                if self.peers.add_peer(self.network_id, node_addr).is_none() {
                     debug!("added new peer to handler {}", node_id);
 
                     // Attempt joining network when trying for the first time
@@ -255,8 +254,7 @@ impl EngineActor {
     }
 
     async fn on_peer_joined(&mut self, topic: TopicId, peer_id: PublicKey) -> Result<()> {
-        self.peers
-            .add_peer(topic, NodeInfo::new(peer_id, None, BTreeSet::default()));
+        self.peers.add_peer(topic, NodeAddr::new(peer_id));
         if topic == self.network_id {
             self.announce_topics().await?;
         }
@@ -485,7 +483,7 @@ impl TopicMap {
 }
 
 struct PeerMap {
-    known_peers: HashMap<NodeId, NodeInfo>,
+    known_peers: HashMap<NodeId, NodeAddr>,
     topics: HashMap<TopicId, Vec<PublicKey>>,
 }
 
@@ -497,13 +495,13 @@ impl PeerMap {
         }
     }
 
-    pub fn known_peers(&self) -> Vec<NodeInfo> {
+    pub fn known_peers(&self) -> Vec<NodeAddr> {
         self.known_peers.values().cloned().collect()
     }
 
-    pub fn add_peer(&mut self, topic: TopicId, node_info: NodeInfo) -> Option<NodeInfo> {
-        let public_key = node_info.node_id;
-        match self.known_peers.insert(public_key, node_info) {
+    pub fn add_peer(&mut self, topic: TopicId, node_addr: NodeAddr) -> Option<NodeAddr> {
+        let public_key = node_addr.node_id;
+        match self.known_peers.insert(public_key, node_addr) {
             Some(info) => Some(info),
             None => {
                 self.on_announcement(vec![topic], public_key);

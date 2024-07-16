@@ -7,9 +7,8 @@ mod message;
 
 use anyhow::Result;
 use iroh_gossip::net::Gossip;
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::Endpoint;
+use iroh_net::{Endpoint, NodeAddr};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -51,14 +50,14 @@ impl Engine {
         }
     }
 
-    pub async fn add_peer(&self, node_info: NodeInfo) -> Result<()> {
+    pub async fn add_peer(&self, node_addr: NodeAddr) -> Result<()> {
         self.engine_actor_tx
-            .send(ToEngineActor::AddPeer { node_info })
+            .send(ToEngineActor::AddPeer { node_addr })
             .await?;
         Ok(())
     }
 
-    pub async fn known_peers(&self) -> Result<Vec<NodeInfo>> {
+    pub async fn known_peers(&self) -> Result<Vec<NodeAddr>> {
         let (reply, reply_rx) = oneshot::channel();
         self.engine_actor_tx
             .send(ToEngineActor::KnownPeers { reply })
