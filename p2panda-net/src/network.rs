@@ -9,7 +9,7 @@ use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
 use iroh_net::dns::node_info::NodeInfo;
-use iroh_net::endpoint::TransportConfig;
+use iroh_net::endpoint::{DirectAddr, TransportConfig};
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
@@ -409,6 +409,14 @@ impl NetworkInner {
 }
 
 impl Network {
+    pub fn node_id(&self) -> NodeId {
+        self.inner.endpoint.node_id()
+    }
+
+    pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
+        self.inner.endpoint.direct_addresses().next().await
+    }
+
     // Subscribes to a topic and establishes a bi-directional stream from which we can read and
     // write to.
     //

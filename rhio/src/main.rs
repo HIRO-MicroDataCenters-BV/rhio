@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     };
 
     println!("{}", private_key.public_key());
-    let node = Node::spawn(config.clone(), private_key).await?;
+    let node = Node::spawn(config, private_key).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         let values: Vec<String> = addresses.iter().map(|item| item.addr.to_string()).collect();

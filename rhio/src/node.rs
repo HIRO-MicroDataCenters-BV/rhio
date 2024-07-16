@@ -59,12 +59,12 @@ impl Node<MemoryStore> {
     }
 
     pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
-        self.network.endpoint().direct_addresses().next().await
+        self.network.direct_addresses().await
     }
 
     /// Returns the public key of the node.
     pub fn node_id(&self) -> NodeId {
-        self.network.endpoint().node_id()
+        self.network.node_id()
     }
 
     pub async fn add_blob(&self, path: PathBuf) -> impl Stream<Item = BlobAddPathResponse> {
