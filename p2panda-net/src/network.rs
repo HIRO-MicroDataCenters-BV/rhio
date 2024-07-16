@@ -150,12 +150,6 @@ impl NetworkBuilder {
         self
     }
 
-    // Sets or overwrites a handler for a syncing strategy. If not set no initial syncing will be
-    // started on connection and the node directly jumps to gossip / "live" mode
-    pub fn sync(mut self, handler: impl Syncing) -> Self {
-        unimplemented!();
-    }
-
     // Gossip mode is always on, maybe we can only configure it here (max active and passive peers
     // etc.) or provide it with a custom implementation?
     pub fn gossip(mut self, config: GossipConfig) -> Self {
@@ -489,9 +483,6 @@ async fn handle_connection(
         warn!("Handling incoming connection ended with error: {err}");
     }
 }
-
-// @TODO: This needs more thought + probably should move to `p2panda-sync`
-pub trait Syncing {}
 
 #[cfg(test)]
 mod tests {
