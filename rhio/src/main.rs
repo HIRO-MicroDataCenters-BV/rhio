@@ -46,16 +46,6 @@ async fn main() -> Result<()> {
         info!("My Node ID: {}", node.node_id());
     }
 
-    for (public_key, addresses) in config.direct_node_addresses.iter() {
-        // let mut node_addr = node_addr.clone();
-        // node_addr.apply_options(AddrInfoOptions::Id);
-        // node_addr = node_addr.with_relay_url(RelayUrl::from_str(EU_RELAY_HOSTNAME).unwrap());
-        let connection = node.connect(to_node_addr(public_key, addresses)).await?;
-        let mut stream = connection.accept_uni().await?;
-        let bytes = stream.read_to_end(32).await?;
-        info!("{:?}", bytes);
-    }
-
     // Upload blob
     // let mut stream = node.add_blob("/home/adz/website.html".into()).await;
     // while let Some(item) = stream.next().await {

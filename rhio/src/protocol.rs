@@ -45,24 +45,3 @@ impl iroh_blobs::provider::EventSender for MockEventSender {
         Box::pin(std::future::ready(()))
     }
 }
-
-// Our test protocol to check if things are working
-#[derive(Debug)]
-pub struct BubuProtocol;
-
-pub const BUBU_ALPN: &[u8] = b"/rhio/0";
-
-impl ProtocolHandler for BubuProtocol {
-    fn accept(self: Arc<Self>, connecting: Connecting) -> BoxedFuture<Result<()>> {
-        Box::pin(async move {
-            let connection = connecting.await?;
-            let peer = get_remote_node_id(&connection)?;
-            info!("accepted connection from {peer}");
-            let mut send_stream = connection.open_uni().await?;
-            send_stream.write_all(b"Hello, Bubu").await?;
-            send_stream.finish().await?;
-            info!("closing connection from {peer}");
-            Ok(())
-        })
-    }
-}

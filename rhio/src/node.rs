@@ -29,7 +29,7 @@ use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, error_span, warn, Instrument};
 
 use crate::blobs::{add_from_path, download_queued, BlobAddPathResponse, BlobDownloadResponse};
-use crate::protocol::{BlobsProtocol, BubuProtocol, BUBU_ALPN};
+use crate::protocol::BlobsProtocol;
 
 const MAX_RPC_STREAMS: u32 = 1024;
 const MAX_CONNECTIONS: u32 = 1024;
@@ -83,10 +83,6 @@ impl Node<MemoryStore> {
     /// Returns the public key of the node.
     pub fn node_id(&self) -> NodeId {
         self.network.endpoint().node_id()
-    }
-
-    pub async fn connect(&self, node_addr: NodeAddr) -> Result<Connection> {
-        self.network.endpoint().connect(node_addr, BUBU_ALPN).await
     }
 
     pub async fn add_blob(&self, path: PathBuf) -> impl Stream<Item = BlobAddPathResponse> {
