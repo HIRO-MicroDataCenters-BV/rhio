@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use futures_lite::StreamExt;
 use futures_util::Stream;
 use iroh_blobs::provider::AddProgress;
@@ -33,9 +33,6 @@ pub async fn import_blob<S: Store>(
     receiver.into_stream().map(ImportBlobEvent)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ImportBlobEvent(pub AddProgress);
-
 async fn add_from_path<S: Store>(
     store: S,
     path: PathBuf,
@@ -43,7 +40,7 @@ async fn add_from_path<S: Store>(
 ) -> Result<()> {
     let progress = FlumeProgressSender::new(progress);
     let names = Arc::new(Mutex::new(BTreeMap::new()));
-    // convert import progress to provide progress
+
     let import_progress = progress.clone().with_filter_map(move |x| match x {
         ImportProgress::Found { id, name } => {
             names.lock().unwrap().insert(id, name);
@@ -59,9 +56,10 @@ async fn add_from_path<S: Store>(
         ImportProgress::OutboardDone { hash, id } => Some(AddProgress::Done { hash, id }),
         _ => None,
     });
+
     // Check that the path is absolute and exists.
-    anyhow::ensure!(path.is_absolute(), "path must be absolute");
-    anyhow::ensure!(
+    ensure!(path.is_absolute(), "path must be absolute");
+    ensure!(
         path.exists(),
         "trying to add missing path: {}",
         path.display()
@@ -78,5 +76,9 @@ async fn add_from_path<S: Store>(
     progress
         .send(AddProgress::AllDone { hash, format, tag })
         .await?;
+
     Ok(())
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportBlobEvent(pub AddProgress);

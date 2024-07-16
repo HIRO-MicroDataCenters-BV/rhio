@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use futures_lite::StreamExt;
 use iroh_blobs::downloader::{DownloadRequest, Downloader};
 use iroh_blobs::get::db::DownloadProgress;
@@ -63,6 +63,7 @@ async fn download_queued(
 ) -> Result<Stats> {
     let mut node_ids = Vec::with_capacity(nodes.len());
     let mut any_added = false;
+
     // @TODO: Can we remove this?
     for node in nodes {
         node_ids.push(node.node_id);
@@ -71,10 +72,13 @@ async fn download_queued(
             any_added = true;
         }
     }
+
     let can_download = !node_ids.is_empty() && (any_added || endpoint.discovery().is_some());
-    anyhow::ensure!(can_download, "no way to reach a node for download");
+    ensure!(can_download, "no way to reach a node for download");
+
     let req = DownloadRequest::new(hash_and_format, node_ids).progress_sender(progress);
     let handle = downloader.queue(req).await;
+
     let stats = handle.await?;
     Ok(stats)
 }
