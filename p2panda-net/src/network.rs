@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
@@ -15,17 +15,18 @@ use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, error_span, info, warn, Instrument};
+use tracing::{debug, error, error_span, warn, Instrument};
 use url::Url;
 
 use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
+use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
-use crate::peers::Peers;
 use crate::protocols::{ProtocolHandler, ProtocolMap};
-use crate::{LocalDiscovery, NetworkId, TopicId};
+use crate::{NetworkId, TopicId};
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -212,7 +213,7 @@ impl NetworkBuilder {
             &node_addr.info,
         );
 
-        let peers = Peers::new();
+        let engine = Engine::new(self.network_id, endpoint.clone(), gossip.clone());
         let handshake = Handshake::new(gossip.clone());
 
         let inner = Arc::new(NetworkInner {
@@ -221,7 +222,7 @@ impl NetworkBuilder {
             endpoint: endpoint.clone(),
             gossip: gossip.clone(),
             network_id: self.network_id,
-            peers,
+            engine,
             secret_key,
         });
 
@@ -280,7 +281,7 @@ struct NetworkInner {
     endpoint: Endpoint,
     gossip: Gossip,
     network_id: NetworkId,
-    peers: Peers,
+    engine: Engine,
     secret_key: SecretKey,
 }
 
@@ -350,8 +351,8 @@ impl NetworkInner {
                 Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
                     match event {
                         Ok(event) => {
-                            if let Err(err) = self.peers.add_peer(event.node_info).await {
-                                error!("Peers handler failed on add_peer: {err:?}");
+                            if let Err(err) = self.engine.add_peer(event.node_info).await {
+                                error!("Engine failed on add_peer: {err:?}");
                                 break;
                             }
                         }
@@ -400,8 +401,8 @@ impl NetworkInner {
             self.endpoint
                 .clone()
                 .close(1u32.into(), b"provider terminating"),
-            // Shutdown peers handler
-            self.peers.shutdown(),
+            // Shutdown engine
+            self.engine.shutdown(),
             // Shutdown protocol handlers
             protocols.shutdown(),
         );
@@ -423,16 +424,14 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe(&self, id: TopicId) -> Result<(Sender, Receiver)> {
-        let mut receiver = self.inner.gossip.subscribe(id.into()).await?;
-
-        tokio::task::spawn(async move {
-            while let Ok(item) = receiver.recv().await {
-                info!("gossip: {:?}", item);
-            }
-        });
-
-        Ok((Sender {}, Receiver {}))
+    pub async fn subscribe(
+        &self,
+        topic: TopicId,
+    ) -> Result<(mpsc::Sender<InEvent>, broadcast::Receiver<OutEvent>)> {
+        let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
+        let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
+        self.inner.engine.subscribe(topic, out_tx, in_rx).await?;
+        Ok((in_tx, out_rx))
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -451,20 +450,19 @@ impl Network {
     }
 }
 
-// Sink to write data into a channel, scoped by a "topic id".
-//
-// Since this networking layer is independent of any persistance, users of this API will need to
-// persist new data they've created themselves and make the sync layer aware of this database
-pub struct Sender {}
+#[derive(Clone, Debug)]
+pub enum InEvent {
+    Message { bytes: Vec<u8> },
+}
 
-// Stream to read data from a channel, scoped by a "topic id". This is commonly used by any given
-// sync protocol and gossiping layer, everything will "land" here, independent of where it came
-// from and in what way, the only guarantee here is that it came from our overlay network scoped by
-// "network id" and "topic id".
-//
-// Since this networking layer is independent of any persistance users of this API will need to
-// persist incoming data themselves and make the sync layer aware of this database
-pub struct Receiver {}
+#[derive(Clone, Debug)]
+pub enum OutEvent {
+    Ready,
+    Message {
+        bytes: Vec<u8>,
+        delivered_from: PublicKey,
+    },
+}
 
 async fn handle_connection(
     mut connecting: iroh_net::endpoint::Connecting,
@@ -491,11 +489,8 @@ pub trait Syncing {}
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::net::SocketAddr;
     use std::path::PathBuf;
 
-    use iroh_net::key::{PublicKey, SecretKey};
     use iroh_net::relay::{RelayNode, RelayUrl};
     use p2panda_core::PrivateKey;
     use url::Url;
@@ -505,7 +500,6 @@ mod tests {
 
     #[tokio::test]
     async fn config() {
-        let private_key = PrivateKey::new();
         let direct_node_public_key = PrivateKey::new().public_key();
         let relay_address: Url = "https://example.net".parse().unwrap();
 
