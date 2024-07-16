@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         .await?;
 
     let (tx, mut rx) = network.subscribe(topic_id).await?;
-    let (ready_tx, mut ready_rx) = mpsc::channel::<()>(32);
+    let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
 
     tokio::task::spawn(async move {
         while let Ok(event) = rx.recv().await {

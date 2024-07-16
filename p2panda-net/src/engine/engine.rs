@@ -67,6 +67,8 @@ pub struct EngineActor {
     gossip_actor_tx: mpsc::Sender<ToGossipActor>,
     inbox: mpsc::Receiver<ToEngineActor>,
     network_id: TopicId,
+    network_joined: bool,
+    network_joined_pending: bool,
     peers: PeerMap,
     topics: TopicMap,
 }
@@ -85,6 +87,8 @@ impl EngineActor {
             gossip_actor_tx,
             inbox,
             network_id,
+            network_joined: false,
+            network_joined_pending: false,
             peers: PeerMap::new(),
             topics: TopicMap::new(),
         }
@@ -138,20 +142,16 @@ impl EngineActor {
                     }
                 },
                 // Attempt joining the network-wide gossip if we haven't yet
-                _ = join_network_interval.tick() => {
-                    if !self.topics.has_successfully_joined(&self.network_id).await {
-                        self.join_topic(self.network_id).await?;
-                    }
+                _ = join_network_interval.tick(), if !self.network_joined  => {
+                    self.join_topic(self.network_id).await?;
                 },
                 // Attempt joining the individual topic gossips if we haven't yet
                 _ = join_topics_interval.tick() => {
                     self.join_earmarked_topics().await?;
                 },
                 // Frequently announce the topics we're interested in in the network-wide gossip
-                _ = announce_topics_interval.tick() => {
-                    if self.topics.has_successfully_joined(&self.network_id).await {
-                        self.announce_topics().await?;
-                    }
+                _ = announce_topics_interval.tick(), if self.network_joined => {
+                    self.announce_topics().await?;
                 },
             }
         }
@@ -201,7 +201,7 @@ impl EngineActor {
                     debug!("added new peer to handler {}", node_id);
 
                     // Attempt joining network when trying for the first time
-                    if !self.topics.has_successfully_joined(&self.network_id).await {
+                    if !self.network_joined && !self.network_joined_pending {
                         self.join_topic(self.network_id).await?;
                     }
                 }
@@ -219,20 +219,31 @@ impl EngineActor {
     }
 
     async fn join_topic(&mut self, topic: TopicId) -> Result<()> {
+        if topic == self.network_id && !self.network_joined_pending && !self.network_joined {
+            self.network_joined_pending = true;
+        }
+
         let peers = self.peers.random_set(&topic, JOIN_PEERS_SAMPLE_LEN);
         if !peers.is_empty() {
             self.gossip_actor_tx
                 .send(ToGossipActor::Join { topic, peers })
                 .await?;
         }
+
         Ok(())
     }
 
     async fn on_topic_joined(&mut self, topic: TopicId) -> Result<()> {
+        if topic == self.network_id {
+            self.network_joined_pending = false;
+            self.network_joined = true;
+        }
+
         self.topics.set_joined(topic).await?;
         if topic == self.network_id {
             self.announce_topics().await?;
         }
+
         Ok(())
     }
 
@@ -247,11 +258,9 @@ impl EngineActor {
 
     async fn announce_topics(&mut self) -> Result<()> {
         let topics = self.topics.earmarked().await;
-        if self.topics.has_successfully_joined(&self.network_id).await {
-            let message = NetworkMessage::new_announcement(topics);
-            let bytes = message.to_bytes()?;
-            self.gossip.broadcast(self.network_id, bytes.into()).await?;
-        }
+        let message = NetworkMessage::new_announcement(topics);
+        let bytes = message.to_bytes()?;
+        self.gossip.broadcast(self.network_id, bytes.into()).await?;
         Ok(())
     }
 
@@ -294,7 +303,9 @@ impl EngineActor {
             });
         }
 
-        self.announce_topics().await?;
+        if self.network_joined {
+            self.announce_topics().await?;
+        }
 
         Ok(())
     }
@@ -423,12 +434,13 @@ impl TopicMap {
     /// Mark that we've successfully joined a gossip-overlay for this topic.
     pub async fn set_joined(&mut self, topic: TopicId) -> Result<()> {
         let mut inner = self.inner.write().await;
-        inner.pending_joins.remove(&topic);
-        inner.joined.insert(topic);
+        if inner.pending_joins.remove(&topic) {
+            inner.joined.insert(topic);
 
-        // If any subscribers, inform them that this channel is ready for messages now
-        if let Some(out_tx) = inner.earmarked.get(&topic) {
-            out_tx.send(OutEvent::Ready)?;
+            // If any subscribers, inform them that this channel is ready for messages now
+            if let Some(out_tx) = inner.earmarked.get(&topic) {
+                out_tx.send(OutEvent::Ready)?;
+            }
         }
 
         Ok(())
