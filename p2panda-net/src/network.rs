@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
@@ -20,14 +20,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, info, warn, Instrument};
 use url::Url;
 
+use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::peers::Peers;
-use crate::protocols::ProtocolMap;
-use crate::{NetworkId, TopicId};
-
-/// Default port of a node socket.
-const DEFAULT_BIND_PORT: u16 = 2022;
+use crate::protocols::{ProtocolHandler, ProtocolMap};
+use crate::{LocalDiscovery, NetworkId, TopicId};
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -38,6 +36,7 @@ const MAX_CONNECTIONS: u32 = 1024;
 /// How long we wait at most for some endpoints to be discovered.
 const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, PartialEq)]
 pub enum RelayMode {
     Disabled,
     Custom(Vec<RelayNode>),
@@ -52,6 +51,7 @@ pub struct NetworkBuilder {
     discovery: Option<DiscoveryMap>,
     gossip_config: Option<GossipConfig>,
     network_id: NetworkId,
+    protocols: ProtocolMap,
     relay_mode: RelayMode,
     secret_key: Option<SecretKey>,
 }
@@ -65,9 +65,28 @@ impl NetworkBuilder {
             discovery: None,
             gossip_config: None,
             network_id,
+            protocols: Default::default(),
             relay_mode: RelayMode::Disabled,
             secret_key: None,
         }
+    }
+
+    // Instantiate a network builder from a network configuration.
+    pub fn from_config(config: Config) -> Self {
+        let mut network_builder = Self::new(config.network_key).bind_port(config.bind_port);
+
+        for (public_key, addresses) in config.direct_node_addresses {
+            network_builder = network_builder.direct_address(public_key, addresses)
+        }
+
+        for url in config.relay_addresses {
+            // If a port is not given we fallback to 0 which signifies the default stun port
+            // should be used.
+            let port = url.port().unwrap_or(0);
+            network_builder = network_builder.relay(url, false, port)
+        }
+
+        network_builder
     }
 
     pub fn bind_port(mut self, port: u16) -> Self {
@@ -143,7 +162,17 @@ impl NetworkBuilder {
         self
     }
 
-    pub async fn build(self) -> Result<Network> {
+    // Add protocols which this node will accept.
+    pub fn protocol(
+        mut self,
+        protocol_name: &'static [u8],
+        handler: impl ProtocolHandler + 'static,
+    ) -> Self {
+        self.protocols.insert(protocol_name, Arc::new(handler));
+        self
+    }
+
+    pub async fn build(mut self) -> Result<Network> {
         let secret_key = self.secret_key.unwrap_or(SecretKey::generate());
 
         // Build p2p endpoint and bind the QUIC socket
@@ -196,11 +225,10 @@ impl NetworkBuilder {
             secret_key,
         });
 
-        // Register protocols this node will accept
-        let mut protocols = ProtocolMap::default();
-        protocols.insert(GOSSIP_ALPN, Arc::new(gossip));
-        protocols.insert(HANDSHAKE_ALPN, Arc::new(handshake));
-        let protocols = Arc::new(protocols);
+        // Register core protocols all nodes accept
+        self.protocols.insert(GOSSIP_ALPN, Arc::new(gossip));
+        self.protocols.insert(HANDSHAKE_ALPN, Arc::new(handshake));
+        let protocols = Arc::new(self.protocols);
         if let Err(err) = inner.endpoint.set_alpns(protocols.alpns()) {
             inner.shutdown(protocols).await;
             return Err(err);
@@ -399,6 +427,10 @@ impl Network {
         Ok((Sender {}, Receiver {}))
     }
 
+    pub fn endpoint(&self) -> &Endpoint {
+        &self.inner.endpoint
+    }
+
     // Shutdown of the whole network and all subscriptions and connections
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
@@ -448,3 +480,50 @@ async fn handle_connection(
 
 // @TODO: This needs more thought + probably should move to `p2panda-sync`
 pub trait Syncing {}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+    use std::path::PathBuf;
+
+    use iroh_net::key::{PublicKey, SecretKey};
+    use iroh_net::relay::{RelayNode, RelayUrl};
+    use p2panda_core::PrivateKey;
+    use url::Url;
+
+    use crate::config::Config;
+    use crate::{NetworkBuilder, RelayMode};
+
+    #[tokio::test]
+    async fn config() {
+        let private_key = PrivateKey::new();
+        let direct_node_public_key = PrivateKey::new().public_key();
+        let relay_address: Url = "https://example.net".parse().unwrap();
+
+        let config = Config {
+            bind_port: 2024,
+            network_key: [1; 32],
+            private_key: Some(PathBuf::new().join("secret-key.txt")),
+            direct_node_addresses: vec![(
+                direct_node_public_key,
+                vec!["0.0.0.0:2026".parse().unwrap()],
+            )
+                .into()],
+            relay_addresses: vec![relay_address.clone()],
+        };
+
+        let builder = NetworkBuilder::from_config(config);
+
+        assert_eq!(builder.bind_port, Some(2024));
+        assert_eq!(builder.network_id, [1; 32]);
+        assert!(builder.secret_key.is_none());
+        assert_eq!(builder.direct_node_addresses.len(), 1);
+        let relay_node = RelayNode {
+            url: RelayUrl::from(relay_address),
+            stun_only: false,
+            stun_port: 0,
+        };
+        assert_eq!(builder.relay_mode, RelayMode::Custom(vec![relay_node]));
+    }
+}

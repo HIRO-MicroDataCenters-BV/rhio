@@ -3,15 +3,18 @@ mod blobs;
 mod config;
 mod logging;
 mod node;
+mod private_key;
 mod protocol;
 
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_lite::StreamExt;
 use iroh_base::node_addr::AddrInfoOptions;
-use iroh_net::defaults::EU_RELAY_HOSTNAME;
+use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
 use iroh_net::relay::{RelayMode, RelayUrl};
+use p2panda_net::config::to_node_addr;
+use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use tracing::info;
 
 use crate::config::load_config;
@@ -21,9 +24,16 @@ use crate::node::Node;
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_tracing();
-
     let config = load_config()?;
-    let node = Node::spawn(config.clone()).await?;
+
+    let private_key = match &config.private_key {
+        Some(path) => generate_or_load_private_key(path.clone())
+            .context("Could not load private key from file")?,
+        None => generate_ephemeral_private_key(),
+    };
+
+    println!("{}", private_key.public_key());
+    let node = Node::spawn(config.clone(), private_key).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         let values: Vec<String> = addresses.iter().map(|item| item.addr.to_string()).collect();
@@ -36,11 +46,11 @@ async fn main() -> Result<()> {
         info!("My Node ID: {}", node.node_id());
     }
 
-    for node_addr in config.direct_node_addresses {
+    for (public_key, addresses) in config.direct_node_addresses.iter() {
         // let mut node_addr = node_addr.clone();
         // node_addr.apply_options(AddrInfoOptions::Id);
         // node_addr = node_addr.with_relay_url(RelayUrl::from_str(EU_RELAY_HOSTNAME).unwrap());
-        let connection = node.connect(node_addr).await?;
+        let connection = node.connect(to_node_addr(public_key, addresses)).await?;
         let mut stream = connection.accept_uni().await?;
         let bytes = stream.read_to_end(32).await?;
         info!("{:?}", bytes);
