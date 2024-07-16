@@ -460,6 +460,7 @@ pub enum InEvent {
 
 #[derive(Clone, Debug)]
 pub enum OutEvent {
+    Ready,
     Message {
         bytes: Vec<u8>,
         delivered_from: PublicKey,

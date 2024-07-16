@@ -229,7 +229,7 @@ impl EngineActor {
     }
 
     async fn on_topic_joined(&mut self, topic: TopicId) -> Result<()> {
-        self.topics.set_joined(topic).await;
+        self.topics.set_joined(topic).await?;
         if topic == self.network_id {
             self.announce_topics().await?;
         }
@@ -248,10 +248,9 @@ impl EngineActor {
     async fn announce_topics(&mut self) -> Result<()> {
         let topics = self.topics.earmarked().await;
         if self.topics.has_successfully_joined(&self.network_id).await {
-            let bytes = NetworkMessage::Announcement(topics).to_bytes()?;
-            self.gossip
-                .broadcast_neighbors(self.network_id, bytes.into())
-                .await?;
+            let message = NetworkMessage::new_announcement(topics);
+            let bytes = message.to_bytes()?;
+            self.gossip.broadcast(self.network_id, bytes.into()).await?;
         }
         Ok(())
     }
@@ -284,9 +283,7 @@ impl EngineActor {
                     }
 
                     let result = match event {
-                        InEvent::Message { bytes } => {
-                            gossip.broadcast_neighbors(topic, bytes.into()).await
-                        }
+                        InEvent::Message { bytes } => gossip.broadcast(topic, bytes.into()).await,
                     };
 
                     if let Err(err) = result {
@@ -296,6 +293,8 @@ impl EngineActor {
                 }
             });
         }
+
+        self.announce_topics().await?;
 
         Ok(())
     }
@@ -328,7 +327,7 @@ impl EngineActor {
 
             // So far we're only expecting one message type on the network-wide overlay
             match message {
-                NetworkMessage::Announcement(topics) => {
+                NetworkMessage::Announcement(_, topics) => {
                     self.on_announcement_message(topics, delivered_from).await?;
                 }
             }
@@ -422,10 +421,17 @@ impl TopicMap {
     }
 
     /// Mark that we've successfully joined a gossip-overlay for this topic.
-    pub async fn set_joined(&mut self, topic: TopicId) {
+    pub async fn set_joined(&mut self, topic: TopicId) -> Result<()> {
         let mut inner = self.inner.write().await;
         inner.pending_joins.remove(&topic);
         inner.joined.insert(topic);
+
+        // If any subscribers, inform them that this channel is ready for messages now
+        if let Some(out_tx) = inner.earmarked.get(&topic) {
+            out_tx.send(OutEvent::Ready)?;
+        }
+
+        Ok(())
     }
 
     /// Returns true if we've successfully joined a gossip-overlay for this topic.
