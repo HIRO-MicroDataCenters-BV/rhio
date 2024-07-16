@@ -4,6 +4,7 @@ mod node;
 mod private_key;
 
 use anyhow::{Context, Result};
+use futures_util::StreamExt;
 use tracing::info;
 
 use crate::config::load_config;
@@ -24,6 +25,26 @@ async fn main() -> Result<()> {
     info!("My public key: {}", private_key.public_key());
 
     let node = Node::spawn(config, private_key).await?;
+
+    // Upload blob
+    // let mut stream = node
+    //     .import_blob("/home/adz/downloads/1ec8d4986b04fd80.png".into())
+    //     .await;
+    // while let Some(item) = stream.next().await {
+    //     println!("{:?}", item);
+    // }
+
+    // Wait until we've discovered other nodes
+    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+
+    // Download blob
+    let hash = "874be4e87da990b66cba5c964dfa50d720acc97a4c133e28453d240976080eb8"
+        .parse()
+        .unwrap();
+    let mut stream = node.download_blob(hash).await;
+    while let Some(item) = stream.next().await {
+        println!("{:?}", item);
+    }
 
     tokio::signal::ctrl_c().await?;
 
