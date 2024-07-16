@@ -36,7 +36,6 @@ impl Node<MemoryStore> {
         let network_builder = NetworkBuilder::from_config(config.clone())
             .private_key(private_key)
             .discovery(LocalDiscovery::new()?)
-            .gossip(Default::default())
             .protocol(
                 BLOBS_ALPN,
                 BlobsProtocol::new(db.clone(), pool_handle.clone()),
@@ -123,9 +122,8 @@ impl Node<MemoryStore> {
     }
 
     pub async fn shutdown(self) -> Result<()> {
-        // Trigger shutdown of the main run task by activating the cancel token.
+        // Trigger shutdown of the main run task by activating the cancel token
         self.network.shutdown().await?;
-
         Ok(())
     }
 }

@@ -6,12 +6,12 @@ mod private_key;
 mod protocol;
 
 use anyhow::{Context, Result};
-use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use tracing::info;
 
 use crate::config::load_config;
 use crate::logging::setup_tracing;
 use crate::node::Node;
+use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,20 +23,9 @@ async fn main() -> Result<()> {
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
+    info!("My public key: {}", private_key.public_key());
 
-    println!("{}", private_key.public_key());
     let node = Node::spawn(config, private_key).await?;
-
-    if let Some(addresses) = node.direct_addresses().await {
-        let values: Vec<String> = addresses.iter().map(|item| item.addr.to_string()).collect();
-        info!(
-            "My direct addresses: {}|{}",
-            node.node_id(),
-            values.join("|")
-        );
-    } else {
-        info!("My Node ID: {}", node.node_id());
-    }
 
     // Upload blob
     // let mut stream = node.add_blob("/home/adz/website.html".into()).await;
@@ -53,9 +42,7 @@ async fn main() -> Result<()> {
     //     println!("{:?}", item);
     // }
 
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => (),
-    }
+    tokio::signal::ctrl_c().await?;
 
     node.shutdown().await?;
 
