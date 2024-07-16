@@ -21,15 +21,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, warn, Instrument};
 use url::Url;
 
-use crate::config::Config;
+use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::protocols::{ProtocolHandler, ProtocolMap};
 use crate::{NetworkId, TopicId};
-
-/// Default port of a node socket.
-const DEFAULT_BIND_PORT: u16 = 2022;
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -492,11 +489,8 @@ pub trait Syncing {}
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::net::SocketAddr;
     use std::path::PathBuf;
 
-    use iroh_net::key::{PublicKey, SecretKey};
     use iroh_net::relay::{RelayNode, RelayUrl};
     use p2panda_core::PrivateKey;
     use url::Url;
@@ -506,7 +500,6 @@ mod tests {
 
     #[tokio::test]
     async fn config() {
-        let private_key = PrivateKey::new();
         let direct_node_public_key = PrivateKey::new().public_key();
         let relay_address: Url = "https://example.net".parse().unwrap();
 
