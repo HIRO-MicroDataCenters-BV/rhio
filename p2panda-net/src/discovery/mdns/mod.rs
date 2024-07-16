@@ -21,7 +21,7 @@ use crate::discovery::{BoxedStream, Discovery, DiscoveryEvent};
 use crate::NetworkId;
 
 const MDNS_PROVENANCE: &str = "mdns";
-const MDNS_QUERY_INTERVAL: Duration = Duration::from_secs(5);
+const MDNS_QUERY_INTERVAL: Duration = Duration::from_millis(1000);
 
 pub type ServiceName = Name;
 

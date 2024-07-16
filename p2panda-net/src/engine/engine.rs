@@ -27,13 +27,13 @@ const JOIN_PEERS_SAMPLE_LEN: usize = 7;
 
 /// In what frequency do we attempt joining the network-wide gossip overlay over a newly, randomly
 /// sampled set of peers.
-const JOIN_NETWORK_INTERVAL: Duration = Duration::from_secs(9);
+const JOIN_NETWORK_INTERVAL: Duration = Duration::from_millis(900);
 
 /// How often do we announce the list of our subscribed topics.
-const ANNOUNCE_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
+const ANNOUNCE_TOPICS_INTERVAL: Duration = Duration::from_millis(2200);
 
 /// How often do we try to join the topics we're interested in.
-const JOIN_TOPICS_INTERVAL: Duration = Duration::from_secs(7);
+const JOIN_TOPICS_INTERVAL: Duration = Duration::from_millis(1200);
 
 pub enum ToEngineActor {
     AddPeer {
