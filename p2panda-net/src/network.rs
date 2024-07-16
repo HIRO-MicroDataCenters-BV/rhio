@@ -73,7 +73,7 @@ impl NetworkBuilder {
 
     // Instantiate a network builder from a network configuration.
     pub fn from_config(config: Config) -> Self {
-        let mut network_builder = Self::new(config.network_key).bind_port(config.bind_port);
+        let mut network_builder = Self::new(config.network_id).bind_port(config.bind_port);
 
         for (public_key, addresses) in config.direct_node_addresses {
             network_builder = network_builder.direct_address(public_key, addresses)
@@ -511,7 +511,7 @@ mod tests {
 
         let config = Config {
             bind_port: 2024,
-            network_key: [1; 32],
+            network_id: [1; 32],
             private_key: Some(PathBuf::new().join("secret-key.txt")),
             direct_node_addresses: vec![(
                 direct_node_public_key,

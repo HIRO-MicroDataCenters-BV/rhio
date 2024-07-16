@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -6,8 +8,10 @@ use p2panda_core::PublicKey;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-/// Default network key.
-pub const DEFAULT_NETWORK_KEY: [u8; 32] = [0; 32];
+use crate::NetworkId;
+
+/// Default network id.
+pub const DEFAULT_NETWORK_ID: NetworkId = [0; 32];
 
 /// Default port of a node socket.
 pub const DEFAULT_BIND_PORT: u16 = 2022;
@@ -17,7 +21,7 @@ pub type NodeAddr = (PublicKey, Vec<SocketAddr>);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub bind_port: u16,
-    pub network_key: [u8; 32],
+    pub network_id: NetworkId,
     pub private_key: Option<PathBuf>,
     pub direct_node_addresses: Vec<NodeAddr>,
     pub relay_addresses: Vec<Url>,
@@ -26,7 +30,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            network_key: DEFAULT_NETWORK_KEY,
+            network_id: DEFAULT_NETWORK_ID,
             bind_port: DEFAULT_BIND_PORT,
             private_key: None,
             direct_node_addresses: vec![],
