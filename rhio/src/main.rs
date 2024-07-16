@@ -25,21 +25,6 @@ async fn main() -> Result<()> {
 
     let node = Node::spawn(config, private_key).await?;
 
-    // Upload blob
-    // let mut stream = node.add_blob("/home/adz/website.html".into()).await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
-
-    // Download blob
-    // let hash = "1eafd71f60630c8826fbc7de90bbe046b956f3d9397ee5c0fd48f24bc80c0e31"
-    //     .parse()
-    //     .unwrap();
-    // let mut stream = node.blob_download(hash).await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
-
     tokio::signal::ctrl_c().await?;
 
     node.shutdown().await?;

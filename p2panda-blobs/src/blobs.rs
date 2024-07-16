@@ -68,6 +68,7 @@ where
             self.network.endpoint().clone(),
             self.downloader.clone(),
             self.pool_handle.clone(),
+            // @TODO: Get currently known peers from network and use them here
             vec![],
             hash,
         )

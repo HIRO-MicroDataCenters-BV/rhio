@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0.86"
 clap = { version = "4.5.8", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env"] }
+futures-util = "0.3.30"
 hex = "0.4.3"
 iroh-net = "0.20.0"
 p2panda-blobs = {path = "../p2panda-blobs"}

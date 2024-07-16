@@ -3496,6 +3496,7 @@ dependencies = [
  "anyhow",
  "clap",
  "figment",
+ "futures-util",
  "hex",
  "iroh-net",
  "p2panda-blobs",
