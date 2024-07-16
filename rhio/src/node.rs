@@ -9,12 +9,14 @@ use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 
+#[allow(dead_code)]
 pub struct Node {
     config: Config,
     network: Network,
     blobs: Blobs<MemoryStore>,
 }
 
+#[allow(dead_code)]
 impl Node {
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let store = MemoryStore::new();

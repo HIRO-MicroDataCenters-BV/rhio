@@ -47,14 +47,6 @@ impl<T: Send + Sync + 'static> IntoArcAny for T {
 pub(super) struct ProtocolMap(BTreeMap<&'static [u8], Arc<dyn ProtocolHandler>>);
 
 impl ProtocolMap {
-    /// Returns the registered protocol handler for an ALPN as a concrete type.
-    pub(super) fn get_typed<P: ProtocolHandler>(&self, alpn: &[u8]) -> Option<Arc<P>> {
-        let protocol: Arc<dyn ProtocolHandler> = self.0.get(alpn)?.clone();
-        let protocol_any: Arc<dyn Any + Send + Sync> = protocol.into_arc_any();
-        let protocol_ref = Arc::downcast(protocol_any).ok()?;
-        Some(protocol_ref)
-    }
-
     /// Returns the registered protocol handler for an ALPN as a [`Arc<dyn ProtocolHandler>`].
     pub(super) fn get(&self, alpn: &[u8]) -> Option<Arc<dyn ProtocolHandler>> {
         self.0.get(alpn).cloned()
