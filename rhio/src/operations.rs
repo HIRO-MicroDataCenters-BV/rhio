@@ -1,15 +1,14 @@
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
+use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
-use p2panda_core::{
-    validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
-    PublicKey,
-};
+use p2panda_core::operation::{validate_backlink, validate_operation, Body, Header, Operation};
+use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::extensions::RhioExtensions;
 use crate::message::{GossipOperation, Message};
@@ -159,6 +158,22 @@ impl OperationsActor {
         self.store
             .insert_operation(operation)
             .expect("no errors from memory store");
+
+        match message {
+            Message::AnnounceBlob(hash) => {
+                if let Err(err) = self.download_blob(hash).await {
+                    error!("failed handling announced blob for {hash}: {err}");
+                }
+            }
+        }
+    }
+
+    async fn download_blob(&mut self, hash: Hash) -> Result<()> {
+        let mut stream = self.blobs.download_blob(hash).await;
+        while let Some(item) = stream.next().await {
+            println!("{:?}", item);
+        }
+        Ok(())
     }
 
     async fn send_message(&mut self, message: Message) -> Result<()> {

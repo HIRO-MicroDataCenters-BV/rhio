@@ -47,15 +47,6 @@ async fn main() -> Result<()> {
     // Wait until we've discovered other nodes
     // tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-    // Download blob
-    // let hash = "874be4e87da990b66cba5c964dfa50d720acc97a4c133e28453d240976080eb8"
-    //     .parse()
-    //     .unwrap();
-    // let mut stream = node.download_blob(hash).await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
-
     println!("Node ID: {}", node.node_id());
     println!("joining gossip overlay...");
 

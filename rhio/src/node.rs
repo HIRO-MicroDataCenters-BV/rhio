@@ -4,8 +4,8 @@ use anyhow::Result;
 use futures_util::Stream;
 use iroh_net::endpoint::DirectAddr;
 use iroh_net::NodeId;
-use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
-use p2panda_core::{Hash, PrivateKey};
+use p2panda_blobs::{Blobs, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use p2panda_core::PrivateKey;
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
@@ -82,14 +82,6 @@ impl Node {
             .send(ToOperationActor::SendMessage { message, reply })
             .await?;
         reply_rx.await?
-    }
-
-    pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
-        self.blobs.import_blob(path).await
-    }
-
-    pub async fn download_blob(&self, hash: Hash) -> impl Stream<Item = DownloadBlobEvent> {
-        self.blobs.download_blob(hash).await
     }
 
     pub async fn ready(&mut self) -> Option<()> {
