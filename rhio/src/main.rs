@@ -1,15 +1,18 @@
 mod config;
+mod extensions;
 mod logging;
 mod node;
 mod private_key;
 
 use anyhow::{Context, Result};
-use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_core::Header;
+use p2panda_net::network::OutEvent;
 use p2panda_net::TopicId;
 use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::config::load_config;
+use crate::extensions::Extensions;
 use crate::logging::setup_tracing;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
@@ -29,7 +32,7 @@ async fn main() -> Result<()> {
     };
     info!("My public key: {}", private_key.public_key());
 
-    let mut node = Node::spawn(config, private_key).await?;
+    let (node, mut gossip_rx) = Node::spawn(config, private_key.clone()).await?;
 
     // Upload blob
     // let mut stream = node
@@ -51,13 +54,12 @@ async fn main() -> Result<()> {
     //     println!("{:?}", item);
     // }
 
-    let (tx, mut rx) = node.subscribe(TOPIC_ID).await?;
     let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
 
     println!("Node ID: {}", node.node_id());
     println!("joining gossip overlay...");
     tokio::task::spawn(async move {
-        while let Ok(event) = rx.recv().await {
+        while let Ok(event) = gossip_rx.recv().await {
             match event {
                 OutEvent::Ready => {
                     ready_tx.send(()).await.ok();
@@ -65,9 +67,13 @@ async fn main() -> Result<()> {
                 OutEvent::Message {
                     bytes,
                     delivered_from,
-                } => match String::from_utf8(bytes) {
-                    Ok(message) => {
-                        println!("{}", message);
+                } => match ciborium::from_reader::<Header<Extensions>, _>(&bytes[..]) {
+                    Ok(header) => {
+                        if header.verify() {
+                            println!("Valid operation header received");
+                        } else {
+                            eprintln!("Invalid operation header received")
+                        };
                     }
                     Err(err) => {
                         eprintln!("invalid message from {delivered_from}: {err}");
@@ -79,12 +85,7 @@ async fn main() -> Result<()> {
 
     let _ = ready_rx.recv().await;
     println!("gossip overlay joined!");
-
-    tx.send(InEvent::Message {
-        bytes: format!("Hello from: {}", node.node_id()).into_bytes(),
-    })
-    .await
-    .ok();
+    node.send_message(&private_key, "hello!").await.ok();
 
     tokio::signal::ctrl_c().await?;
 
