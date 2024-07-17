@@ -1,18 +1,14 @@
 mod config;
-mod operations;
 mod extensions;
 mod logging;
 mod node;
+mod operations;
 mod private_key;
 
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use node::Message;
-use p2panda_blobs::MemoryStore;
-use p2panda_net::network::OutEvent;
 use p2panda_net::TopicId;
-use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::config::load_config;
@@ -35,7 +31,7 @@ async fn main() -> Result<()> {
     };
     info!("My public key: {}", private_key.public_key());
 
-    let (mut node, mut gossip_rx) = Node::spawn(config, private_key.clone()).await?;
+    let mut node = Node::spawn(config, private_key.clone()).await?;
 
     // Upload blob
     // let mut stream = node
@@ -57,43 +53,10 @@ async fn main() -> Result<()> {
     //     println!("{:?}", item);
     // }
 
-    let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
-
     println!("Node ID: {}", node.node_id());
     println!("joining gossip overlay...");
 
-    tokio::task::spawn(async move {
-        while let Ok(event) = gossip_rx.recv().await {
-            match event {
-                OutEvent::Ready => {
-                    ready_tx.send(()).await.ok();
-                }
-                OutEvent::Message {
-                    bytes,
-                    delivered_from,
-                } => match ciborium::from_reader::<Message, _>(&bytes[..]) {
-                    Ok(Message { text, header }) => {
-                        if header.verify() {
-                            println!(
-                                "{} {} {} {}",
-                                text,
-                                header.seq_num,
-                                header.timestamp,
-                                header.hash()
-                            );
-                        } else {
-                            eprintln!("Invalid operation header received")
-                        };
-                    }
-                    Err(err) => {
-                        eprintln!("invalid message from {delivered_from}: {err}");
-                    }
-                },
-            }
-        }
-    });
-
-    let _ = ready_rx.recv().await;
+    let _ = node.ready().await;
     println!("gossip overlay joined!");
 
     let mut interval = tokio::time::interval(Duration::from_secs(1));

@@ -4,21 +4,15 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use p2panda_core::{Body, Header, Operation, PrivateKey};
-use p2panda_net::network::InEvent;
+use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogStore, MemoryStore, OperationStore};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
-use crate::{extensions::Extensions, node::Message};
+use crate::extensions::Extensions;
 
 #[derive(Debug)]
 pub enum ToOperationActor {
-    Send {
-        text: String,
-    },
-    Receive {
-        header: Header<Extensions>,
-        body: Body,
-    },
+    Send { text: String },
     Shutdown,
 }
 
@@ -26,7 +20,9 @@ pub struct OperationsActor {
     private_key: PrivateKey,
     store: MemoryStore<Extensions>,
     gossip_tx: mpsc::Sender<InEvent>,
+    gossip_rx: broadcast::Receiver<OutEvent>,
     inbox: mpsc::Receiver<ToOperationActor>,
+    ready_tx: mpsc::Sender<()>,
 }
 
 impl OperationsActor {
@@ -34,29 +30,43 @@ impl OperationsActor {
         private_key: PrivateKey,
         store: MemoryStore<Extensions>,
         gossip_tx: mpsc::Sender<InEvent>,
+        gossip_rx: broadcast::Receiver<OutEvent>,
         inbox: mpsc::Receiver<ToOperationActor>,
+        ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
             private_key,
             store,
             gossip_tx,
+            gossip_rx,
             inbox,
+            ready_tx,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        while let Some(msg) = self.inbox.recv().await {
-            let msg = msg;
-            if !self
-                .on_actor_message(msg)
-                .await
-                .context("on_actor_message")?
-            {
-                break;
+        loop {
+            tokio::select! {
+                Some(msg) = self.inbox.recv() => {
+                    let msg = msg;
+                    if !self
+                        .on_actor_message(msg)
+                        .await
+                        .context("on_actor_message")?
+                    {
+                        return Ok(());
+                    }
+
+                },
+                msg = self.gossip_rx.recv() => {
+                    let msg = msg?;
+                    self
+                        .on_gossip_event(msg)
+                        .await;
+
+                }
             }
         }
-
-        Ok(())
     }
 
     async fn on_actor_message(&mut self, msg: ToOperationActor) -> Result<bool> {
@@ -97,27 +107,44 @@ impl OperationsActor {
                 let operation = Operation {
                     hash: header.hash(),
                     header: header.clone(),
-                    body: Some(body),
+                    body: Some(body.clone()),
                 };
 
                 self.store.insert_operation(operation)?;
 
-                let message = Message {
-                    header,
-                    text: text.to_string(),
-                };
-
                 let mut bytes = Vec::new();
-                ciborium::ser::into_writer(&message, &mut bytes)?;
+                ciborium::ser::into_writer(&(body, header), &mut bytes)?;
 
                 self.gossip_tx.send(InEvent::Message { bytes }).await?;
             }
-            ToOperationActor::Receive { header, body } => todo!(),
             ToOperationActor::Shutdown => {
                 return Ok(false);
             }
         }
 
         Ok(true)
+    }
+
+    async fn on_gossip_event(&mut self, event: OutEvent) {
+        match event {
+            OutEvent::Ready => {
+                self.ready_tx.send(()).await.ok();
+            }
+            OutEvent::Message {
+                bytes,
+                delivered_from,
+            } => match ciborium::from_reader::<(Body, Header<Extensions>), _>(&bytes[..]) {
+                Ok((body, header)) => {
+                    if header.verify() {
+                        println!("{} {} {}", header.seq_num, header.timestamp, header.hash());
+                    } else {
+                        eprintln!("Invalid operation header received")
+                    };
+                }
+                Err(err) => {
+                    eprintln!("invalid message from {delivered_from}: {err}");
+                }
+            },
+        }
     }
 }

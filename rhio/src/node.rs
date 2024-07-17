@@ -33,14 +33,13 @@ pub struct Node {
     blobs: Blobs<BlobMemoryStore>,
     operations_actor_tx: mpsc::Sender<ToOperationActor>,
     actor_handle: JoinHandle<()>,
+    ready_rx: mpsc::Receiver<()>,
 }
 
 impl Node {
-    pub async fn spawn(
-        config: Config,
-        private_key: PrivateKey,
-    ) -> Result<(Self, Receiver<OutEvent>)> {
+    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let (operations_actor_tx, operations_actor_rx) = mpsc::channel(256);
+        let (ready_tx, ready_rx) = mpsc::channel::<()>(1);
 
         let blob_store = BlobMemoryStore::new();
         let log_store = LogMemoryStore::default();
@@ -50,11 +49,16 @@ impl Node {
             .discovery(LocalDiscovery::new()?);
 
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+        let (topic_tx, topic_rx) = network.subscribe(TOPIC_ID).await?;
 
-        let (tx, rx) = network.subscribe(TOPIC_ID).await?;
-
-        let mut operations_actor =
-            OperationsActor::new(private_key.clone(), log_store, tx, operations_actor_rx);
+        let mut operations_actor = OperationsActor::new(
+            private_key.clone(),
+            log_store,
+            topic_tx,
+            topic_rx,
+            operations_actor_rx,
+            ready_tx,
+        );
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = operations_actor.run().await {
@@ -68,9 +72,10 @@ impl Node {
             blobs,
             operations_actor_tx,
             actor_handle,
+            ready_rx,
         };
 
-        Ok((node, rx))
+        Ok(node)
     }
 
     #[allow(dead_code)]
@@ -107,9 +112,15 @@ impl Node {
         self.blobs.download_blob(hash).await
     }
 
+    pub async fn ready(&mut self) -> Option<()> {
+        self.ready_rx.recv().await
+    }
+
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
+        self.operations_actor_tx.send(ToOperationActor::Shutdown).await?;
         self.network.shutdown().await?;
+        self.actor_handle.await?;
         Ok(())
     }
 }
