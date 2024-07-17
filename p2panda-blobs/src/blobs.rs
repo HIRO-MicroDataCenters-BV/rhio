@@ -15,6 +15,7 @@ use crate::import::{import_blob, ImportBlobEvent};
 use crate::protocol::{BlobsProtocol, BLOBS_ALPN};
 use crate::DownloadBlobEvent;
 
+#[derive(Clone, Debug)]
 pub struct Blobs<S>
 where
     S: Store,

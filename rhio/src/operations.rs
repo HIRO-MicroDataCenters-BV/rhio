@@ -1,12 +1,13 @@
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
+use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{
     validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
     PublicKey,
 };
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_store::{LogId, LogStore, MemoryStore, OperationStore};
+use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{error, info};
 
@@ -23,8 +24,9 @@ pub enum ToOperationActor {
 }
 
 pub struct OperationsActor {
+    blobs: Blobs<BlobMemoryStore>,
     private_key: PrivateKey,
-    store: MemoryStore<RhioExtensions>,
+    store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
     gossip_rx: broadcast::Receiver<OutEvent>,
     inbox: mpsc::Receiver<ToOperationActor>,
@@ -33,14 +35,16 @@ pub struct OperationsActor {
 
 impl OperationsActor {
     pub fn new(
+        blobs: Blobs<BlobMemoryStore>,
         private_key: PrivateKey,
-        store: MemoryStore<RhioExtensions>,
+        store: LogsMemoryStore<RhioExtensions>,
         gossip_tx: mpsc::Sender<InEvent>,
         gossip_rx: broadcast::Receiver<OutEvent>,
         inbox: mpsc::Receiver<ToOperationActor>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
+            blobs,
             private_key,
             store,
             gossip_tx,
@@ -110,12 +114,9 @@ impl OperationsActor {
                     body: Some(event.body),
                 };
 
-                match validate_operation(&operation) {
-                    Ok(_) => (),
-                    Err(err) => {
-                        error!("invalid operation received: {}", err);
-                        return;
-                    }
+                if let Err(err) = validate_operation(&operation) {
+                    error!("invalid operation received: {err}");
+                    return;
                 }
 
                 let log_id: LogId = RhioExtensions::extract(&operation);

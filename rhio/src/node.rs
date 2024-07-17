@@ -7,12 +7,9 @@ use iroh_net::NodeId;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::config::Config;
-use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, TopicId};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::mpsc::{self, Sender};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::message::Message;
@@ -20,10 +17,8 @@ use crate::operations::{OperationsActor, ToOperationActor};
 use crate::TOPIC_ID;
 
 pub struct Node {
-    #[allow(dead_code)]
     config: Config,
     network: Network,
-    #[allow(dead_code)]
     blobs: Blobs<BlobMemoryStore>,
     operations_actor_tx: mpsc::Sender<ToOperationActor>,
     actor_handle: JoinHandle<()>,
@@ -46,6 +41,7 @@ impl Node {
         let (topic_tx, topic_rx) = network.subscribe(TOPIC_ID).await?;
 
         let mut operations_actor = OperationsActor::new(
+            blobs.clone(),
             private_key.clone(),
             log_store,
             topic_tx,
@@ -72,21 +68,12 @@ impl Node {
         Ok(node)
     }
 
-    #[allow(dead_code)]
     pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
         self.network.direct_addresses().await
     }
 
-    #[allow(dead_code)]
     pub fn node_id(&self) -> NodeId {
         self.network.node_id()
-    }
-
-    pub async fn subscribe(
-        &mut self,
-        topic: TopicId,
-    ) -> Result<(Sender<InEvent>, Receiver<OutEvent>)> {
-        self.network.subscribe(topic).await
     }
 
     pub async fn send_message(&self, message: Message) -> Result<()> {
