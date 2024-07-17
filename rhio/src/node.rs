@@ -7,7 +7,10 @@ use iroh_net::NodeId;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::config::Config;
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
+use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, TopicId};
+use tokio::sync::broadcast::Receiver;
+use tokio::sync::mpsc::Sender;
 
 pub struct Node {
     #[allow(dead_code)]
@@ -44,6 +47,13 @@ impl Node {
     #[allow(dead_code)]
     pub fn node_id(&self) -> NodeId {
         self.network.node_id()
+    }
+
+    pub async fn subscribe(
+        &mut self,
+        topic: TopicId,
+    ) -> Result<(Sender<InEvent>, Receiver<OutEvent>)> {
+        self.network.subscribe(topic).await
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
