@@ -106,16 +106,16 @@ impl OperationsActor {
     }
 
     async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
+        // Validate operation
         let Ok(event) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
             error!("invalid operation from {delivered_from}");
             return;
         };
 
-        // Validate operation integrity
         let operation = Operation {
             hash: event.header.hash(),
             header: event.header,
-            body: Some(event.body.clone()),
+            body: Some(event.body),
         };
 
         if let Err(err) = validate_operation(&operation) {
@@ -136,7 +136,13 @@ impl OperationsActor {
         }
 
         // Validate message
-        let Ok(message) = ciborium::from_reader::<Message, _>(&event.body.to_bytes()[..]) else {
+        let Ok(message) = ciborium::from_reader::<Message, _>(
+            &operation
+                .body
+                .as_ref()
+                .expect("body should be given")
+                .to_bytes()[..],
+        ) else {
             error!("invalid message from {delivered_from}");
             return;
         };
