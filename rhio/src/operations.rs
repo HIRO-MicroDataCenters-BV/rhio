@@ -10,7 +10,7 @@ use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::extensions::Extensions;
+use crate::extensions::RhioExtensions;
 
 #[derive(Debug)]
 pub enum ToOperationActor {
@@ -20,7 +20,7 @@ pub enum ToOperationActor {
 
 pub struct OperationsActor {
     private_key: PrivateKey,
-    store: MemoryStore<Extensions>,
+    store: MemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
     gossip_rx: broadcast::Receiver<OutEvent>,
     inbox: mpsc::Receiver<ToOperationActor>,
@@ -30,7 +30,7 @@ pub struct OperationsActor {
 impl OperationsActor {
     pub fn new(
         private_key: PrivateKey,
-        store: MemoryStore<Extensions>,
+        store: MemoryStore<RhioExtensions>,
         gossip_tx: mpsc::Sender<InEvent>,
         gossip_rx: broadcast::Receiver<OutEvent>,
         inbox: mpsc::Receiver<ToOperationActor>,
@@ -102,7 +102,7 @@ impl OperationsActor {
                     seq_num,
                     backlink,
                     previous: vec![],
-                    extensions: Some(Extensions::default()),
+                    extensions: Some(RhioExtensions::default()),
                 };
                 header.sign(&self.private_key);
 
@@ -135,7 +135,7 @@ impl OperationsActor {
             OutEvent::Message {
                 bytes,
                 delivered_from,
-            } => match ciborium::from_reader::<(Body, Header<Extensions>), _>(&bytes[..]) {
+            } => match ciborium::from_reader::<(Body, Header<RhioExtensions>), _>(&bytes[..]) {
                 Ok((body, header)) => {
                     let operation = Operation {
                         hash: header.hash(),
@@ -151,7 +151,7 @@ impl OperationsActor {
                         }
                     }
 
-                    let log_id: LogId = Extensions::extract(&operation);
+                    let log_id: LogId = RhioExtensions::extract(&operation);
                     match self
                         .store
                         .latest_operation(operation.header.public_key, log_id)

@@ -1,15 +1,16 @@
+use p2panda_core::{Extension, Extensions, Operation};
 use p2panda_store::LogId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Extensions {
+pub struct RhioExtensions {
     stream_name: Option<LogId>,
 }
 
-impl p2panda_core::Extensions for Extensions {}
+impl Extensions for RhioExtensions {}
 
-impl p2panda_core::Extension<LogId> for Extensions {
-    fn extract(operation: &p2panda_core::Operation<Extensions>) -> LogId {
+impl Extension<LogId> for RhioExtensions {
+    fn extract(operation: &Operation<RhioExtensions>) -> LogId {
         match &operation.header.extensions {
             Some(extensions) => match &extensions.stream_name {
                 Some(stream_name) => stream_name.to_owned(),
