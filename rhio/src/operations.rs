@@ -152,27 +152,16 @@ impl OperationsActor {
                     }
 
                     let log_id: LogId = RhioExtensions::extract(&operation);
-                    match self
+                    if let Some(latest_operation) = self
                         .store
                         .latest_operation(operation.header.public_key, log_id)
                         .expect("Memory store does not error")
                     {
-                        Some(latest_operation) => {
-                            if validate_backlink(&latest_operation.header, &operation.header)
-                                .is_err()
-                            {
-                                eprintln!("Invalid backlik");
-                                return;
-                            };
-                        }
-                        None => {
-                            if operation.header.seq_num != 0 || operation.header.backlink.is_some()
-                            {
-                                eprintln!("No backlink found for operation");
-                                return;
-                            }
-                        }
-                    };
+                        if validate_backlink(&latest_operation.header, &operation.header).is_err() {
+                            eprintln!("Invalid backlik");
+                            return;
+                        };
+                    }
 
                     println!(
                         "Received operation: {} {} {} {}",
