@@ -9,20 +9,20 @@ use p2panda_store::MemoryStore as LogMemoryStore;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+use crate::actor::{RhioActor, ToRhioActor};
 use crate::message::Message;
-use crate::operations::{OperationsActor, ToOperationActor};
 use crate::TOPIC_ID;
 
 pub struct Node {
     network: Network,
-    operations_actor_tx: mpsc::Sender<ToOperationActor>,
+    rhio_actor_tx: mpsc::Sender<ToRhioActor>,
     actor_handle: JoinHandle<()>,
     ready_rx: mpsc::Receiver<()>,
 }
 
 impl Node {
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        let (operations_actor_tx, operations_actor_rx) = mpsc::channel(256);
+        let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
         let (ready_tx, ready_rx) = mpsc::channel::<()>(1);
 
         let blob_store = BlobMemoryStore::new();
@@ -35,25 +35,25 @@ impl Node {
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
         let (topic_tx, topic_rx) = network.subscribe(TOPIC_ID).await?;
 
-        let mut operations_actor = OperationsActor::new(
+        let mut rhio_actor = RhioActor::new(
             blobs.clone(),
             private_key.clone(),
             log_store,
             topic_tx,
             topic_rx,
-            operations_actor_rx,
+            rhio_actor_rx,
             ready_tx,
         );
 
         let actor_handle = tokio::task::spawn(async move {
-            if let Err(err) = operations_actor.run().await {
-                panic!("engine actor failed: {err:?}");
+            if let Err(err) = rhio_actor.run().await {
+                panic!("operations actor failed: {err:?}");
             }
         });
 
         let node = Node {
             network,
-            operations_actor_tx,
+            rhio_actor_tx,
             actor_handle,
             ready_rx,
         };
@@ -72,8 +72,8 @@ impl Node {
 
     pub async fn send_message(&self, message: Message) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
-        self.operations_actor_tx
-            .send(ToOperationActor::SendMessage { message, reply })
+        self.rhio_actor_tx
+            .send(ToRhioActor::SendMessage { message, reply })
             .await?;
         reply_rx.await?
     }
@@ -84,9 +84,7 @@ impl Node {
 
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
-        self.operations_actor_tx
-            .send(ToOperationActor::Shutdown)
-            .await?;
+        self.rhio_actor_tx.send(ToRhioActor::Shutdown).await?;
         self.network.shutdown().await?;
         self.actor_handle.await?;
         Ok(())

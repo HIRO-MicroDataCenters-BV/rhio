@@ -14,7 +14,7 @@ use crate::extensions::RhioExtensions;
 use crate::message::{GossipOperation, Message};
 
 #[derive(Debug)]
-pub enum ToOperationActor {
+pub enum ToRhioActor {
     SendMessage {
         message: Message,
         reply: oneshot::Sender<Result<()>>,
@@ -22,24 +22,24 @@ pub enum ToOperationActor {
     Shutdown,
 }
 
-pub struct OperationsActor {
+pub struct RhioActor {
     blobs: Blobs<BlobMemoryStore>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
     gossip_rx: broadcast::Receiver<OutEvent>,
-    inbox: mpsc::Receiver<ToOperationActor>,
+    inbox: mpsc::Receiver<ToRhioActor>,
     ready_tx: mpsc::Sender<()>,
 }
 
-impl OperationsActor {
+impl RhioActor {
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
         gossip_tx: mpsc::Sender<InEvent>,
         gossip_rx: broadcast::Receiver<OutEvent>,
-        inbox: mpsc::Receiver<ToOperationActor>,
+        inbox: mpsc::Receiver<ToRhioActor>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
@@ -76,13 +76,13 @@ impl OperationsActor {
         }
     }
 
-    async fn on_actor_message(&mut self, msg: ToOperationActor) -> Result<bool> {
+    async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToOperationActor::SendMessage { message, reply } => {
+            ToRhioActor::SendMessage { message, reply } => {
                 let result = self.send_message(message).await;
                 reply.send(result).ok();
             }
-            ToOperationActor::Shutdown => {
+            ToRhioActor::Shutdown => {
                 return Ok(false);
             }
         }
