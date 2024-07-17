@@ -1,10 +1,7 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
-use futures_util::Stream;
 use iroh_net::endpoint::DirectAddr;
 use iroh_net::NodeId;
-use p2panda_blobs::{Blobs, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::PrivateKey;
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
@@ -17,9 +14,7 @@ use crate::operations::{OperationsActor, ToOperationActor};
 use crate::TOPIC_ID;
 
 pub struct Node {
-    config: Config,
     network: Network,
-    blobs: Blobs<BlobMemoryStore>,
     operations_actor_tx: mpsc::Sender<ToOperationActor>,
     actor_handle: JoinHandle<()>,
     ready_rx: mpsc::Receiver<()>,
@@ -57,9 +52,7 @@ impl Node {
         });
 
         let node = Node {
-            config,
             network,
-            blobs,
             operations_actor_tx,
             actor_handle,
             ready_rx,
@@ -68,6 +61,7 @@ impl Node {
         Ok(node)
     }
 
+    #[allow(dead_code)]
     pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
         self.network.direct_addresses().await
     }
