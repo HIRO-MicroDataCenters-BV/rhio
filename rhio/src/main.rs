@@ -4,8 +4,11 @@ mod logging;
 mod node;
 mod private_key;
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use node::Message;
+use p2panda_blobs::MemoryStore;
 use p2panda_net::network::OutEvent;
 use p2panda_net::TopicId;
 use tokio::sync::mpsc;
@@ -31,7 +34,7 @@ async fn main() -> Result<()> {
     };
     info!("My public key: {}", private_key.public_key());
 
-    let (node, mut gossip_rx) = Node::spawn(config, private_key.clone()).await?;
+    let (mut node, mut gossip_rx) = Node::spawn(config, private_key.clone()).await?;
 
     // Upload blob
     // let mut stream = node
@@ -57,6 +60,7 @@ async fn main() -> Result<()> {
 
     println!("Node ID: {}", node.node_id());
     println!("joining gossip overlay...");
+
     tokio::task::spawn(async move {
         while let Ok(event) = gossip_rx.recv().await {
             match event {
@@ -67,9 +71,15 @@ async fn main() -> Result<()> {
                     bytes,
                     delivered_from,
                 } => match ciborium::from_reader::<Message, _>(&bytes[..]) {
-                    Ok(Message { header, text }) => {
+                    Ok(Message { text, header }) => {
                         if header.verify() {
-                            println!("{text}");
+                            println!(
+                                "{} {} {} {}",
+                                text,
+                                header.seq_num,
+                                header.timestamp,
+                                header.hash()
+                            );
                         } else {
                             eprintln!("Invalid operation header received")
                         };
@@ -84,11 +94,18 @@ async fn main() -> Result<()> {
 
     let _ = ready_rx.recv().await;
     println!("gossip overlay joined!");
-    node.send_message(&private_key, "hello!").await.ok();
 
-    tokio::signal::ctrl_c().await?;
+    let mut interval = tokio::time::interval(Duration::from_secs(1));
 
-    node.shutdown().await?;
-
-    Ok(())
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                node.shutdown().await?;
+                return Ok(());
+            },
+            _ = interval.tick() => {
+                node.send_message(&private_key, "hello").await?;
+            }
+        }
+    }
 }

@@ -12,6 +12,7 @@ hex = "0.4.3"
 iroh-net = "0.20.0"
 p2panda-blobs = {path = "../p2panda-blobs"}
 p2panda-core = {path = "../../p2panda/p2panda-core"}
+p2panda-store = {path = "../../p2panda/p2panda-store"}
 p2panda-net = {path = "../p2panda-net"}
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
