@@ -5,26 +5,19 @@ use futures_util::Stream;
 use iroh_net::endpoint::DirectAddr;
 use iroh_net::NodeId;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
-use p2panda_core::{Hash, Header, PrivateKey};
+use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::config::Config;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, TopicId};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::extensions::RhioExtensions;
+use crate::message::Message;
 use crate::operations::{OperationsActor, ToOperationActor};
 use crate::TOPIC_ID;
-
-#[derive(Serialize, Deserialize)]
-pub struct Message {
-    pub text: String,
-    pub header: Header<RhioExtensions>,
-}
 
 pub struct Node {
     #[allow(dead_code)]
@@ -96,13 +89,10 @@ impl Node {
         self.network.subscribe(topic).await
     }
 
-    pub async fn send_message(&self, text: &str) -> Result<()> {
+    pub async fn send_message(&self, message: Message) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.operations_actor_tx
-            .send(ToOperationActor::Send {
-                text: text.to_string(),
-                reply,
-            })
+            .send(ToOperationActor::SendMessage { message, reply })
             .await?;
         reply_rx.await?
     }

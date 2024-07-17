@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
-
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
@@ -13,11 +11,12 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{error, info};
 
 use crate::extensions::RhioExtensions;
+use crate::message::{GossipOperation, Message};
 
 #[derive(Debug)]
 pub enum ToOperationActor {
-    Send {
-        text: String,
+    SendMessage {
+        message: Message,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
@@ -76,8 +75,8 @@ impl OperationsActor {
 
     async fn on_actor_message(&mut self, msg: ToOperationActor) -> Result<bool> {
         match msg {
-            ToOperationActor::Send { text, reply } => {
-                let result = self.send_message(text).await;
+            ToOperationActor::SendMessage { message, reply } => {
+                let result = self.send_message(message).await;
                 reply.send(result).ok();
             }
             ToOperationActor::Shutdown => {
@@ -103,12 +102,12 @@ impl OperationsActor {
     }
 
     async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
-        match ciborium::from_reader::<(Body, Header<RhioExtensions>), _>(&bytes[..]) {
-            Ok((body, header)) => {
+        match ciborium::from_reader::<GossipOperation, _>(&bytes[..]) {
+            Ok(event) => {
                 let operation = Operation {
-                    hash: header.hash(),
-                    header,
-                    body: Some(body),
+                    hash: event.header.hash(),
+                    header: event.header,
+                    body: Some(event.body),
                 };
 
                 match validate_operation(&operation) {
@@ -149,10 +148,13 @@ impl OperationsActor {
         }
     }
 
-    async fn send_message(&mut self, text: String) -> Result<()> {
+    async fn send_message(&mut self, message: Message) -> Result<()> {
+        // Encode body
         let mut body_bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&text, &mut body_bytes)?;
+        ciborium::ser::into_writer(&message, &mut body_bytes)?;
+        let body = Body::new(&body_bytes);
 
+        // Sign and encode header
         let public_key = self.private_key.public_key();
         let latest_operation = self
             .store
@@ -167,7 +169,6 @@ impl OperationsActor {
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_secs();
 
-        let body = Body::new(&body_bytes);
         let mut header = Header {
             version: 1,
             public_key,
@@ -188,11 +189,13 @@ impl OperationsActor {
             body: Some(body.clone()),
         };
 
+        // Persist operation in our memory store
         self.store.insert_operation(operation)?;
 
+        // Broadcast data in gossip overlay
+        let gossip_event = GossipOperation { body, header };
         let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&(body, header), &mut bytes)?;
-
+        ciborium::ser::into_writer(&gossip_event, &mut bytes)?;
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())

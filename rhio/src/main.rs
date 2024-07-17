@@ -1,6 +1,7 @@
 mod config;
 mod extensions;
 mod logging;
+mod message;
 mod node;
 mod operations;
 mod private_key;
@@ -8,11 +9,13 @@ mod private_key;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use p2panda_core::Hash;
 use p2panda_net::TopicId;
 use tracing::info;
 
 use crate::config::load_config;
 use crate::logging::setup_tracing;
+use crate::message::Message;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 
@@ -68,7 +71,7 @@ async fn main() -> Result<()> {
                 return Ok(());
             },
             _ = interval.tick() => {
-                node.send_message("hello").await?;
+                node.send_message(Message::AnnounceBlob(Hash::new(vec![1, 2, 3]))).await?;
             }
         }
     }
