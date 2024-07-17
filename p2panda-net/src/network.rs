@@ -150,12 +150,6 @@ impl NetworkBuilder {
         self
     }
 
-    // Sets or overwrites a handler for a syncing strategy. If not set no initial syncing will be
-    // started on connection and the node directly jumps to gossip / "live" mode
-    pub fn sync(mut self, handler: impl Syncing) -> Self {
-        unimplemented!();
-    }
-
     // Gossip mode is always on, maybe we can only configure it here (max active and passive peers
     // etc.) or provide it with a custom implementation?
     pub fn gossip(mut self, config: GossipConfig) -> Self {
@@ -201,11 +195,6 @@ impl NetworkBuilder {
 
         let node_addr = endpoint.node_addr().await?;
 
-        // Add direct addresses to address book
-        for direct_addr in &self.direct_node_addresses {
-            endpoint.add_node_addr(direct_addr.clone())?;
-        }
-
         // Set up gossip overlay handler
         let gossip = Gossip::from_endpoint(
             endpoint.clone(),
@@ -215,6 +204,11 @@ impl NetworkBuilder {
 
         let engine = Engine::new(self.network_id, endpoint.clone(), gossip.clone());
         let handshake = Handshake::new(gossip.clone());
+
+        // Add direct addresses to address book
+        for direct_addr in &self.direct_node_addresses {
+            engine.add_peer(direct_addr.clone()).await?;
+        }
 
         let inner = Arc::new(NetworkInner {
             cancel_token: CancellationToken::new(),
@@ -269,12 +263,16 @@ impl NetworkBuilder {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
 pub struct Network {
     inner: Arc<NetworkInner>,
     protocols: Arc<ProtocolMap>,
     task: SharedAbortingJoinHandle<()>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
 struct NetworkInner {
     cancel_token: CancellationToken,
     discovery: Option<DiscoveryMap>,
@@ -351,7 +349,7 @@ impl NetworkInner {
                 Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
                     match event {
                         Ok(event) => {
-                            if let Err(err) = self.engine.add_peer(event.node_info).await {
+                            if let Err(err) = self.engine.add_peer(event.node_info.into()).await {
                                 error!("Engine failed on add_peer: {err:?}");
                                 break;
                             }
@@ -438,6 +436,10 @@ impl Network {
         &self.inner.endpoint
     }
 
+    pub async fn known_peers(&self) -> Result<Vec<NodeAddr>> {
+        self.inner.engine.known_peers().await
+    }
+
     // Shutdown of the whole network and all subscriptions and connections
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
@@ -455,6 +457,7 @@ pub enum InEvent {
     Message { bytes: Vec<u8> },
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum OutEvent {
     Ready,
@@ -483,9 +486,6 @@ async fn handle_connection(
         warn!("Handling incoming connection ended with error: {err}");
     }
 }
-
-// @TODO: This needs more thought + probably should move to `p2panda-sync`
-pub trait Syncing {}
 
 #[cfg(test)]
 mod tests {

@@ -12,6 +12,7 @@ use crate::protocols::ProtocolHandler;
 
 pub const HANDSHAKE_ALPN: &[u8] = b"/p2panda-net-handshake/0";
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Handshake {
     gossip: Gossip,
@@ -25,15 +26,7 @@ impl Handshake {
     async fn handle_connection(&self, connection: Connection) -> Result<()> {
         let remote_addr = connection.remote_address();
         let connection_id = connection.stable_id() as u64;
-        let span = debug_span!("connection", connection_id, %remote_addr);
-
-        // @TODO
-        // async {
-        //     while let Ok((writer, reader)) = connection.accept_bi().await {
-        //     }
-        // }
-        // .instrument(span)
-        // .await;
+        let _span = debug_span!("connection", connection_id, %remote_addr);
 
         Ok(())
     }

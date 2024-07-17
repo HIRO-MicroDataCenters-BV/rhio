@@ -1,17 +1,16 @@
-mod blobs;
 mod config;
 mod logging;
 mod node;
 mod private_key;
-mod protocol;
 
 use anyhow::{Context, Result};
-use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
+use futures_util::StreamExt;
 use tracing::info;
 
 use crate::config::load_config;
 use crate::logging::setup_tracing;
 use crate::node::Node;
+use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,39 +22,31 @@ async fn main() -> Result<()> {
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
+    info!("My public key: {}", private_key.public_key());
 
-    println!("{}", private_key.public_key());
     let node = Node::spawn(config, private_key).await?;
 
-    if let Some(addresses) = node.direct_addresses().await {
-        let values: Vec<String> = addresses.iter().map(|item| item.addr.to_string()).collect();
-        info!(
-            "My direct addresses: {}|{}",
-            node.node_id(),
-            values.join("|")
-        );
-    } else {
-        info!("My Node ID: {}", node.node_id());
-    }
-
     // Upload blob
-    // let mut stream = node.add_blob("/home/adz/website.html".into()).await;
+    // let mut stream = node
+    //     .import_blob("/home/adz/downloads/1ec8d4986b04fd80.png".into())
+    //     .await;
     // while let Some(item) = stream.next().await {
     //     println!("{:?}", item);
     // }
+
+    // Wait until we've discovered other nodes
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
     // Download blob
-    // let hash = "1eafd71f60630c8826fbc7de90bbe046b956f3d9397ee5c0fd48f24bc80c0e31"
-    //     .parse()
-    //     .unwrap();
-    // let mut stream = node.blob_download(hash).await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
-
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => (),
+    let hash = "874be4e87da990b66cba5c964dfa50d720acc97a4c133e28453d240976080eb8"
+        .parse()
+        .unwrap();
+    let mut stream = node.download_blob(hash).await;
+    while let Some(item) = stream.next().await {
+        println!("{:?}", item);
     }
+
+    tokio::signal::ctrl_c().await?;
 
     node.shutdown().await?;
 

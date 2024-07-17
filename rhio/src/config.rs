@@ -54,8 +54,5 @@ pub fn load_config() -> Result<Config> {
         .merge(Env::raw())
         .merge(Serialized::defaults(Cli::parse()))
         .extract()?;
-
-    println!("{config:?}");
-
     Ok(config)
 }

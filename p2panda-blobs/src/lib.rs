@@ -1,14 +1,17 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod blobs;
+mod download;
+mod import;
+mod protocol;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+use iroh_blobs::store;
+
+pub use blobs::Blobs;
+pub use download::DownloadBlobEvent;
+pub use import::ImportBlobEvent;
+pub use protocol::{BlobsProtocol, BLOBS_ALPN};
+
+pub type MemoryStore = store::mem::Store;
+
+pub type FilesystemStore = store::fs::Store;

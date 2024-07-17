@@ -39,6 +39,7 @@ impl Discovery for DiscoveryMap {
         Some(Box::pin(streams))
     }
 
+    // @TODO: Use NodeAddr instead of NodeInfo here
     fn update_local_address(&self, addrs: &NodeInfo) -> Result<()> {
         for service in &self.services {
             service.update_local_address(addrs)?;

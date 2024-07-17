@@ -1,23 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 use std::sync::Arc;
 
 use anyhow::Result;
 use futures_lite::future::Boxed as BoxedFuture;
+use iroh_blobs::protocol::ALPN;
+use iroh_blobs::store::Store;
 use iroh_net::endpoint::Connecting;
 use p2panda_net::ProtocolHandler;
+use tokio_util::task::LocalPoolHandle;
+
+pub const BLOBS_ALPN: &[u8] = ALPN;
 
 #[derive(Debug)]
 pub struct BlobsProtocol<S> {
-    rt: tokio_util::task::LocalPoolHandle,
+    rt: LocalPoolHandle,
     store: S,
 }
 
-impl<S: iroh_blobs::store::Store> BlobsProtocol<S> {
+impl<S: Store> BlobsProtocol<S> {
     pub fn new(store: S, rt: tokio_util::task::LocalPoolHandle) -> Self {
         Self { rt, store }
     }
 }
 
-impl<S: iroh_blobs::store::Store> ProtocolHandler for BlobsProtocol<S> {
+impl<S: Store> ProtocolHandler for BlobsProtocol<S> {
     fn accept(self: Arc<Self>, conn: Connecting) -> BoxedFuture<Result<()>> {
         Box::pin(async move {
             iroh_blobs::provider::handle_connection(
