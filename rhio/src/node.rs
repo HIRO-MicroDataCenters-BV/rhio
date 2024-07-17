@@ -13,16 +13,17 @@ use p2panda_store::MemoryStore as LogMemoryStore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::extensions::Extensions;
+use crate::extensions::RhioExtensions;
 use crate::operations::{OperationsActor, ToOperationActor};
 use crate::TOPIC_ID;
 
 #[derive(Serialize, Deserialize)]
 pub struct Message {
     pub text: String,
-    pub header: Header<Extensions>,
+    pub header: Header<RhioExtensions>,
 }
 
 pub struct Node {
@@ -96,12 +97,14 @@ impl Node {
     }
 
     pub async fn send_message(&self, text: &str) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
         self.operations_actor_tx
             .send(ToOperationActor::Send {
                 text: text.to_string(),
+                reply,
             })
             .await?;
-        Ok(())
+        reply_rx.await?
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
@@ -118,7 +121,9 @@ impl Node {
 
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
-        self.operations_actor_tx.send(ToOperationActor::Shutdown).await?;
+        self.operations_actor_tx
+            .send(ToOperationActor::Shutdown)
+            .await?;
         self.network.shutdown().await?;
         self.actor_handle.await?;
         Ok(())

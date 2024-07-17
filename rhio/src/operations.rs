@@ -8,14 +8,17 @@ use p2panda_core::{
 };
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore, OperationStore};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{error, info};
 
 use crate::extensions::RhioExtensions;
 
 #[derive(Debug)]
 pub enum ToOperationActor {
-    Send { text: String },
+    Send {
+        text: String,
+        reply: oneshot::Sender<Result<()>>,
+    },
     Shutdown,
 }
 
@@ -74,8 +77,9 @@ impl OperationsActor {
 
     async fn on_actor_message(&mut self, msg: ToOperationActor) -> Result<bool> {
         match msg {
-            ToOperationActor::Send { text } => {
-                self.send_message(text).await?;
+            ToOperationActor::Send { text, reply } => {
+                let result = self.send_message(text).await;
+                reply.send(result).ok();
             }
             ToOperationActor::Shutdown => {
                 return Ok(false);
