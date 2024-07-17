@@ -3,9 +3,11 @@
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
-use p2panda_core::{Body, Header, Operation, PrivateKey};
+use p2panda_core::{
+    validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
+};
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_store::{LogStore, MemoryStore, OperationStore};
+use p2panda_store::{LogId, LogStore, MemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::extensions::Extensions;
@@ -135,11 +137,54 @@ impl OperationsActor {
                 delivered_from,
             } => match ciborium::from_reader::<(Body, Header<Extensions>), _>(&bytes[..]) {
                 Ok((body, header)) => {
-                    if header.verify() {
-                        println!("{} {} {}", header.seq_num, header.timestamp, header.hash());
-                    } else {
-                        eprintln!("Invalid operation header received")
+                    let operation = Operation {
+                        hash: header.hash(),
+                        header,
+                        body: Some(body),
                     };
+
+                    match validate_operation(&operation) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            eprintln!("Invalid operation received: {}", err);
+                            return;
+                        }
+                    }
+
+                    let log_id: LogId = Extensions::extract(&operation);
+                    match self
+                        .store
+                        .latest_operation(operation.header.public_key, log_id)
+                        .expect("Memory store does not error")
+                    {
+                        Some(latest_operation) => {
+                            if validate_backlink(&latest_operation.header, &operation.header)
+                                .is_err()
+                            {
+                                eprintln!("Invalid backlik");
+                                return;
+                            };
+                        }
+                        None => {
+                            if operation.header.seq_num != 0 || operation.header.backlink.is_some()
+                            {
+                                eprintln!("No backlink found for operation");
+                                return;
+                            }
+                        }
+                    };
+
+                    println!(
+                        "Received operation: {} {} {} {}",
+                        operation.header.public_key,
+                        operation.header.seq_num,
+                        operation.header.timestamp,
+                        operation.hash
+                    );
+
+                    self.store
+                        .insert_operation(operation)
+                        .expect("No errors from memory store");
                 }
                 Err(err) => {
                     eprintln!("invalid message from {delivered_from}: {err}");
