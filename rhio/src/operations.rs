@@ -158,7 +158,7 @@ impl OperationsActor {
                         .expect("Memory store does not error")
                     {
                         if validate_backlink(&latest_operation.header, &operation.header).is_err() {
-                            eprintln!("Invalid backlik");
+                            eprintln!("invalid backlink");
                             return;
                         };
                     }
