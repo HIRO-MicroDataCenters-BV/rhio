@@ -9,7 +9,7 @@ use p2panda_core::{
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::extensions::RhioExtensions;
 use crate::message::{GossipOperation, Message};
@@ -106,47 +106,53 @@ impl OperationsActor {
     }
 
     async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
-        match ciborium::from_reader::<GossipOperation, _>(&bytes[..]) {
-            Ok(event) => {
-                let operation = Operation {
-                    hash: event.header.hash(),
-                    header: event.header,
-                    body: Some(event.body),
-                };
+        let Ok(event) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
+            error!("invalid operation from {delivered_from}");
+            return;
+        };
 
-                if let Err(err) = validate_operation(&operation) {
-                    error!("invalid operation received: {err}");
-                    return;
-                }
+        // Validate operation integrity
+        let operation = Operation {
+            hash: event.header.hash(),
+            header: event.header,
+            body: Some(event.body.clone()),
+        };
 
-                let log_id: LogId = RhioExtensions::extract(&operation);
-                if let Some(latest_operation) = self
-                    .store
-                    .latest_operation(operation.header.public_key, log_id)
-                    .expect("memory store does not error")
-                {
-                    if validate_backlink(&latest_operation.header, &operation.header).is_err() {
-                        error!("invalid backlink");
-                        return;
-                    };
-                }
-
-                info!(
-                    "Received operation: {} {} {} {}",
-                    operation.header.public_key,
-                    operation.header.seq_num,
-                    operation.header.timestamp,
-                    operation.hash
-                );
-
-                self.store
-                    .insert_operation(operation)
-                    .expect("no errors from memory store");
-            }
-            Err(err) => {
-                error!("invalid message from {delivered_from}: {err}");
-            }
+        if let Err(err) = validate_operation(&operation) {
+            error!("invalid operation received: {err}");
+            return;
         }
+
+        let log_id: LogId = RhioExtensions::extract(&operation);
+        if let Some(latest_operation) = self
+            .store
+            .latest_operation(operation.header.public_key, log_id)
+            .expect("memory store does not error")
+        {
+            if validate_backlink(&latest_operation.header, &operation.header).is_err() {
+                error!("invalid backlink");
+                return;
+            };
+        }
+
+        // Validate message
+        let Ok(message) = ciborium::from_reader::<Message, _>(&event.body.to_bytes()[..]) else {
+            error!("invalid message from {delivered_from}");
+            return;
+        };
+
+        debug!(
+            "Received operation: {} {} {} {} {:?}",
+            operation.header.public_key,
+            operation.header.seq_num,
+            operation.header.timestamp,
+            operation.hash,
+            message,
+        );
+
+        self.store
+            .insert_operation(operation)
+            .expect("no errors from memory store");
     }
 
     async fn send_message(&mut self, message: Message) -> Result<()> {
