@@ -9,6 +9,7 @@ use p2panda_core::{
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
 
 use crate::extensions::RhioExtensions;
 
@@ -146,7 +147,7 @@ impl OperationsActor {
                     match validate_operation(&operation) {
                         Ok(_) => (),
                         Err(err) => {
-                            eprintln!("Invalid operation received: {}", err);
+                            error!("invalid operation received: {}", err);
                             return;
                         }
                     }
@@ -158,12 +159,12 @@ impl OperationsActor {
                         .expect("Memory store does not error")
                     {
                         if validate_backlink(&latest_operation.header, &operation.header).is_err() {
-                            eprintln!("invalid backlink");
+                            error!("invalid backlink");
                             return;
                         };
                     }
 
-                    println!(
+                    info!(
                         "Received operation: {} {} {} {}",
                         operation.header.public_key,
                         operation.header.seq_num,
@@ -176,7 +177,7 @@ impl OperationsActor {
                         .expect("No errors from memory store");
                 }
                 Err(err) => {
-                    eprintln!("invalid message from {delivered_from}: {err}");
+                    error!("invalid message from {delivered_from}: {err}");
                 }
             },
         }
