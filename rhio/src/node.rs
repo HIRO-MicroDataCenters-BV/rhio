@@ -9,11 +9,19 @@ use p2panda_core::{Body, Hash, Header, PrivateKey};
 use p2panda_net::config::Config;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, TopicId};
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::Sender;
 
 use crate::extensions::Extensions;
 use crate::TOPIC_ID;
+
+#[derive(Serialize, Deserialize)]
+pub struct Message {
+    pub header: Header<Extensions>,
+    pub text: String,
+}
+
 pub struct Node {
     #[allow(dead_code)]
     config: Config,
@@ -84,8 +92,13 @@ impl Node {
         };
         header.sign(&private_key);
 
+        let message = Message {
+            header,
+            text: text.to_string()
+        };
+
         let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&header, &mut bytes)?;
+        ciborium::ser::into_writer(&message, &mut bytes)?;
 
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 

@@ -5,14 +5,13 @@ mod node;
 mod private_key;
 
 use anyhow::{Context, Result};
-use p2panda_core::Header;
+use node::Message;
 use p2panda_net::network::OutEvent;
 use p2panda_net::TopicId;
 use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::config::load_config;
-use crate::extensions::Extensions;
 use crate::logging::setup_tracing;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
@@ -67,10 +66,10 @@ async fn main() -> Result<()> {
                 OutEvent::Message {
                     bytes,
                     delivered_from,
-                } => match ciborium::from_reader::<Header<Extensions>, _>(&bytes[..]) {
-                    Ok(header) => {
+                } => match ciborium::from_reader::<Message, _>(&bytes[..]) {
+                    Ok(Message { header, text }) => {
                         if header.verify() {
-                            println!("Valid operation header received");
+                            println!("{text}");
                         } else {
                             eprintln!("Invalid operation header received")
                         };
