@@ -1,4 +1,5 @@
 mod config;
+mod operations;
 mod extensions;
 mod logging;
 mod node;
@@ -104,7 +105,7 @@ async fn main() -> Result<()> {
                 return Ok(());
             },
             _ = interval.tick() => {
-                node.send_message(&private_key, "hello").await?;
+                node.send_message("hello").await?;
             }
         }
     }
