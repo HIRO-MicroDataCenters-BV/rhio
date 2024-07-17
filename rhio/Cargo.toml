@@ -19,6 +19,7 @@ tokio = { version = "1.38.0", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 ciborium = "0.2.2"
+notify = "6.1.1"
 
 [dev-dependencies]
 tempfile = "3.10.1"

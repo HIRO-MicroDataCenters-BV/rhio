@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use iroh_net::endpoint::DirectAddr;
 use iroh_net::NodeId;
@@ -6,11 +8,10 @@ use p2panda_core::PrivateKey;
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::actor::{RhioActor, ToRhioActor};
-use crate::message::Message;
 use crate::TOPIC_ID;
 
 pub struct Node {
@@ -70,12 +71,11 @@ impl Node {
         self.network.node_id()
     }
 
-    pub async fn send_message(&self, message: Message) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
+    pub async fn announce_new_file(&self, path: PathBuf) -> Result<()> {
         self.rhio_actor_tx
-            .send(ToRhioActor::SendMessage { message, reply })
+            .send(ToRhioActor::NewFile { path })
             .await?;
-        reply_rx.await?
+        Ok(())
     }
 
     pub async fn ready(&mut self) -> Option<()> {

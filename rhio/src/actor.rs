@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use anyhow::{Context, Result};
@@ -7,7 +8,7 @@ use p2panda_core::operation::{validate_backlink, validate_operation, Body, Heade
 use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error};
 
 use crate::extensions::RhioExtensions;
@@ -15,10 +16,7 @@ use crate::message::{GossipOperation, Message};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
-    SendMessage {
-        message: Message,
-        reply: oneshot::Sender<Result<()>>,
-    },
+    NewFile { path: PathBuf },
     Shutdown,
 }
 
@@ -78,9 +76,8 @@ impl RhioActor {
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToRhioActor::SendMessage { message, reply } => {
-                let result = self.send_message(message).await;
-                reply.send(result).ok();
+            ToRhioActor::NewFile { path } => {
+                // @TODO
             }
             ToRhioActor::Shutdown => {
                 return Ok(false);
@@ -159,6 +156,7 @@ impl RhioActor {
             .insert_operation(operation)
             .expect("no errors from memory store");
 
+        // Handle messages
         match message {
             Message::AnnounceBlob(hash) => {
                 if let Err(err) = self.download_blob(hash).await {

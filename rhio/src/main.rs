@@ -6,16 +6,16 @@ mod message;
 mod node;
 mod private_key;
 
-use std::time::Duration;
+use std::path::Path;
 
 use anyhow::{Context, Result};
-use p2panda_core::Hash;
+use notify::{Event, RecursiveMode, Watcher};
 use p2panda_net::TopicId;
-use tracing::info;
+use tokio::sync::mpsc;
+use tracing::{error, info};
 
 use crate::config::load_config;
 use crate::logging::setup_tracing;
-use crate::message::Message;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 
@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
     setup_tracing();
     let config = load_config()?;
 
+    // Spawn p2panda node
     let private_key = match &config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
@@ -36,34 +37,43 @@ async fn main() -> Result<()> {
 
     let mut node = Node::spawn(config, private_key.clone()).await?;
 
-    // Upload blob
-    // let mut stream = node
-    //     .import_blob("/home/adz/downloads/1ec8d4986b04fd80.png".into())
-    //     .await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
+    // Watch for changes in the blobs directory
+    let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);
+    let mut watcher = notify::recommended_watcher(move |res| match res {
+        Ok(event) => {
+            if let Err(err) = files_tx.blocking_send(event) {
+                error!("failed sending file event: {err}");
+            }
+        }
+        Err(err) => {
+            error!("error watching file changes: {err}");
+        }
+    })?;
+    watcher.watch(Path::new("./blobs"), RecursiveMode::NonRecursive)?;
 
-    // Wait until we've discovered other nodes
-    // tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
+    // Join p2p gossip overlay and announce blobs from our directory there
     println!("Node ID: {}", node.node_id());
     println!("joining gossip overlay...");
 
     let _ = node.ready().await;
     println!("gossip overlay joined!");
 
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
-
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {
-                node.shutdown().await?;
-                return Ok(());
-            },
-            _ = interval.tick() => {
-                node.send_message(Message::AnnounceBlob(Hash::new(vec![1, 2, 3]))).await?;
+            Some(event) = files_rx.recv() => {
+                for path in event.paths {
+                    if let Err(err) = node.announce_new_file(path).await {
+                        error!("failed announcing new file: {err}");
+                    }
+                }
             }
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            },
         }
     }
+
+    node.shutdown().await?;
+
+    Ok(())
 }
