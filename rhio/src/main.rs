@@ -41,6 +41,7 @@ async fn main() -> Result<()> {
     let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);
     let mut watcher = notify::recommended_watcher(move |res| match res {
         Ok(event) => {
+            info!("file added / changed: {event:?}");
             if let Err(err) = files_tx.blocking_send(event) {
                 error!("failed sending file event: {err}");
             }

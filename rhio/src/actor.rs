@@ -97,6 +97,9 @@ impl RhioActor {
         let mut stream = self.blobs.import_blob(path.clone()).await;
         while let Some(event) = stream.next().await {
             match event.0 {
+                AddProgress::Abort(err) => {
+                    error!("failed importing file: {err}");
+                }
                 AddProgress::AllDone { hash, .. } => {
                     info!("imported file {} with hash {hash}", path.display());
                     let hash = Hash::from_bytes(*hash.as_bytes());
@@ -191,6 +194,9 @@ impl RhioActor {
         let mut stream = self.blobs.download_blob(hash).await;
         while let Some(event) = stream.next().await {
             match event.0 {
+                DownloadProgress::Abort(err) => {
+                    error!("failed downloading file: {err}");
+                }
                 DownloadProgress::AllDone(_) => {
                     info!("downloaded blob {hash}");
                 }
