@@ -67,7 +67,7 @@ impl OperationsActor {
                         .on_gossip_event(msg)
                         .await;
 
-                }
+                },
             }
         }
     }
@@ -75,50 +75,7 @@ impl OperationsActor {
     async fn on_actor_message(&mut self, msg: ToOperationActor) -> Result<bool> {
         match msg {
             ToOperationActor::Send { text } => {
-                let mut body_bytes: Vec<u8> = Vec::new();
-                ciborium::ser::into_writer(&text, &mut body_bytes)?;
-
-                let public_key = self.private_key.public_key();
-                let latest_operation = self
-                    .store
-                    .latest_operation(public_key, public_key.to_string().into())?;
-
-                let (seq_num, backlink) = match latest_operation {
-                    Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
-                    None => (0, None),
-                };
-
-                let timestamp = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)?
-                    .as_secs();
-
-                let body = Body::new(&body_bytes);
-                let mut header = Header {
-                    version: 1,
-                    public_key,
-                    signature: None,
-                    payload_size: body.size(),
-                    payload_hash: Some(body.hash()),
-                    timestamp,
-                    seq_num,
-                    backlink,
-                    previous: vec![],
-                    extensions: Some(RhioExtensions::default()),
-                };
-                header.sign(&self.private_key);
-
-                let operation = Operation {
-                    hash: header.hash(),
-                    header: header.clone(),
-                    body: Some(body.clone()),
-                };
-
-                self.store.insert_operation(operation)?;
-
-                let mut bytes = Vec::new();
-                ciborium::ser::into_writer(&(body, header), &mut bytes)?;
-
-                self.gossip_tx.send(InEvent::Message { bytes }).await?;
+                self.send_message(text).await?;
             }
             ToOperationActor::Shutdown => {
                 return Ok(false);
@@ -126,6 +83,55 @@ impl OperationsActor {
         }
 
         Ok(true)
+    }
+
+    async fn send_message(&mut self, text: String) -> Result<()> {
+        let mut body_bytes: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&text, &mut body_bytes)?;
+
+        let public_key = self.private_key.public_key();
+        let latest_operation = self
+            .store
+            .latest_operation(public_key, public_key.to_string().into())?;
+
+        let (seq_num, backlink) = match latest_operation {
+            Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
+            None => (0, None),
+        };
+
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs();
+
+        let body = Body::new(&body_bytes);
+        let mut header = Header {
+            version: 1,
+            public_key,
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp,
+            seq_num,
+            backlink,
+            previous: vec![],
+            extensions: Some(RhioExtensions::default()),
+        };
+        header.sign(&self.private_key);
+
+        let operation = Operation {
+            hash: header.hash(),
+            header: header.clone(),
+            body: Some(body.clone()),
+        };
+
+        self.store.insert_operation(operation)?;
+
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(&(body, header), &mut bytes)?;
+
+        self.gossip_tx.send(InEvent::Message { bytes }).await?;
+
+        Ok(())
     }
 
     async fn on_gossip_event(&mut self, event: OutEvent) {
@@ -156,7 +162,7 @@ impl OperationsActor {
                     if let Some(latest_operation) = self
                         .store
                         .latest_operation(operation.header.public_key, log_id)
-                        .expect("Memory store does not error")
+                        .expect("memory store does not error")
                     {
                         if validate_backlink(&latest_operation.header, &operation.header).is_err() {
                             error!("invalid backlink");
@@ -174,7 +180,7 @@ impl OperationsActor {
 
                     self.store
                         .insert_operation(operation)
-                        .expect("No errors from memory store");
+                        .expect("no errors from memory store");
                 }
                 Err(err) => {
                     error!("invalid message from {delivered_from}: {err}");
