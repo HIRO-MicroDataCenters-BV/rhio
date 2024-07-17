@@ -5,21 +5,23 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
+# @TODO: Remove all iroh dependencies
+iroh-blobs = "0.20.0"
 iroh-net = "0.20.0"
+notify = "6.1.1"
 p2panda-blobs = {path = "../p2panda-blobs"}
 p2panda-core = {path = "../../p2panda/p2panda-core"}
-p2panda-store = {path = "../../p2panda/p2panda-store"}
 p2panda-net = {path = "../p2panda-net"}
+p2panda-store = {path = "../../p2panda/p2panda-store"}
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-ciborium = "0.2.2"
-notify = "6.1.1"
 
 [dev-dependencies]
 tempfile = "3.10.1"

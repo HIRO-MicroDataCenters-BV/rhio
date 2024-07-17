@@ -3,20 +3,25 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
+use iroh_blobs::get::db::DownloadProgress;
+use iroh_blobs::provider::AddProgress;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::operation::{validate_backlink, validate_operation, Body, Header, Operation};
 use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
-use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, error};
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tracing::{debug, error, info};
 
 use crate::extensions::RhioExtensions;
 use crate::message::{GossipOperation, Message};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
-    NewFile { path: PathBuf },
+    ImportFile {
+        path: PathBuf,
+        reply: oneshot::Sender<Result<()>>,
+    },
     Shutdown,
 }
 
@@ -76,8 +81,9 @@ impl RhioActor {
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToRhioActor::NewFile { path } => {
-                // @TODO
+            ToRhioActor::ImportFile { path, reply } => {
+                let result = self.on_import_file(path).await;
+                reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
                 return Ok(false);
@@ -85,6 +91,21 @@ impl RhioActor {
         }
 
         Ok(true)
+    }
+
+    async fn on_import_file(&mut self, path: PathBuf) -> Result<()> {
+        let mut stream = self.blobs.import_blob(path.clone()).await;
+        while let Some(event) = stream.next().await {
+            match event.0 {
+                AddProgress::AllDone { hash, .. } => {
+                    info!("imported file {} with hash {hash}", path.display());
+                    let hash = Hash::from_bytes(*hash.as_bytes());
+                    self.send_message(Message::AnnounceBlob(hash)).await?;
+                }
+                _ => (),
+            }
+        }
+        Ok(())
     }
 
     async fn on_gossip_event(&mut self, event: OutEvent) {
@@ -168,8 +189,13 @@ impl RhioActor {
 
     async fn download_blob(&mut self, hash: Hash) -> Result<()> {
         let mut stream = self.blobs.download_blob(hash).await;
-        while let Some(item) = stream.next().await {
-            println!("{:?}", item);
+        while let Some(event) = stream.next().await {
+            match event.0 {
+                DownloadProgress::AllDone(_) => {
+                    info!("downloaded blob {hash}");
+                }
+                _ => (),
+            }
         }
         Ok(())
     }

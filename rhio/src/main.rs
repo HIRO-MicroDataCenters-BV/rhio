@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             Some(event) = files_rx.recv() => {
                 for path in event.paths {
-                    if let Err(err) = node.announce_new_file(path).await {
+                    if let Err(err) = node.import_file(path).await {
                         error!("failed announcing new file: {err}");
                     }
                 }

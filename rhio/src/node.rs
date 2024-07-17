@@ -8,7 +8,7 @@ use p2panda_core::PrivateKey;
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::actor::{RhioActor, ToRhioActor};
@@ -71,11 +71,12 @@ impl Node {
         self.network.node_id()
     }
 
-    pub async fn announce_new_file(&self, path: PathBuf) -> Result<()> {
+    pub async fn import_file(&self, path: PathBuf) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::NewFile { path })
+            .send(ToRhioActor::ImportFile { path, reply })
             .await?;
-        Ok(())
+        reply_rx.await?
     }
 
     pub async fn ready(&mut self) -> Option<()> {
