@@ -8,10 +8,12 @@ Towards a p2p blob syncing solution for HIRO with p2panda modules.
 
 * `rhio`: Node implementation to coordinate announcements and sync of blobs from minio backends in a decentralised overlay network
 * `rhio-py`: FFI bindings allowing `rhio` to be used in (experimental) Python environments
+* `p2panda-core`: p2panda operation data type, BLAKE3, CBOR and ed25519 DSA
+* `p2panda-store`: Traits for p2panda operation stores, default in-memory implementation
 * `p2panda-net`: IPv8 inspired interface to build p2p overlays for any protocol with customizable bootstrap, sync and discovery strategies based on `iroh-net` and `iroh-gossip`
 * `p2panda-blobs`: Wrapper around `iroh-blobs`, a BAO-tree based efficient syncing solution for very large blobs, to be plugged into `p2panda-net`
 * `p2panda-sync`: Set Reconciliation algorithm for efficient syncing of data between two nodes, can be plugged into `p2panda-net`
-* `minio-store`: Blob storage interface to minio databases
+* `minio-store`: Blob storage interface to minio databases for rhio
 
 ## Usage
 

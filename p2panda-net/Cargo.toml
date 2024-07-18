@@ -22,7 +22,7 @@ iroh-base = "0.20.0"
 iroh-gossip = "0.20.0"
 iroh-io = "0.6.0"
 iroh-net = "0.20.0"
-p2panda-core = { path = "../../p2panda/p2panda-core" }
+p2panda-core = { path = "../p2panda-core" }
 rand = "0.8.5"
 serde = { version = "1.0.203", features = ["derive"] }
 socket2 = { version = "0.5.7", optional = true }
