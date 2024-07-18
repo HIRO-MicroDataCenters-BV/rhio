@@ -31,7 +31,8 @@ async fn main() -> Result<()> {
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
-    info!("My public key: {}", private_key.public_key());
+    println!("‣ node public key: {}", private_key.public_key());
+    println!("‣ watching folder: {}", config.blobs_path.display());
 
     let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
 
@@ -51,8 +52,7 @@ async fn main() -> Result<()> {
     watcher.watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
     // Join p2p gossip overlay and announce blobs from our directory there
-    println!("Node ID: {}", node.node_id());
-    println!("joining gossip overlay...");
+    println!("joining gossip overlay ..");
 
     let _ = node.ready().await;
     println!("gossip overlay joined!");
