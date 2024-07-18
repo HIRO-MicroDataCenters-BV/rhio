@@ -13,7 +13,7 @@ use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{AddrInfo, Endpoint, NodeAddr, NodeId};
+use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
@@ -304,30 +304,37 @@ impl NetworkInner {
         {
             let inner = self.clone();
             join_set.spawn(async move {
-                let mut stream = inner.endpoint.direct_addresses();
-                while let Some(eps) = stream.next().await {
-                    if let Err(err) = inner.gossip.update_direct_addresses(&eps) {
-                        warn!("Failed to update direct addresses for gossip: {err:?}");
-                    }
+                let mut addrs_stream = inner.endpoint.direct_addresses();
+                let mut relay_stream = inner.endpoint.watch_home_relay();
+                let mut my_node_addr = NodeAddr::new(inner.endpoint.node_id());
 
-                    if let Some(discovery) = &inner.discovery {
-                        let relay_url = inner.endpoint.home_relay();
-                        let direct_addresses = eps.iter().map(|a| a.addr).collect();
-                        let addr = NodeAddr {
-                            node_id: inner.endpoint.node_id(),
-                            info: AddrInfo {
-                                relay_url: relay_url.map(|url| url.into()),
-                                direct_addresses,
-                            },
-                        };
+                loop {
+                    tokio::select! {
+                        // Learn about our home relay node and changes to it
+                        url = relay_stream.next() => {
+                            if let Some(discovery) = &inner.discovery {
+                                my_node_addr.info.relay_url = url.clone();
+                                if let Err(err) = discovery.update_local_address(&my_node_addr) {
+                                    warn!("Failed to update direct addresses for discovery: {err:?}");
+                                }
+                            }
+                        },
+                        // Learn about our direct addresses and changes to them
+                        Some(eps) = addrs_stream.next() => {
+                            if let Err(err) = inner.gossip.update_direct_addresses(&eps) {
+                                warn!("Failed to update direct addresses for gossip: {err:?}");
+                            }
 
-                        if let Err(err) = discovery.update_local_address(&addr) {
-                            warn!("Failed to update direct addresses for discovery: {err:?}");
+                            if let Some(discovery) = &inner.discovery {
+                                let direct_addresses = eps.iter().map(|a| a.addr).collect();
+                                my_node_addr.info.direct_addresses = direct_addresses;
+                                if let Err(err) = discovery.update_local_address(&my_node_addr) {
+                                    warn!("Failed to update direct addresses for discovery: {err:?}");
+                                }
+                            }
                         }
                     }
                 }
-                warn!("failed to retrieve local endpoints");
-                Ok(())
             });
         }
 
@@ -357,7 +364,7 @@ impl NetworkInner {
                 Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
                     match event {
                         Ok(event) => {
-                            if let Err(err) = self.engine.add_peer(event.node_info.into()).await {
+                            if let Err(err) = self.engine.add_peer(event.node_addr).await {
                                 error!("Engine failed on add_peer: {err:?}");
                                 break;
                             }
