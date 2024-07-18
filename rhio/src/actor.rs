@@ -189,15 +189,19 @@ impl RhioActor {
         // Handle messages
         match message {
             Message::AnnounceBlob(hash, file_name) => {
+                println!("Announce received: {hash} {file_name}");
                 if let Err(err) = self.download_blob(hash).await {
                     error!("failed handling announced blob for {hash}: {err}");
+                    return;
                 }
-                if let Ok(()) = self
+                println!("Export blob: {hash} {file_name}");
+                match self
                     .blobs
-                    .export_blob(hash, self.blobs_export_path.join(&file_name))
+                    .export_blob(hash, &self.blobs_export_path, &file_name)
                     .await
                 {
-                    info!("exported blob to filesystem {file_name}")
+                    Ok(_) => info!("exported blob to filesystem {file_name}"),
+                    Err(err) => error!("failed to export blob to filesystem {err}"),
                 };
             }
         }

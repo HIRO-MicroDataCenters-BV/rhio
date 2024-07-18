@@ -75,8 +75,8 @@ where
         .await
     }
 
-    pub async fn export_blob(&self, hash: Hash, path: PathBuf) -> Result<()> {
-        export_blob(&self.store, hash, path).await?;
+    pub async fn export_blob(&self, hash: Hash, path: &PathBuf, file_name: &str) -> Result<()> {
+        export_blob(&self.store, hash, path, file_name).await?;
         Ok(())
     }
 }
