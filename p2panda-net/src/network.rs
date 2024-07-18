@@ -9,12 +9,11 @@ use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
 use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
-use iroh_net::{Endpoint, NodeAddr, NodeId};
+use iroh_net::{AddrInfo, Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
@@ -314,10 +313,12 @@ impl NetworkInner {
                     if let Some(discovery) = &inner.discovery {
                         let relay_url = inner.endpoint.home_relay();
                         let direct_addresses = eps.iter().map(|a| a.addr).collect();
-                        let addr = NodeInfo {
+                        let addr = NodeAddr {
                             node_id: inner.endpoint.node_id(),
-                            relay_url: relay_url.map(|url| url.into()),
-                            direct_addresses,
+                            info: AddrInfo {
+                                relay_url: relay_url.map(|url| url.into()),
+                                direct_addresses,
+                            },
                         };
 
                         if let Err(err) = discovery.update_local_address(&addr) {

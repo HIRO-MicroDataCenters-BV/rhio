@@ -502,7 +502,7 @@ impl PeerMap {
     pub fn add_peer(&mut self, topic: TopicId, node_addr: NodeAddr) -> Option<NodeAddr> {
         let public_key = node_addr.node_id;
         match self.known_peers.insert(public_key, node_addr) {
-            Some(info) => Some(info),
+            Some(addr) => Some(addr),
             None => {
                 self.on_announcement(vec![topic], public_key);
                 None

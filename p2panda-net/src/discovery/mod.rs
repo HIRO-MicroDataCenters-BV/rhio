@@ -8,7 +8,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use futures_lite::stream::Stream;
-use iroh_net::dns::node_info::NodeInfo;
+use iroh_net::NodeAddr;
 
 use crate::NetworkId;
 
@@ -39,10 +39,9 @@ impl Discovery for DiscoveryMap {
         Some(Box::pin(streams))
     }
 
-    // @TODO: Use NodeAddr instead of NodeInfo here
-    fn update_local_address(&self, addrs: &NodeInfo) -> Result<()> {
+    fn update_local_address(&self, addr: &NodeAddr) -> Result<()> {
         for service in &self.services {
-            service.update_local_address(addrs)?;
+            service.update_local_address(addr)?;
         }
         Ok(())
     }
@@ -52,11 +51,11 @@ impl Discovery for DiscoveryMap {
 pub struct DiscoveryEvent {
     /// Identifier of the discovery service from which this event originated from.
     pub provenance: &'static str,
-    pub node_info: NodeInfo,
+    pub node_addr: NodeAddr,
 }
 
 pub trait Discovery: Debug + Send + Sync {
-    fn update_local_address(&self, node_info: &NodeInfo) -> Result<()>;
+    fn update_local_address(&self, node_addr: &NodeAddr) -> Result<()>;
 
     fn subscribe(&self, _network_id: NetworkId) -> Option<BoxedStream<Result<DiscoveryEvent>>> {
         None
