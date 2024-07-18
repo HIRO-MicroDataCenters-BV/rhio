@@ -8,8 +8,22 @@ use figment::providers::{Env, Serialized};
 use figment::Figment;
 use iroh_net::NodeId;
 use p2panda_core::PublicKey;
-use p2panda_net::config::{Config, NodeAddr};
-use serde::Serialize;
+use p2panda_net::config::{Config as NetworkConfig, NodeAddr};
+use serde::{Deserialize, Serialize};
+
+const DEFAULT_BLOBS_PATH: &str = "./blobs";
+
+fn default_blobs_path() -> PathBuf {
+    DEFAULT_BLOBS_PATH.into()
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_blobs_path")]
+    pub blobs_path: PathBuf,
+    #[serde(flatten)]
+    pub network_config: NetworkConfig,
+}
 
 #[derive(Parser, Serialize, Debug)]
 #[command(
@@ -30,6 +44,10 @@ struct Cli {
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
+
+    #[arg(short = 'b', long, value_name = "PATH")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blobs_path: Option<PathBuf>,
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {

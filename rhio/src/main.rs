@@ -6,8 +6,6 @@ mod message;
 mod node;
 mod private_key;
 
-use std::path::Path;
-
 use anyhow::{Context, Result};
 use notify::{Event, RecursiveMode, Watcher};
 use p2panda_net::TopicId;
@@ -28,14 +26,14 @@ async fn main() -> Result<()> {
     let config = load_config()?;
 
     // Spawn p2panda node
-    let private_key = match &config.private_key {
+    let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
     info!("My public key: {}", private_key.public_key());
 
-    let mut node = Node::spawn(config, private_key.clone()).await?;
+    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
 
     // Watch for changes in the blobs directory
     let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);
@@ -50,7 +48,7 @@ async fn main() -> Result<()> {
             error!("error watching file changes: {err}");
         }
     })?;
-    watcher.watch(Path::new("./blobs"), RecursiveMode::NonRecursive)?;
+    watcher.watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
     // Join p2p gossip overlay and announce blobs from our directory there
     println!("Node ID: {}", node.node_id());
