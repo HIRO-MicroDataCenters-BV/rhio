@@ -65,7 +65,7 @@ impl Node {
         self.network.direct_addresses().await
     }
 
-    pub fn node_id(&self) -> PublicKey {
+    pub fn id(&self) -> PublicKey {
         self.network.node_id()
     }
 

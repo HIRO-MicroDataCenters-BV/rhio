@@ -23,17 +23,24 @@ const TOPIC_ID: TopicId = [1; 32];
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_tracing();
-    let config = load_config()?;
 
-    // Spawn p2panda node
+    // Load config file and private key
+    let config = load_config()?;
     let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
 
+    // Spawn p2panda node
     let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
-    println!("‣ node public key: {}", private_key.public_key());
+
+    if let Some(addresses) = node.direct_addresses().await {
+        let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
+        println!("‣ direct addresses: {}|{}", node.id(), values.join("|"));
+    } else {
+        println!("‣ node public key: {}", node.id());
+    }
     println!("‣ watching folder: {}", config.blobs_path.display());
 
     // Watch for changes in the blobs directory
