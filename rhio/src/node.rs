@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
-use p2panda_net::config::{Config, DEFAULT_STUN_PORT};
+use p2panda_net::config::DEFAULT_STUN_PORT;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use tokio::sync::{mpsc, oneshot};
@@ -29,11 +29,11 @@ impl Node {
         let blob_store = BlobMemoryStore::new();
         let log_store = LogMemoryStore::default();
 
-        let mut network_builder = NetworkBuilder::from_config(config.clone())
+        let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
             .private_key(private_key.clone())
             .discovery(LocalDiscovery::new()?);
 
-        for relay_addr in config.relay_addresses {
+        for relay_addr in config.network_config.relay_addresses {
             network_builder = network_builder.relay(relay_addr, false, DEFAULT_STUN_PORT);
         }
 

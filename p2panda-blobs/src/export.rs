@@ -7,7 +7,6 @@ use iroh_base::hash::Hash as IrohHash;
 use iroh_blobs::export::ExportProgress;
 use iroh_blobs::store::{ExportMode, MapEntry, Store};
 use iroh_blobs::util::progress::{FlumeProgressSender, IdGenerator, ProgressSender};
-use iroh_io::file;
 use p2panda_core::Hash;
 use tracing::trace;
 
