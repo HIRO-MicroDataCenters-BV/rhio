@@ -1,52 +1,76 @@
+mod actor;
 mod config;
+mod extensions;
 mod logging;
+mod message;
 mod node;
 mod private_key;
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
-use tracing::info;
+use notify::{Event, RecursiveMode, Watcher};
+use p2panda_net::TopicId;
+use tokio::sync::mpsc;
+use tracing::{error, info};
 
 use crate::config::load_config;
 use crate::logging::setup_tracing;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 
+// @TODO: Use real topic id
+const TOPIC_ID: TopicId = [1; 32];
+
 #[tokio::main]
 async fn main() -> Result<()> {
     setup_tracing();
     let config = load_config()?;
 
-    let private_key = match &config.private_key {
+    // Spawn p2panda node
+    let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
     info!("My public key: {}", private_key.public_key());
 
-    let node = Node::spawn(config, private_key).await?;
+    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
 
-    // Upload blob
-    // let mut stream = node
-    //     .import_blob("/home/adz/downloads/1ec8d4986b04fd80.png".into())
-    //     .await;
-    // while let Some(item) = stream.next().await {
-    //     println!("{:?}", item);
-    // }
+    // Watch for changes in the blobs directory
+    let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);
+    let mut watcher = notify::recommended_watcher(move |res| match res {
+        Ok(event) => {
+            info!("file added / changed: {event:?}");
+            if let Err(err) = files_tx.blocking_send(event) {
+                error!("failed sending file event: {err}");
+            }
+        }
+        Err(err) => {
+            error!("error watching file changes: {err}");
+        }
+    })?;
+    watcher.watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
-    // Wait until we've discovered other nodes
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    // Join p2p gossip overlay and announce blobs from our directory there
+    println!("Node ID: {}", node.node_id());
+    println!("joining gossip overlay...");
 
-    // Download blob
-    let hash = "874be4e87da990b66cba5c964dfa50d720acc97a4c133e28453d240976080eb8"
-        .parse()
-        .unwrap();
-    let mut stream = node.download_blob(hash).await;
-    while let Some(item) = stream.next().await {
-        println!("{:?}", item);
+    let _ = node.ready().await;
+    println!("gossip overlay joined!");
+
+    loop {
+        tokio::select! {
+            Some(event) = files_rx.recv() => {
+                for path in event.paths {
+                    if let Err(err) = node.import_file(path).await {
+                        error!("failed announcing new file: {err}");
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            },
+        }
     }
-
-    tokio::signal::ctrl_c().await?;
 
     node.shutdown().await?;
 
