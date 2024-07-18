@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
+use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
 use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
@@ -207,7 +208,13 @@ impl NetworkBuilder {
 
         // Add direct addresses to address book
         for direct_addr in &self.direct_node_addresses {
-            engine.add_peer(direct_addr.clone()).await?;
+            let url: Url = format!("https://{EU_RELAY_HOSTNAME}")
+                .parse()
+                .expect("default_url");
+
+            engine
+                .add_peer(direct_addr.clone().with_relay_url(url.into()))
+                .await?;
         }
 
         let inner = Arc::new(NetworkInner {
