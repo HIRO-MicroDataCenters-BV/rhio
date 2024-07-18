@@ -34,10 +34,10 @@ async fn main() -> Result<()> {
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
-    println!("‣ node public key: {}", private_key.public_key());
-    println!("‣ watching folder: {}", config.blobs_path.display());
 
     let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
+    println!("‣ node public key: {}", private_key.public_key());
+    println!("‣ watching folder: {}", config.blobs_path.display());
 
     // Watch for changes in the blobs directory
     let (files_tx, mut files_rx) = mpsc::channel::<DebouncedEvent>(1);
