@@ -3,6 +3,7 @@
 mod blobs;
 mod download;
 mod import;
+mod export;
 mod protocol;
 
 use iroh_blobs::store;
