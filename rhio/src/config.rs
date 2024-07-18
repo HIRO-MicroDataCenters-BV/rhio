@@ -10,6 +10,7 @@ use iroh_net::NodeId;
 use p2panda_core::PublicKey;
 use p2panda_net::config::{Config as NetworkConfig, NodeAddr};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 const DEFAULT_BLOBS_PATH: &str = "./blobs";
 
@@ -48,6 +49,10 @@ struct Cli {
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_path: Option<PathBuf>,
+
+    #[arg(short = 'r', long, value_name = "URL", num_args = 0.., value_parser = parse_url)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay_addresses: Option<Vec<Url>>,
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {
@@ -64,6 +69,10 @@ fn parse_node_addr(value: &str) -> Result<NodeAddr> {
         .collect();
 
     Ok((public_key, socket_addrs?))
+}
+
+fn parse_url(value: &str) -> Result<Url> {
+    Ok(value.parse()?)
 }
 
 pub fn load_config() -> Result<Config> {

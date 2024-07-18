@@ -42,6 +42,7 @@ async fn main() -> Result<()> {
         println!("‣ node public key: {}", node.id());
     }
     println!("‣ watching folder: {}", config.blobs_path.display());
+    println!();
 
     // Watch for changes in the blobs directory
     let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);

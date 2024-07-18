@@ -16,6 +16,11 @@ pub const DEFAULT_NETWORK_ID: NetworkId = [0; 32];
 /// Default port of a node socket.
 pub const DEFAULT_BIND_PORT: u16 = 2022;
 
+/// The default STUN port used by the relay server.
+///
+/// The STUN port as defined by [RFC 8489](<https://www.rfc-editor.org/rfc/rfc8489#section-18.6>)
+pub const DEFAULT_STUN_PORT: u16 = 3478;
+
 pub type NodeAddr = (PublicKey, Vec<SocketAddr>);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
