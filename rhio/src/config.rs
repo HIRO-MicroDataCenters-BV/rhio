@@ -1,5 +1,5 @@
 use std::net::{AddrParseError, SocketAddr};
-use std::path::PathBuf;
+use std::path::{absolute, Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Result};
@@ -22,8 +22,10 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let path = Path::new(DEFAULT_BLOBS_PATH);
+        let absolute_path = absolute(path).expect("to establish absolute path");
         Self {
-            blobs_path: DEFAULT_BLOBS_PATH.into(),
+            blobs_path: absolute_path,
             network_config: NetworkConfig::default(),
         }
     }
@@ -78,10 +80,15 @@ fn parse_url(value: &str) -> Result<Url> {
 }
 
 pub fn load_config() -> Result<Config> {
-    let config = Figment::new()
+    let mut config: Config = Figment::new()
         .merge(Serialized::defaults(Config::default()))
         .merge(Env::raw())
         .merge(Serialized::defaults(Cli::parse()))
         .extract()?;
+
+    // Make blobs path absolute.
+    let absolute_path = absolute(&config.blobs_path).expect("to establish absolute path");
+    config.blobs_path = absolute_path;
+
     Ok(config)
 }
