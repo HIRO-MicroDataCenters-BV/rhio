@@ -13,16 +13,20 @@ use url::Url;
 
 const DEFAULT_BLOBS_PATH: &str = "./blobs";
 
-fn default_blobs_path() -> PathBuf {
-    DEFAULT_BLOBS_PATH.into()
-}
-
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(default = "default_blobs_path")]
     pub blobs_path: PathBuf,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            blobs_path: DEFAULT_BLOBS_PATH.into(),
+            network_config: NetworkConfig::default(),
+        }
+    }
 }
 
 #[derive(Parser, Serialize, Debug)]
