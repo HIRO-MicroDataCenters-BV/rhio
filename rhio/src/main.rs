@@ -9,7 +9,7 @@ mod private_key;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use notify_debouncer_full::notify::{RecursiveMode, Watcher};
+use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use p2panda_net::TopicId;
 use tokio::sync::mpsc;
@@ -54,6 +54,11 @@ async fn main() -> Result<()> {
         move |result: DebounceEventResult| match result {
             Ok(events) => {
                 for event in events {
+                    match event.kind {
+                        EventKind::Create(_) | EventKind::Modify(_) => (),
+                        _ => continue, // ignore all other events
+                    }
+
                     info!("file added / changed: {event:?}");
                     if let Err(err) = files_tx.blocking_send(event) {
                         error!("failed sending file event: {err}");
