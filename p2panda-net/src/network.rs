@@ -49,7 +49,7 @@ pub enum RelayMode {
 pub struct NetworkBuilder {
     bind_port: Option<u16>,
     direct_node_addresses: Vec<NodeAddr>,
-    discovery: Option<DiscoveryMap>,
+    discovery: DiscoveryMap,
     gossip_config: Option<GossipConfig>,
     network_id: NetworkId,
     protocols: ProtocolMap,
@@ -63,7 +63,7 @@ impl NetworkBuilder {
         Self {
             bind_port: None,
             direct_node_addresses: Vec::new(),
-            discovery: None,
+            discovery: DiscoveryMap::default(),
             gossip_config: None,
             network_id,
             protocols: Default::default(),
@@ -138,13 +138,7 @@ impl NetworkBuilder {
     // * Rendesvouz / Boostrap Node
     // * ...
     pub fn discovery(mut self, handler: impl Discovery + 'static) -> Self {
-        self.discovery = match self.discovery {
-            Some(mut list) => {
-                list.add(handler);
-                Some(list)
-            }
-            None => Some(DiscoveryMap::from_services(vec![Box::new(handler)])),
-        };
+        self.discovery.add(handler);
         self
     }
 
@@ -279,7 +273,7 @@ pub struct Network {
 #[derive(Debug)]
 struct NetworkInner {
     cancel_token: CancellationToken,
-    discovery: Option<DiscoveryMap>,
+    discovery: DiscoveryMap,
     endpoint: Endpoint,
     gossip: Gossip,
     network_id: NetworkId,
@@ -310,11 +304,9 @@ impl NetworkInner {
                     tokio::select! {
                         // Learn about our home relay node and changes to it
                         url = relay_stream.next() => {
-                            if let Some(discovery) = &inner.discovery {
-                                my_node_addr.info.relay_url = url.clone();
-                                if let Err(err) = discovery.update_local_address(&my_node_addr) {
-                                    warn!("Failed to update direct addresses for discovery: {err:?}");
-                                }
+                            my_node_addr.info.relay_url = url.clone();
+                            if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
+                                warn!("Failed to update direct addresses for discovery: {err:?}");
                             }
                         },
                         // Learn about our direct addresses and changes to them
@@ -323,12 +315,10 @@ impl NetworkInner {
                                 warn!("Failed to update direct addresses for gossip: {err:?}");
                             }
 
-                            if let Some(discovery) = &inner.discovery {
-                                let direct_addresses = eps.iter().map(|a| a.addr).collect();
-                                my_node_addr.info.direct_addresses = direct_addresses;
-                                if let Err(err) = discovery.update_local_address(&my_node_addr) {
-                                    warn!("Failed to update direct addresses for discovery: {err:?}");
-                                }
+                            let direct_addresses = eps.iter().map(|a| a.addr).collect();
+                            my_node_addr.info.direct_addresses = direct_addresses;
+                            if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
+                                warn!("Failed to update direct addresses for discovery: {err:?}");
                             }
                         }
                     }
@@ -337,10 +327,10 @@ impl NetworkInner {
         }
 
         // Subscribe to all discovery channels where we might find new peers
-        let mut discovery = match self.discovery.as_ref() {
-            Some(discovery) => discovery.subscribe(self.network_id),
-            None => None,
-        };
+        let mut discovery_stream = self
+            .discovery
+            .subscribe(self.network_id)
+            .expect("discovery map needs to be given");
 
         loop {
             tokio::select! {
@@ -359,7 +349,7 @@ impl NetworkInner {
                     });
                 },
                 // Handle discovered peers
-                Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
+                Some(event) = discovery_stream.next() => {
                     match event {
                         Ok(event) => {
                             if let Err(err) = self.engine.add_peer(event.node_addr).await {

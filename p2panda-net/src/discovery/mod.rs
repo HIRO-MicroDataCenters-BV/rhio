@@ -20,6 +20,7 @@ pub(crate) struct DiscoveryMap {
 }
 
 impl DiscoveryMap {
+    #[allow(dead_code)]
     pub fn from_services(services: Vec<Box<dyn Discovery>>) -> Self {
         Self { services }
     }
