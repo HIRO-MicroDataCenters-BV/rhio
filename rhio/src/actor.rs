@@ -25,6 +25,7 @@ pub enum ToRhioActor {
 
 pub struct RhioActor {
     blobs: Blobs<BlobMemoryStore>,
+    blobs_export_path: PathBuf,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
@@ -36,6 +37,7 @@ pub struct RhioActor {
 impl RhioActor {
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
+        blobs_export_path: PathBuf,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
         gossip_tx: mpsc::Sender<InEvent>,
@@ -45,6 +47,7 @@ impl RhioActor {
     ) -> Self {
         Self {
             blobs,
+            blobs_export_path,
             private_key,
             store,
             gossip_tx,
@@ -100,7 +103,14 @@ impl RhioActor {
                 }
                 ImportBlobEvent::Done(hash) => {
                     info!("imported file {} with hash {hash}", path.display());
-                    self.send_message(Message::AnnounceBlob(hash)).await?;
+                    let hash = Hash::from_bytes(*hash.as_bytes());
+                    let file_name = path
+                        .file_name()
+                        .expect("blob has filename in path")
+                        .to_str()
+                        .expect("is a valid unicode str");
+                    self.send_message(Message::AnnounceBlob(hash, file_name.to_string()))
+                        .await?;
                 }
             }
         }
@@ -178,10 +188,17 @@ impl RhioActor {
 
         // Handle messages
         match message {
-            Message::AnnounceBlob(hash) => {
+            Message::AnnounceBlob(hash, file_name) => {
                 if let Err(err) = self.download_blob(hash).await {
                     error!("failed handling announced blob for {hash}: {err}");
                 }
+                if let Ok(()) = self
+                    .blobs
+                    .export_blob(hash, self.blobs_export_path.join(&file_name))
+                    .await
+                {
+                    info!("exported blob to filesystem {file_name}")
+                };
             }
         }
     }

@@ -9,7 +9,9 @@ pub struct GossipOperation {
     pub header: Header<RhioExtensions>,
 }
 
+pub type FileName = String;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Message {
-    AnnounceBlob(Hash),
+    AnnounceBlob(Hash, FileName),
 }

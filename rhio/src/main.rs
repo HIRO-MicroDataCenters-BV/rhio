@@ -35,8 +35,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    // Spawn p2panda node
-    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
+    let mut node = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();

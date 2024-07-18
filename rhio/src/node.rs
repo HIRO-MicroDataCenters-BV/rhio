@@ -11,6 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::actor::{RhioActor, ToRhioActor};
+use crate::config::Config;
 use crate::TOPIC_ID;
 
 pub struct Node {
@@ -41,6 +42,7 @@ impl Node {
 
         let mut rhio_actor = RhioActor::new(
             blobs.clone(),
+            config.blobs_path,
             private_key.clone(),
             log_store,
             topic_tx,
