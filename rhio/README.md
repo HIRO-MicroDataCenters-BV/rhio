@@ -20,7 +20,7 @@ Options:
 
 ## Example
 
-**1. Start first node***
+**1. Start first node**
 
 ```
 # Create "blobs" folder
