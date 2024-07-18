@@ -6,7 +6,6 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use iroh_net::NodeId;
 use p2panda_core::PublicKey;
 use p2panda_net::config::{Config as NetworkConfig, NodeAddr};
 use serde::{Deserialize, Serialize};
@@ -61,8 +60,7 @@ fn parse_node_addr(value: &str) -> Result<NodeAddr> {
         bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
     }
 
-    let node_id = NodeId::from_str(parts[0])?;
-    let public_key = PublicKey::from_bytes(node_id.as_bytes())?;
+    let public_key = PublicKey::from_str(parts[0])?;
     let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
         .iter()
         .map(|addr| SocketAddr::from_str(addr))

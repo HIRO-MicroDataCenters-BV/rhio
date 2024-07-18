@@ -3609,7 +3609,6 @@ dependencies = [
  "futures-util",
  "hex",
  "iroh-blobs",
- "iroh-net",
  "notify",
  "p2panda-blobs",
  "p2panda-core",
