@@ -1,10 +1,9 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iroh_net::endpoint::DirectAddr;
-use iroh_net::NodeId;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
-use p2panda_core::PrivateKey;
+use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
@@ -62,12 +61,11 @@ impl Node {
         Ok(node)
     }
 
-    #[allow(dead_code)]
-    pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
+    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.network.direct_addresses().await
     }
 
-    pub fn node_id(&self) -> NodeId {
+    pub fn node_id(&self) -> PublicKey {
         self.network.node_id()
     }
 
