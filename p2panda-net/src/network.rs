@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, warn, Instrument};
 use url::Url;
 
-use crate::config::{Config, DEFAULT_BIND_PORT};
+use crate::config::{Config, DEFAULT_BIND_PORT, DEFAULT_STUN_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
@@ -81,9 +81,7 @@ impl NetworkBuilder {
         }
 
         for url in config.relay_addresses {
-            // If a port is not given we fallback to 0 which signifies the default stun port
-            // should be used.
-            let port = url.port().unwrap_or(0);
+            let port = url.port().unwrap_or(DEFAULT_STUN_PORT);
             network_builder = network_builder.relay(url, false, port)
         }
 
