@@ -1,11 +1,10 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use iroh_net::endpoint::DirectAddr;
-use iroh_net::NodeId;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
-use p2panda_core::PrivateKey;
-use p2panda_net::config::Config;
+use p2panda_core::{PrivateKey, PublicKey};
+use p2panda_net::config::{Config, DEFAULT_STUN_PORT};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use tokio::sync::{mpsc, oneshot};
@@ -29,9 +28,13 @@ impl Node {
         let blob_store = BlobMemoryStore::new();
         let log_store = LogMemoryStore::default();
 
-        let network_builder = NetworkBuilder::from_config(config.clone())
+        let mut network_builder = NetworkBuilder::from_config(config.clone())
             .private_key(private_key.clone())
             .discovery(LocalDiscovery::new()?);
+
+        for relay_addr in config.relay_addresses {
+            network_builder = network_builder.relay(relay_addr, false, DEFAULT_STUN_PORT);
+        }
 
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
         let (topic_tx, topic_rx) = network.subscribe(TOPIC_ID).await?;
@@ -62,12 +65,11 @@ impl Node {
         Ok(node)
     }
 
-    #[allow(dead_code)]
-    pub async fn direct_addresses(&self) -> Option<Vec<DirectAddr>> {
+    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.network.direct_addresses().await
     }
 
-    pub fn node_id(&self) -> NodeId {
+    pub fn id(&self) -> PublicKey {
         self.network.node_id()
     }
 

@@ -6,23 +6,27 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use iroh_net::NodeId;
 use p2panda_core::PublicKey;
 use p2panda_net::config::{Config as NetworkConfig, NodeAddr};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 const DEFAULT_BLOBS_PATH: &str = "./blobs";
 
-fn default_blobs_path() -> PathBuf {
-    DEFAULT_BLOBS_PATH.into()
-}
-
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(default = "default_blobs_path")]
     pub blobs_path: PathBuf,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            blobs_path: DEFAULT_BLOBS_PATH.into(),
+            network_config: NetworkConfig::default(),
+        }
+    }
 }
 
 #[derive(Parser, Serialize, Debug)]
@@ -48,6 +52,10 @@ struct Cli {
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_path: Option<PathBuf>,
+
+    #[arg(short = 'r', long, value_name = "URL", num_args = 0.., value_parser = parse_url)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relay_addresses: Option<Vec<Url>>,
 }
 
 fn parse_node_addr(value: &str) -> Result<NodeAddr> {
@@ -56,14 +64,17 @@ fn parse_node_addr(value: &str) -> Result<NodeAddr> {
         bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
     }
 
-    let node_id = NodeId::from_str(parts[0])?;
-    let public_key = PublicKey::from_bytes(node_id.as_bytes())?;
+    let public_key = PublicKey::from_str(parts[0])?;
     let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
         .iter()
         .map(|addr| SocketAddr::from_str(addr))
         .collect();
 
     Ok((public_key, socket_addrs?))
+}
+
+fn parse_url(value: &str) -> Result<Url> {
+    Ok(value.parse()?)
 }
 
 pub fn load_config() -> Result<Config> {
