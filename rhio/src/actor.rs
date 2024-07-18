@@ -3,9 +3,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use iroh_blobs::get::db::DownloadProgress;
-use iroh_blobs::provider::AddProgress;
-use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
+use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::operation::{validate_backlink, validate_operation, Body, Header, Operation};
 use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
@@ -96,16 +94,14 @@ impl RhioActor {
     async fn on_import_file(&mut self, path: PathBuf) -> Result<()> {
         let mut stream = self.blobs.import_blob(path.clone()).await;
         while let Some(event) = stream.next().await {
-            match event.0 {
-                AddProgress::Abort(err) => {
+            match event {
+                ImportBlobEvent::Abort(err) => {
                     error!("failed importing file: {err}");
                 }
-                AddProgress::AllDone { hash, .. } => {
+                ImportBlobEvent::Done(hash) => {
                     info!("imported file {} with hash {hash}", path.display());
-                    let hash = Hash::from_bytes(*hash.as_bytes());
                     self.send_message(Message::AnnounceBlob(hash)).await?;
                 }
-                _ => (),
             }
         }
         Ok(())
@@ -193,14 +189,13 @@ impl RhioActor {
     async fn download_blob(&mut self, hash: Hash) -> Result<()> {
         let mut stream = self.blobs.download_blob(hash).await;
         while let Some(event) = stream.next().await {
-            match event.0 {
-                DownloadProgress::Abort(err) => {
+            match event {
+                DownloadBlobEvent::Abort(err) => {
                     error!("failed downloading file: {err}");
                 }
-                DownloadProgress::AllDone(_) => {
+                DownloadBlobEvent::Done => {
                     info!("downloaded blob {hash}");
                 }
-                _ => (),
             }
         }
         Ok(())

@@ -2,6 +2,7 @@
 
 use anyhow::{ensure, Result};
 use futures_lite::StreamExt;
+use iroh_base::rpc::RpcError;
 use iroh_blobs::downloader::{DownloadRequest, Downloader};
 use iroh_blobs::get::db::DownloadProgress;
 use iroh_blobs::get::Stats;
@@ -40,7 +41,15 @@ pub async fn download_blob(
         }
     });
 
-    receiver.into_stream().map(DownloadBlobEvent)
+    receiver.into_stream().filter_map(|event| match event {
+        DownloadProgress::AllDone(_) => Some(DownloadBlobEvent::Done),
+        // @TODO: Use own error type here
+        DownloadProgress::Abort(err) => Some(DownloadBlobEvent::Abort(err)),
+        _ => {
+            // @TODO: Add more event types
+            None
+        }
+    })
 }
 
 async fn download_queued(
@@ -60,4 +69,7 @@ async fn download_queued(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloadBlobEvent(pub DownloadProgress);
+pub enum DownloadBlobEvent {
+    Done,
+    Abort(RpcError),
+}

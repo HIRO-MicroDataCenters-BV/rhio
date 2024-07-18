@@ -3653,8 +3653,6 @@ dependencies = [
  "figment",
  "futures-util",
  "hex",
- "iroh-blobs",
- "iroh-net",
  "notify-debouncer-full",
  "p2panda-blobs",
  "p2panda-core",
