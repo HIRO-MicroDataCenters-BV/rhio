@@ -13,7 +13,7 @@ hex = "0.4.3"
 # @TODO: Remove all iroh dependencies
 iroh-blobs = "0.20.0"
 iroh-net = "0.20.0"
-notify = "6.1.1"
+notify-debouncer-full = "0.3.1"
 p2panda-blobs = {path = "../p2panda-blobs"}
 p2panda-core = {path = "../p2panda-core"}
 p2panda-net = {path = "../p2panda-net"}

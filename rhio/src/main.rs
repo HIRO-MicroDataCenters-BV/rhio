@@ -6,8 +6,11 @@ mod message;
 mod node;
 mod private_key;
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
-use notify::{Event, RecursiveMode, Watcher};
+use notify_debouncer_full::notify::{RecursiveMode, Watcher};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use p2panda_net::TopicId;
 use tokio::sync::mpsc;
 use tracing::{error, info};
@@ -36,19 +39,30 @@ async fn main() -> Result<()> {
     let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
 
     // Watch for changes in the blobs directory
-    let (files_tx, mut files_rx) = mpsc::channel::<Event>(1);
-    let mut watcher = notify::recommended_watcher(move |res| match res {
-        Ok(event) => {
-            info!("file added / changed: {event:?}");
-            if let Err(err) = files_tx.blocking_send(event) {
-                error!("failed sending file event: {err}");
+    let (files_tx, mut files_rx) = mpsc::channel::<DebouncedEvent>(1);
+    let mut debouncer = new_debouncer(
+        Duration::from_secs(2),
+        None,
+        move |result: DebounceEventResult| match result {
+            Ok(events) => {
+                for event in events {
+                    info!("file added / changed: {event:?}");
+                    if let Err(err) = files_tx.blocking_send(event) {
+                        error!("failed sending file event: {err}");
+                    }
+                }
             }
-        }
-        Err(err) => {
-            error!("error watching file changes: {err}");
-        }
-    })?;
-    watcher.watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
+            Err(errors) => {
+                for err in errors {
+                    error!("error watching file changes: {err}");
+                }
+            }
+        },
+    )
+    .unwrap();
+    debouncer
+        .watcher()
+        .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
     // Join p2p gossip overlay and announce blobs from our directory there
     println!("Node ID: {}", node.node_id());
@@ -60,8 +74,8 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             Some(event) = files_rx.recv() => {
-                for path in event.paths {
-                    if let Err(err) = node.import_file(path).await {
+                for path in &event.paths {
+                    if let Err(err) = node.import_file(path.clone()).await {
                         error!("failed announcing new file: {err}");
                     }
                 }
