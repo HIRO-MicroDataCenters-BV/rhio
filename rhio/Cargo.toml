@@ -10,8 +10,6 @@ clap = { version = "4.5.8", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
-# @TODO: Remove all iroh dependencies
-iroh-blobs = "0.20.0"
 notify = "6.1.1"
 p2panda-blobs = {path = "../p2panda-blobs"}
 p2panda-core = {path = "../../p2panda/p2panda-core"}

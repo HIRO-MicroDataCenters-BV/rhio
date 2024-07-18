@@ -7,10 +7,12 @@ use std::sync::{Arc, Mutex};
 use anyhow::{ensure, Result};
 use futures_lite::StreamExt;
 use futures_util::Stream;
+use iroh_base::rpc::RpcError;
 use iroh_blobs::provider::AddProgress;
 use iroh_blobs::store::{ImportMode, ImportProgress, Store};
 use iroh_blobs::util::progress::{FlumeProgressSender, ProgressSender};
 use iroh_blobs::{BlobFormat, HashAndFormat};
+use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 use tokio_util::task::LocalPoolHandle;
 
@@ -30,7 +32,19 @@ pub async fn import_blob<S: Store>(
         });
     }
 
-    receiver.into_stream().map(ImportBlobEvent)
+    receiver.into_stream().filter_map(|event| {
+        match event {
+            AddProgress::AllDone { hash, .. } => {
+                Some(ImportBlobEvent::Done(Hash::from_bytes(*hash.as_bytes())))
+            }
+            // @TODO: Use own error type here
+            AddProgress::Abort(err) => Some(ImportBlobEvent::Abort(err)),
+            _ => {
+                // @TODO: Add more event types
+                None
+            }
+        }
+    })
 }
 
 async fn add_from_path<S: Store>(
@@ -80,5 +94,8 @@ async fn add_from_path<S: Store>(
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ImportBlobEvent(pub AddProgress);
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ImportBlobEvent {
+    Done(Hash),
+    Abort(RpcError),
+}
