@@ -201,7 +201,16 @@ impl NetworkBuilder {
         let handshake = Handshake::new(gossip.clone());
 
         // Add direct addresses to address book
-        for direct_addr in &self.direct_node_addresses {
+        for mut direct_addr in self.direct_node_addresses {
+            if direct_addr.relay_url().is_none() {
+                // If given address does not hold any relay information we optimistically add ours
+                // (if we have one). It's not guaranteed that this address will have the same relay
+                // url as we have, but it's better than nothing!
+                if let Some(ref relay_node) = relay {
+                    direct_addr = direct_addr.with_relay_url(relay_node.url.clone());
+                }
+            }
+
             engine.add_peer(direct_addr.clone()).await?;
         }
 
