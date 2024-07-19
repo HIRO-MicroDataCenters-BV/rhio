@@ -40,6 +40,7 @@ impl From<RelayUrl> for IrohRelayUrl {
 
 pub type NodeAddress = (PublicKey, Vec<SocketAddr>, Option<RelayUrl>);
 
+#[allow(dead_code)]
 pub fn to_node_addr(
     public_key: PublicKey,
     addresses: Vec<SocketAddr>,

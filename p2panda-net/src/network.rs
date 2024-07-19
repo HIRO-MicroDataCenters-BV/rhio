@@ -305,7 +305,7 @@ impl NetworkInner {
                     tokio::select! {
                         // Learn about our home relay node and changes to it
                         url = relay_stream.next() => {
-                            my_node_addr.info.relay_url = url.clone();
+                            my_node_addr.info.relay_url = url;
                             if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
                                 warn!("Failed to update direct addresses for discovery: {err:?}");
                             }
