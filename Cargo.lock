@@ -2775,7 +2775,6 @@ dependencies = [
  "hickory-proto",
  "iroh-base",
  "iroh-gossip",
- "iroh-io",
  "iroh-net",
  "p2panda-core",
  "rand",
