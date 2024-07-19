@@ -8,7 +8,6 @@ use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
-use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
 use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode};
@@ -19,14 +18,14 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, warn, Instrument};
-use url::Url;
 
-use crate::config::{Config, DEFAULT_BIND_PORT, DEFAULT_STUN_PORT};
+use crate::addrs::DEFAULT_STUN_PORT;
+use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::protocols::{ProtocolHandler, ProtocolMap};
-use crate::{NetworkId, TopicId};
+use crate::{NetworkId, RelayUrl, TopicId};
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -76,8 +75,8 @@ impl NetworkBuilder {
     pub fn from_config(config: Config) -> Self {
         let mut network_builder = Self::new(config.network_id).bind_port(config.bind_port);
 
-        for (public_key, addresses) in config.direct_node_addresses {
-            network_builder = network_builder.direct_address(public_key, addresses)
+        for (public_key, addresses, relay_addr) in config.direct_node_addresses {
+            network_builder = network_builder.direct_address(public_key, addresses, relay_addr)
         }
 
         for url in config.relay_addresses {
@@ -104,7 +103,7 @@ impl NetworkBuilder {
     // are possible (you need to provide socket addresses yourself).
     //
     // The relay will help us with STUN (and _not_ rendezvouz as in aquadoggo)
-    pub fn relay(mut self, url: Url, stun_only: bool, stun_port: u16) -> Self {
+    pub fn relay(mut self, url: RelayUrl, stun_only: bool, stun_port: u16) -> Self {
         self.relay_mode = match self.relay_mode {
             RelayMode::Disabled => RelayMode::Custom(vec![RelayNode {
                 url: url.into(),
@@ -126,10 +125,18 @@ impl NetworkBuilder {
     // Kinda like a "discovery" technique, but manually
     // * Manual direct addresses (no relay required)
     // * .. or only node id of at least one peer to get into gossip overlay (relay required)
-    pub fn direct_address(mut self, node_id: PublicKey, addresses: Vec<SocketAddr>) -> Self {
+    pub fn direct_address(
+        mut self,
+        node_id: PublicKey,
+        addresses: Vec<SocketAddr>,
+        relay_addr: Option<RelayUrl>,
+    ) -> Self {
         let node_id = NodeId::from_bytes(node_id.as_bytes()).expect("invalid public key");
-        self.direct_node_addresses
-            .push(NodeAddr::new(node_id).with_direct_addresses(addresses));
+        let mut node_addr = NodeAddr::new(node_id).with_direct_addresses(addresses);
+        if let Some(url) = relay_addr {
+            node_addr = node_addr.with_relay_url(url.into());
+        }
+        self.direct_node_addresses.push(node_addr);
         self
     }
 
@@ -199,13 +206,7 @@ impl NetworkBuilder {
 
         // Add direct addresses to address book
         for direct_addr in &self.direct_node_addresses {
-            let url: Url = format!("https://{EU_RELAY_HOSTNAME}")
-                .parse()
-                .expect("default_url");
-
-            engine
-                .add_peer(direct_addr.clone().with_relay_url(url.into()))
-                .await?;
+            engine.add_peer(direct_addr.clone()).await?;
         }
 
         let inner = Arc::new(NetworkInner {
@@ -482,16 +483,16 @@ async fn handle_connection(
     let alpn = match connecting.alpn().await {
         Ok(alpn) => alpn,
         Err(err) => {
-            warn!("Ignoring connection: invalid handshake: {:?}", err);
+            warn!("ignoring connection: invalid handshake: {:?}", err);
             return;
         }
     };
     let Some(handler) = protocols.get(&alpn) else {
-        warn!("Ignoring connection: unsupported ALPN protocol");
+        warn!("ignoring connection: unsupported alpn protocol");
         return;
     };
     if let Err(err) = handler.accept(connecting).await {
-        warn!("Handling incoming connection ended with error: {err}");
+        warn!("handling incoming connection ended with error: {err}");
     }
 }
 
@@ -499,17 +500,16 @@ async fn handle_connection(
 mod tests {
     use std::path::PathBuf;
 
-    use iroh_net::relay::{RelayNode, RelayUrl};
+    use iroh_net::relay::{RelayNode, RelayUrl as IrohRelayUrl};
     use p2panda_core::PrivateKey;
-    use url::Url;
 
     use crate::config::Config;
-    use crate::{NetworkBuilder, RelayMode};
+    use crate::{NetworkBuilder, RelayMode, RelayUrl};
 
     #[tokio::test]
     async fn config() {
         let direct_node_public_key = PrivateKey::new().public_key();
-        let relay_address: Url = "https://example.net".parse().unwrap();
+        let relay_address: RelayUrl = "https://example.net".parse().unwrap();
 
         let config = Config {
             bind_port: 2024,
@@ -518,6 +518,7 @@ mod tests {
             direct_node_addresses: vec![(
                 direct_node_public_key,
                 vec!["0.0.0.0:2026".parse().unwrap()],
+                None,
             )
                 .into()],
             relay_addresses: vec![relay_address.clone()],
@@ -530,7 +531,7 @@ mod tests {
         assert!(builder.secret_key.is_none());
         assert_eq!(builder.direct_node_addresses.len(), 1);
         let relay_node = RelayNode {
-            url: RelayUrl::from(relay_address),
+            url: IrohRelayUrl::from(relay_address),
             stun_only: false,
             stun_port: 0,
         };
