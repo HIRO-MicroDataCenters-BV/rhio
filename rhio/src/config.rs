@@ -48,7 +48,7 @@ struct Cli {
 
     #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    tickets: Option<Vec<NodeAddress>>,
+    direct_node_addresses: Option<Vec<NodeAddress>>,
 
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
