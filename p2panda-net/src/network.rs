@@ -71,7 +71,7 @@ impl NetworkBuilder {
         }
     }
 
-    // Instantiate a network builder from a network configuration.
+    /// Instantiate a network builder from a configuration.
     pub fn from_config(config: Config) -> Self {
         let mut network_builder = Self::new(config.network_id).bind_port(config.bind_port);
 
@@ -99,10 +99,13 @@ impl NetworkBuilder {
         self
     }
 
-    // adds one relay node, if not set no relay will be used and only direct connections are
-    // possible (you need to provide socket addresses yourself).
-    //
-    // The relay will help us with STUN (and _not_ rendezvouz as in aquadoggo)
+    /// Sets the relay of our node. Other peers need to use it if they want to establish a direct
+    /// connection with us.
+    ///
+    /// Relay nodes are STUN servers to help establishing a peer-to-peer connection if either or
+    /// both of the peers are behind a NAT. If this connection attempt fails, the Relay node might
+    /// on top offer a "proxy" functionality on top, which will help to relay the data in that
+    /// case.
     pub fn relay(mut self, url: RelayUrl, stun_only: bool, stun_port: u16) -> Self {
         self.relay_mode = RelayMode::Custom(RelayNode {
             url: url.into(),
@@ -112,9 +115,17 @@ impl NetworkBuilder {
         self
     }
 
-    // Kinda like a "discovery" technique, but manually
-    // * Manual direct addresses (no relay required)
-    // * .. or only node id of at least one peer to get into gossip overlay (relay required)
+    /// Adds a known address of another peer to our address book.
+    ///
+    /// Peers are identified with their public key (node id).
+    ///
+    /// If given a direct address, it should be reachable without the aid of a STUN / Relay Node.
+    /// If this connection attempt fails (for example because of a NAT or Firewall) the Relay Node
+    /// of that peer needs to be given, so we can re-attempt establishing a connection with it.
+    ///
+    /// If no relay address is given but required, we optimistically try to use our own relay node
+    /// instead (if specified). This might still fail, as we can't know if the peer is using the
+    /// same relay node.
     pub fn direct_address(
         mut self,
         node_id: PublicKey,
