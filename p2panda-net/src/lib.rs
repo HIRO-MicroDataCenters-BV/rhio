@@ -9,6 +9,7 @@ pub mod network;
 mod protocols;
 
 pub use addrs::{NodeAddress, RelayUrl};
+pub use config::Config;
 #[cfg(feature = "mdns")]
 pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
