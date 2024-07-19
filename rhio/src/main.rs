@@ -5,6 +5,7 @@ mod logging;
 mod message;
 mod node;
 mod private_key;
+mod ticket;
 
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ use crate::config::load_config;
 use crate::logging::setup_tracing;
 use crate::node::Node;
 use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
+use crate::ticket::Ticket;
 
 // @TODO: Use real topic id
 const TOPIC_ID: TopicId = [1; 32];
@@ -36,11 +38,11 @@ async fn main() -> Result<()> {
     };
 
     // Spawn p2panda node
-    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
+    let mut node = Node::spawn(config.network_config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
-        let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
-        println!("‣ direct addresses: {}|{}", node.id(), values.join("|"));
+        let ticket = Ticket::new(node.id(), addresses, config.network_config.relay);
+        println!("‣ connection ticket: {}", ticket);
     } else {
         println!("‣ node public key: {}", node.id());
     }

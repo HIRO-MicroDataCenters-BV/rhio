@@ -1,14 +1,14 @@
-use std::net::{AddrParseError, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use p2panda_core::PublicKey;
 use p2panda_net::{Config as NetworkConfig, NodeAddress, RelayUrl};
 use serde::{Deserialize, Serialize};
+
+use crate::ticket::Ticket;
 
 const DEFAULT_BLOBS_PATH: &str = "./blobs";
 
@@ -40,9 +40,9 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
-    #[arg(short = 'n', long, value_name = "\"NODE_ID|IP_ADDR|...\"", num_args = 0.., value_parser = parse_node_addr)]
+    #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    direct_node_addresses: Option<Vec<NodeAddress>>,
+    tickets: Option<Vec<NodeAddress>>,
 
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,19 +57,9 @@ struct Cli {
     relay_addresses: Option<Vec<RelayUrl>>,
 }
 
-fn parse_node_addr(value: &str) -> Result<NodeAddress> {
-    let parts: Vec<&str> = value.split('|').collect();
-    if parts.len() < 2 {
-        bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
-    }
-
-    let public_key = PublicKey::from_str(parts[0])?;
-    let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
-        .iter()
-        .map(|addr| SocketAddr::from_str(addr))
-        .collect();
-
-    Ok((public_key, socket_addrs?, None))
+fn parse_ticket(value: &str) -> Result<NodeAddress> {
+    let ticket = Ticket::from_str(value)?;
+    Ok(ticket.into())
 }
 
 fn parse_url(value: &str) -> Result<RelayUrl> {
