@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
@@ -29,6 +30,12 @@ impl FromStr for RelayUrl {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let inner = IrohRelayUrl::from_str(s).context("invalid URL")?;
         Ok(Self(inner))
+    }
+}
+
+impl Display for RelayUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.to_string())
     }
 }
 

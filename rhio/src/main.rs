@@ -31,6 +31,8 @@ async fn main() -> Result<()> {
 
     // Load config file and private key
     let config = load_config()?;
+    let relay = config.network_config.relay.clone();
+
     let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
@@ -38,10 +40,19 @@ async fn main() -> Result<()> {
     };
 
     // Spawn p2panda node
-    let mut node = Node::spawn(config.network_config.clone(), private_key.clone()).await?;
+    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
-        let ticket = Ticket::new(node.id(), addresses, config.network_config.relay);
+        match &relay {
+            Some(url) => {
+                println!("‣ relay url: {}", url);
+            }
+            None => {
+                println!("! you haven't specified a relay address for your node");
+                println!("other peers might not be able to connect to you without it.");
+            }
+        }
+        let ticket = Ticket::new(node.id(), addresses, relay);
         println!("‣ connection ticket: {}", ticket);
     } else {
         println!("‣ node public key: {}", node.id());
