@@ -7,13 +7,14 @@ use anyhow::Context;
 use iroh_net::relay::RelayUrl as IrohRelayUrl;
 use iroh_net::{NodeAddr as IrohNodeAddr, NodeId};
 use p2panda_core::PublicKey;
+use serde::{Deserialize, Serialize};
 
 /// The default STUN port used by the relay server.
 ///
 /// The STUN port as defined by [RFC 8489](<https://www.rfc-editor.org/rfc/rfc8489#section-18.6>)
 pub const DEFAULT_STUN_PORT: u16 = 3478;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayUrl(IrohRelayUrl);
 
 impl RelayUrl {
