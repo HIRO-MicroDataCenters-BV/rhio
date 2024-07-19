@@ -10,7 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
 
-const DEFAULT_BLOBS_PATH: &str = "./blobs";
+const DEFAULT_BLOBS_PATH: &str = "blobs";
+
+// Use iroh's staging relay node for testing
+const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -21,9 +24,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let mut network_config = NetworkConfig::default();
+        network_config.relay = Some(DEFAULT_RELAY_URL.parse().expect("valid url"));
+
         Self {
             blobs_path: DEFAULT_BLOBS_PATH.into(),
-            network_config: NetworkConfig::default(),
+            network_config,
         }
     }
 }
@@ -52,9 +58,9 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_path: Option<PathBuf>,
 
-    #[arg(short = 'r', long, value_name = "URL", num_args = 0.., value_parser = parse_url)]
+    #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    relay_addresses: Option<Vec<RelayUrl>>,
+    relay: Option<RelayUrl>,
 }
 
 fn parse_ticket(value: &str) -> Result<NodeAddress> {
