@@ -11,7 +11,7 @@ use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationSt
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
-use crate::aggregate::{FileSystemAction, FileSystem};
+use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::events::{Event, GossipOperation};
 use crate::extensions::RhioExtensions;
 
@@ -119,7 +119,7 @@ impl RhioActor {
                 ImportBlobEvent::Abort(err) => {
                     error!("failed importing file: {err}");
                 }
-                AddProgress::AllDone { hash, .. } => {
+                ImportBlobEvent::Done(hash) => {
                     info!("imported file {} with hash {hash}", absolute_path.display());
                     let hash = Hash::from_bytes(*hash.as_bytes());
 
