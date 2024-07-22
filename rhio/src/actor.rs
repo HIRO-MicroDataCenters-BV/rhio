@@ -287,7 +287,11 @@ impl RhioActor {
         };
 
         // Persist operation in our memory store
-        self.store.insert_operation(operation)?;
+        self.store.insert_operation(operation.clone())?;
+
+        // Send the event to the FileSystem aggregator, we don't expect any actions 
+        // to come back.
+        let _ = self.fs.process(message, operation.header.timestamp);
 
         // Broadcast data in gossip overlay
         let gossip_event = GossipOperation { body, header };
