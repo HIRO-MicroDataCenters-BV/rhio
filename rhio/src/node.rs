@@ -86,7 +86,7 @@ impl Node {
     pub async fn import_file(&self, absolute_path: PathBuf) -> Result<()> {
         // We derive the relative path by stripping off the base blobs config path. This is done
         // as we want to import by absolute path, but announce relative paths (relative to the
-        // configured blob directory). 
+        // configured blob directory).
         let relative_path = to_relative_path(&absolute_path, &self.config.blobs_path);
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
