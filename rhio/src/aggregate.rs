@@ -43,12 +43,6 @@ impl FileSystem {
 
         // Handle messages
         match event {
-            Event::Snapshot(files) => {
-                for (path, hash) in files {
-                    let path = PathBuf::from(path);
-                    actions.push(FileSystemAction::DownloadAndExport { hash, path });
-                }
-            }
             Event::Create(path, hash) => {
                 // Add path and hash to blobs map.
                 let path = PathBuf::from(path);
@@ -64,6 +58,7 @@ impl FileSystem {
             }
             Event::Modify => unimplemented!(),
             Event::Remove => unimplemented!(),
+            Event::Snapshot(_) => unimplemented!(),
         }
 
         actions
