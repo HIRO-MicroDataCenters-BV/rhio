@@ -5,7 +5,7 @@ use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::config::DEFAULT_STUN_PORT;
-use p2panda_net::{network, LocalDiscovery, Network, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;

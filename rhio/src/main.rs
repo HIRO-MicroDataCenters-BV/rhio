@@ -12,9 +12,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use p2panda_net::TopicId;
-use tokio::fs;
 use tokio::sync::mpsc;
 use tracing::{error, info};
 
