@@ -12,6 +12,9 @@ pub struct GossipOperation {
 pub type FileName = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Message {
-    AnnounceBlob(Hash, FileName),
+pub enum Event {
+    Create(FileName, Hash),
+    Modify,
+    Remove,
+    Snapshot(Vec<(FileName, Hash)>),
 }

@@ -11,19 +11,22 @@ use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationSt
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
+use crate::aggregate::{FileSystemAction, FileSystem};
+use crate::events::{Event, GossipOperation};
 use crate::extensions::RhioExtensions;
-use crate::message::{GossipOperation, Message};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
     ImportFile {
-        path: PathBuf,
+        absolute_path: PathBuf,
+        relative_path: PathBuf,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
 }
 
 pub struct RhioActor {
+    fs: FileSystem,
     blobs: Blobs<BlobMemoryStore>,
     blobs_export_path: PathBuf,
     private_key: PrivateKey,
@@ -46,6 +49,7 @@ impl RhioActor {
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
+            fs: FileSystem::new(),
             blobs,
             blobs_export_path,
             private_key,
@@ -82,8 +86,12 @@ impl RhioActor {
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToRhioActor::ImportFile { path, reply } => {
-                let result = self.on_import_file(path).await;
+            ToRhioActor::ImportFile {
+                absolute_path,
+                relative_path,
+                reply,
+            } => {
+                let result = self.on_import_file(absolute_path, relative_path).await;
                 reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
@@ -94,23 +102,34 @@ impl RhioActor {
         Ok(true)
     }
 
-    async fn on_import_file(&mut self, path: PathBuf) -> Result<()> {
-        let mut stream = self.blobs.import_blob(path.clone()).await;
+    async fn on_import_file(
+        &mut self,
+        absolute_path: PathBuf,
+        relative_path: PathBuf,
+    ) -> Result<()> {
+        let relative_path_str = relative_path.to_str().expect("is a valid unicode str");
+
+        if self.fs.file_exists(&PathBuf::from(relative_path_str)) {
+            return Ok(());
+        }
+
+        let mut stream = self.blobs.import_blob(absolute_path.clone()).await;
         while let Some(event) = stream.next().await {
             match event {
                 ImportBlobEvent::Abort(err) => {
                     error!("failed importing file: {err}");
                 }
-                ImportBlobEvent::Done(hash) => {
-                    info!("imported file {} with hash {hash}", path.display());
+                AddProgress::AllDone { hash, .. } => {
+                    info!("imported file {} with hash {hash}", absolute_path.display());
                     let hash = Hash::from_bytes(*hash.as_bytes());
-                    let file_name = path
-                        .file_name()
-                        .expect("blob has filename in path")
-                        .to_str()
-                        .expect("is a valid unicode str");
-                    self.send_message(Message::AnnounceBlob(hash, file_name.to_string()))
-                        .await?;
+
+                    if !self
+                        .fs
+                        .file_announced(hash, &PathBuf::from(relative_path_str))
+                    {
+                        self.send_message(Event::Create(relative_path_str.to_string(), hash))
+                            .await?;
+                    }
                 }
             }
         }
@@ -162,7 +181,7 @@ impl RhioActor {
         }
 
         // Validate message
-        let Ok(message) = ciborium::from_reader::<Message, _>(
+        let Ok(message) = ciborium::from_reader::<Event, _>(
             &operation
                 .body
                 .as_ref()
@@ -186,23 +205,27 @@ impl RhioActor {
             .insert_operation(operation)
             .expect("no errors from memory store");
 
-        // Handle messages
-        match message {
-            Message::AnnounceBlob(hash, file_name) => {
-                println!("Announce received: {hash} {file_name}");
-                if let Err(err) = self.download_blob(hash).await {
-                    error!("failed handling announced blob for {hash}: {err}");
-                    return;
+        let actions = self.fs.process(message);
+
+        for action in actions {
+            match action {
+                FileSystemAction::DownloadAndExport { hash, path } => {
+                    if self.download_blob(hash).await.is_err() {
+                        return;
+                    }
+
+                    let path_str = path.to_str().expect("is a valid unicode str");
+
+                    match self
+                        .blobs
+                        .export_blob(hash, &self.blobs_export_path, path_str)
+                        .await
+                    {
+                        Ok(_) => info!("exported blob to filesystem {path_str}"),
+                        Err(err) => error!("failed to export blob to filesystem {err}"),
+                    };
                 }
-                println!("Export blob: {hash} {file_name}");
-                match self
-                    .blobs
-                    .export_blob(hash, &self.blobs_export_path, &file_name)
-                    .await
-                {
-                    Ok(_) => info!("exported blob to filesystem {file_name}"),
-                    Err(err) => error!("failed to export blob to filesystem {err}"),
-                };
+                FileSystemAction::None => (),
             }
         }
     }
@@ -222,7 +245,7 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn send_message(&mut self, message: Message) -> Result<()> {
+    async fn send_message(&mut self, message: Event) -> Result<()> {
         // Encode body
         let mut body_bytes: Vec<u8> = Vec::new();
         ciborium::ser::into_writer(&message, &mut body_bytes)?;

@@ -68,7 +68,7 @@ where
             .entry_status(&IrohHash::from_bytes(*hash.as_bytes()))
             .await?;
         if let EntryStatus::Complete = status {
-            return Ok(true)
+            return Ok(true);
         }
         Ok(false)
     }
