@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use futures_util::Stream;
 use iroh_blobs::downloader::Downloader;
-use iroh_blobs::store::{EntryStatus, Store};
-use iroh_blobs::Hash as IrohHash;
+use iroh_blobs::store::Store;
 use p2panda_core::Hash;
 use p2panda_net::{Network, NetworkBuilder};
 use tokio_util::task::LocalPoolHandle;
@@ -60,17 +59,6 @@ where
         };
 
         Ok((network, blobs))
-    }
-
-    pub async fn blob_complete(&self, hash: Hash) -> Result<bool> {
-        let status = self
-            .store
-            .entry_status(&IrohHash::from_bytes(*hash.as_bytes()))
-            .await?;
-        if let EntryStatus::Complete = status {
-            return Ok(true);
-        }
-        Ok(false)
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
