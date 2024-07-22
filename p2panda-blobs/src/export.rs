@@ -28,6 +28,7 @@ pub async fn export_blob<S: Store>(
     let hash = IrohHash::from_bytes(*hash.as_bytes());
     let entry = store.get(&hash).await?.context("entry not there")?;
 
+    // Create temporary directory where we first export the blob to.
     let tmp_path = temp_dir();
     let tmp_file = tmp_path.join(file_name);
 
@@ -51,7 +52,11 @@ pub async fn export_blob<S: Store>(
             ),
         )
         .await?;
+
+    // When exporting is complete copy the blob file into place.
     tokio::fs::copy(tmp_file.clone(), outpath.join(file_name)).await?;
+
+    // Drop the temporary file.
     drop(tmp_file);
     progress.send(ExportProgress::Done { id }).await?;
     Ok(())
