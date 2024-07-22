@@ -202,10 +202,10 @@ impl RhioActor {
         );
 
         self.store
-            .insert_operation(operation)
+            .insert_operation(operation.clone())
             .expect("no errors from memory store");
 
-        let actions = self.fs.process(message);
+        let actions = self.fs.process(message, operation.header.timestamp);
 
         for action in actions {
             match action {
