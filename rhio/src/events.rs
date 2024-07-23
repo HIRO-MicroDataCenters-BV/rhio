@@ -31,7 +31,7 @@ impl From<Operation<RhioExtensions>> for GossipOperation {
 pub type FileName = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Event {
+pub enum FileSystemEvent {
     Create(FileName, Hash),
     Modify,
     Remove,

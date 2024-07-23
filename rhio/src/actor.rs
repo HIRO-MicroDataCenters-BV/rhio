@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
-use crate::events::{Event, GossipOperation};
+use crate::events::{FileSystemEvent, GossipOperation};
 use crate::extensions::RhioExtensions;
 
 #[derive(Debug)]
@@ -127,7 +127,7 @@ impl RhioActor {
                         .fs
                         .file_announced(hash, &PathBuf::from(relative_path_str))
                     {
-                        self.send_fs_event(Event::Create(relative_path_str.to_string(), hash))
+                        self.send_fs_event(FileSystemEvent::Create(relative_path_str.to_string(), hash))
                             .await?;
                     }
                 }
@@ -181,7 +181,7 @@ impl RhioActor {
         }
     }
 
-    async fn send_fs_event(&mut self, fs_event: Event) -> Result<()> {
+    async fn send_fs_event(&mut self, fs_event: FileSystemEvent) -> Result<()> {
         // Create an operation for this event.
         let operation = create(&mut self.store, &self.private_key, &fs_event)?;
 
@@ -243,7 +243,7 @@ impl RhioActor {
 fn ingest<S>(
     store: &mut S,
     operation: Operation<RhioExtensions>,
-) -> Result<(Operation<RhioExtensions>, Event)>
+) -> Result<(Operation<RhioExtensions>, FileSystemEvent)>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
 {
@@ -262,7 +262,7 @@ where
     }
 
     // Decode and validate the operation body.
-    let fs_event = ciborium::from_reader::<Event, _>(
+    let fs_event = ciborium::from_reader::<FileSystemEvent, _>(
         &operation
             .body
             .as_ref()
@@ -281,7 +281,7 @@ where
 fn create<S>(
     store: &mut S,
     private_key: &PrivateKey,
-    fs_event: &Event,
+    fs_event: &FileSystemEvent,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,

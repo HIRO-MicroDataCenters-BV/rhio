@@ -2,7 +2,7 @@ use p2panda_core::Hash;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::events::Event;
+use crate::events::FileSystemEvent;
 
 pub enum FileSystemAction {
     DownloadAndExport { hash: Hash, path: PathBuf },
@@ -24,7 +24,7 @@ impl FileSystem {
         }
     }
 
-    pub fn process(&mut self, event: Event, timestamp: Timestamp) -> Vec<FileSystemAction> {
+    pub fn process(&mut self, event: FileSystemEvent, timestamp: Timestamp) -> Vec<FileSystemAction> {
         self.on_event(event, timestamp)
     }
 
@@ -39,12 +39,12 @@ impl FileSystem {
         self.paths.contains_key(path)
     }
 
-    fn on_event(&mut self, event: Event, timestamp: Timestamp) -> Vec<FileSystemAction> {
+    fn on_event(&mut self, event: FileSystemEvent, timestamp: Timestamp) -> Vec<FileSystemAction> {
         let mut actions = Vec::new();
 
         // Handle messages
         match event {
-            Event::Create(path, hash) => {
+            FileSystemEvent::Create(path, hash) => {
                 // Add path and hash to blobs map.
                 let path = PathBuf::from(path);
 
@@ -78,9 +78,9 @@ impl FileSystem {
                     actions.push(FileSystemAction::Export { hash, path });
                 }
             }
-            Event::Modify => unimplemented!(),
-            Event::Remove => unimplemented!(),
-            Event::Snapshot(_) => unimplemented!(),
+            FileSystemEvent::Modify => unimplemented!(),
+            FileSystemEvent::Remove => unimplemented!(),
+            FileSystemEvent::Snapshot(_) => unimplemented!(),
         }
 
         actions
