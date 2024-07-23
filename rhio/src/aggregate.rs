@@ -1,14 +1,12 @@
 use p2panda_core::Hash;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::thread::current;
-use tracing::error;
 
 use crate::events::Event;
 
 pub enum FileSystemAction {
     DownloadAndExport { hash: Hash, path: PathBuf },
-    None,
+    Export { hash: Hash, path: PathBuf },
 }
 
 pub struct FileSystem {
@@ -50,10 +48,11 @@ impl FileSystem {
                 // Add path and hash to blobs map.
                 let path = PathBuf::from(path);
 
-                // If the timestamp at this path is greater than the new timestamp, then
-                // ignore this event and return here already. This is LWW logic in action.
-                if let Some((_, current_timestamp)) = self.paths.get(&path) {
-                    if timestamp <= *current_timestamp {
+                // If the latest timestamp (with fallback to hash) at this path is greater than
+                // the new timestamp, then ignore this event and return here already. This is LWW
+                // logic in action.
+                if let Some((latest_hash, latest_timestamp)) = self.paths.get(&path) {
+                    if (timestamp, hash) < (*latest_timestamp, *latest_hash) {
                         return actions;
                     }
                 };
@@ -63,8 +62,11 @@ impl FileSystem {
                     self.paths.insert(PathBuf::from(&path), (hash, timestamp))
                 {
                     // If there was already a different hash at that path then remove it from the
-                    // blobs hash set.
-                    if current_hash != hash {
+                    // blobs hash set if it isn't used at another path.
+                    //
+                    // @TODO: We could also delete it from the blob store at this point.
+                    let hash_in_use = self.paths.values().any(|(hash, _)| hash == &current_hash);
+                    if current_hash != hash && !hash_in_use {
                         self.blobs.remove(&current_hash);
                     }
                 };
@@ -73,8 +75,7 @@ impl FileSystem {
                 if self.blobs.insert(hash) {
                     actions.push(FileSystemAction::DownloadAndExport { hash, path });
                 } else {
-                    error!("Failed to process `Create` event: file already exists");
-                    actions.push(FileSystemAction::None);
+                    actions.push(FileSystemAction::Export { hash, path });
                 }
             }
             Event::Modify => unimplemented!(),
