@@ -106,9 +106,7 @@ impl RhioActor {
         absolute_path: PathBuf,
         relative_path: PathBuf,
     ) -> Result<()> {
-        let relative_path_str = relative_path.to_str().expect("is a valid unicode str");
-
-        if self.fs.file_exists(&PathBuf::from(relative_path_str)) {
+        if self.fs.file_exists(&relative_path) {
             return Ok(());
         }
 
@@ -122,12 +120,12 @@ impl RhioActor {
                     info!("imported file {} with hash {hash}", absolute_path.display());
                     let hash = Hash::from_bytes(*hash.as_bytes());
 
-                    if !self
-                        .fs
-                        .file_announced(hash, &PathBuf::from(relative_path_str))
-                    {
+                    if !self.fs.file_announced(hash, &relative_path) {
                         self.send_fs_event(FileSystemEvent::Create(
-                            relative_path_str.to_string(),
+                            relative_path
+                                .to_str()
+                                .expect("is a valid unicode str")
+                                .to_string(),
                             hash,
                         ))
                         .await?;
