@@ -208,41 +208,8 @@ impl RhioActor {
         let actions = self.fs.process(message, operation.header.timestamp);
 
         for action in actions {
-            match action {
-                FileSystemAction::DownloadAndExport { hash, path } => {
-                    if self.download_blob(hash).await.is_err() {
-                        return;
-                    }
-
-                    let path_str = path.to_str().expect("is a valid unicode str");
-
-                    match self
-                        .blobs
-                        .export_blob(hash, &self.blobs_export_path, path_str)
-                        .await
-                    {
-                        Ok(_) => info!("exported blob to filesystem {path_str}"),
-                        Err(err) => error!("failed to export blob to filesystem {err}"),
-                    };
-                }
-                FileSystemAction::None => (),
-            }
+            self.handle_fs_action(action).await;
         }
-    }
-
-    async fn download_blob(&mut self, hash: Hash) -> Result<()> {
-        let mut stream = self.blobs.download_blob(hash).await;
-        while let Some(event) = stream.next().await {
-            match event {
-                DownloadBlobEvent::Abort(err) => {
-                    error!("failed downloading file: {err}");
-                }
-                DownloadBlobEvent::Done => {
-                    info!("downloaded blob {hash}");
-                }
-            }
-        }
-        Ok(())
     }
 
     async fn send_message(&mut self, message: Event) -> Result<()> {
@@ -300,5 +267,47 @@ impl RhioActor {
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())
+    }
+
+    async fn download_blob(&mut self, hash: Hash) -> Result<()> {
+        let mut stream = self.blobs.download_blob(hash).await;
+        while let Some(event) = stream.next().await {
+            match event {
+                DownloadBlobEvent::Abort(err) => {
+                    error!("failed downloading file: {err}");
+                }
+                DownloadBlobEvent::Done => {
+                    info!("downloaded blob {hash}");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_fs_action(&mut self, action: FileSystemAction) {
+        match action {
+            FileSystemAction::DownloadAndExport { hash, path } => {
+                if self.download_blob(hash).await.is_err() {
+                    return;
+                }
+                self.export_blob(hash, path).await;
+            }
+            FileSystemAction::Export { hash, path } => {
+                self.export_blob(hash, path).await;
+            }
+        }
+    }
+
+    async fn export_blob(&mut self, hash: Hash, path: PathBuf) {
+        let path_str = path.to_str().expect("is a valid unicode str");
+
+        match self
+            .blobs
+            .export_blob(hash, &self.blobs_export_path, path_str)
+            .await
+        {
+            Ok(_) => info!("exported blob to filesystem {path_str}"),
+            Err(err) => error!("failed to export blob to filesystem {err}"),
+        };
     }
 }
