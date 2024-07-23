@@ -1,15 +1,15 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
-pub type FileName = String;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FileSystemEvent {
-    Create(FileName, Hash),
+    Create(PathBuf, Hash),
     Modify,
     Remove,
-    Snapshot(Vec<(FileName, Hash)>),
+    Snapshot(Vec<(PathBuf, Hash)>),
 }
 
 impl FileSystemEvent {

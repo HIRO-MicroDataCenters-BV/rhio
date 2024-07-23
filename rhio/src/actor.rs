@@ -121,14 +121,8 @@ impl RhioActor {
                     let hash = Hash::from_bytes(*hash.as_bytes());
 
                     if !self.fs.file_announced(hash, &relative_path) {
-                        self.send_fs_event(FileSystemEvent::Create(
-                            relative_path
-                                .to_str()
-                                .expect("is a valid unicode str")
-                                .to_string(),
-                            hash,
-                        ))
-                        .await?;
+                        self.send_fs_event(FileSystemEvent::Create(relative_path.clone(), hash))
+                            .await?;
                     }
                 }
             }
