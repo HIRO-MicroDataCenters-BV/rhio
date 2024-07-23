@@ -127,7 +127,7 @@ impl RhioActor {
                         .fs
                         .file_announced(hash, &PathBuf::from(relative_path_str))
                     {
-                        self.send_message(Event::Create(relative_path_str.to_string(), hash))
+                        self.send_fs_event(Event::Create(relative_path_str.to_string(), hash))
                             .await?;
                     }
                 }
@@ -152,44 +152,17 @@ impl RhioActor {
 
     async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
         // Validate operation
-        let Ok(event) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
+        let Ok(gossip_operation) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
             error!("invalid operation from {delivered_from}");
             return;
         };
 
-        let operation = Operation {
-            hash: event.header.hash(),
-            header: event.header,
-            body: Some(event.body),
-        };
-
-        if let Err(err) = validate_operation(&operation) {
-            error!("invalid operation received: {err}");
-            return;
-        }
-
-        let log_id: LogId = RhioExtensions::extract(&operation);
-        if let Some(latest_operation) = self
-            .store
-            .latest_operation(operation.header.public_key, log_id)
-            .expect("memory store does not error")
-        {
-            if validate_backlink(&latest_operation.header, &operation.header).is_err() {
-                error!("invalid backlink");
+        let (operation, fs_event) = match ingest(&mut self.store, gossip_operation.into()) {
+            Ok(result) => result,
+            Err(err) => {
+                error!("Failed to ingest operation from {delivered_from}: {err}");
                 return;
-            };
-        }
-
-        // Validate message
-        let Ok(message) = ciborium::from_reader::<Event, _>(
-            &operation
-                .body
-                .as_ref()
-                .expect("body should be given")
-                .to_bytes()[..],
-        ) else {
-            error!("invalid message from {delivered_from}");
-            return;
+            }
         };
 
         debug!(
@@ -198,72 +171,27 @@ impl RhioActor {
             operation.header.seq_num,
             operation.header.timestamp,
             operation.hash,
-            message,
+            fs_event,
         );
 
-        self.store
-            .insert_operation(operation.clone())
-            .expect("no errors from memory store");
-
-        let actions = self.fs.process(message, operation.header.timestamp);
-
+        // Process the event and run any generated actions.
+        let actions = self.fs.process(fs_event, operation.header.timestamp);
         for action in actions {
             self.handle_fs_action(action).await;
         }
     }
 
-    async fn send_message(&mut self, message: Event) -> Result<()> {
-        // Encode body
-        let mut body_bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&message, &mut body_bytes)?;
-        let body = Body::new(&body_bytes);
-
-        // Sign and encode header
-        let public_key = self.private_key.public_key();
-        let latest_operation = self
-            .store
-            .latest_operation(public_key, public_key.to_string().into())?;
-
-        let (seq_num, backlink) = match latest_operation {
-            Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
-            None => (0, None),
-        };
-
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
-
-        let mut header = Header {
-            version: 1,
-            public_key,
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp,
-            seq_num,
-            backlink,
-            previous: vec![],
-            extensions: Some(RhioExtensions::default()),
-        };
-        header.sign(&self.private_key);
-
-        let operation = Operation {
-            hash: header.hash(),
-            header: header.clone(),
-            body: Some(body.clone()),
-        };
-
-        // Persist operation in our memory store
-        self.store.insert_operation(operation.clone())?;
+    async fn send_fs_event(&mut self, fs_event: Event) -> Result<()> {
+        // Create an operation for this event.
+        let operation = create(&mut self.store, &self.private_key, &fs_event)?;
 
         // Send the event to the FileSystem aggregator, we don't expect any actions
         // to come back.
-        let _ = self.fs.process(message, operation.header.timestamp);
+        let _ = self.fs.process(fs_event, operation.header.timestamp);
 
         // Broadcast data in gossip overlay
-        let gossip_event = GossipOperation { body, header };
         let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&gossip_event, &mut bytes)?;
+        ciborium::ser::into_writer(&GossipOperation::from(operation), &mut bytes)?;
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())
@@ -310,4 +238,95 @@ impl RhioActor {
             Err(err) => error!("failed to export blob to filesystem {err}"),
         };
     }
+}
+
+fn ingest<S>(
+    store: &mut S,
+    operation: Operation<RhioExtensions>,
+) -> Result<(Operation<RhioExtensions>, Event)>
+where
+    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+{
+    // Validate operation format.
+    validate_operation(&operation)?;
+
+    // Get latest operation.
+    let log_id: LogId = RhioExtensions::extract(&operation);
+    let latest_operation = store
+        .latest_operation(operation.header.public_key, log_id)
+        .expect("memory store does not error");
+
+    // Validate that it matches the backlink.
+    if let Some(latest_operation) = latest_operation {
+        validate_backlink(&latest_operation.header, &operation.header)?;
+    }
+
+    // Decode and validate the operation body.
+    let fs_event = ciborium::from_reader::<Event, _>(
+        &operation
+            .body
+            .as_ref()
+            .expect("body should be given")
+            .to_bytes()[..],
+    )?;
+
+    // Persist the operation.
+    store
+        .insert_operation(operation.clone())
+        .expect("no errors from memory store");
+
+    Ok((operation, fs_event))
+}
+
+fn create<S>(
+    store: &mut S,
+    private_key: &PrivateKey,
+    fs_event: &Event,
+) -> Result<Operation<RhioExtensions>>
+where
+    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+{
+    // Encode body.
+    let mut body_bytes: Vec<u8> = Vec::new();
+    ciborium::ser::into_writer(&fs_event, &mut body_bytes)?;
+    let body = Body::new(&body_bytes);
+
+    // Sign and encode header.
+    let public_key = private_key.public_key();
+    let latest_operation = store.latest_operation(public_key, public_key.to_string().into())?;
+
+    let (seq_num, backlink) = match latest_operation {
+        Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
+        None => (0, None),
+    };
+
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
+
+    let mut header = Header {
+        version: 1,
+        public_key,
+        signature: None,
+        payload_size: body.size(),
+        payload_hash: Some(body.hash()),
+        timestamp,
+        seq_num,
+        backlink,
+        previous: vec![],
+        extensions: Some(RhioExtensions::default()),
+    };
+    header.sign(private_key);
+
+    // Construct operation
+    let operation = Operation {
+        hash: header.hash(),
+        header: header.clone(),
+        body: Some(body.clone()),
+    };
+
+    // Persist operation in our memory store
+    store.insert_operation(operation.clone())?;
+
+    Ok(operation)
 }
