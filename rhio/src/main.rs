@@ -1,7 +1,7 @@
 mod actor;
 mod aggregate;
 mod config;
-mod events;
+mod messages;
 mod extensions;
 mod logging;
 mod node;

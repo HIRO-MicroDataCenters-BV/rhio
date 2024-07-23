@@ -2,7 +2,7 @@ use p2panda_core::Hash;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::events::FileSystemEvent;
+use crate::messages::FileSystemEvent;
 
 pub enum FileSystemAction {
     DownloadAndExport { hash: Hash, path: PathBuf },

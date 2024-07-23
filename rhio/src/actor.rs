@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
-use crate::events::{FileSystemEvent, GossipOperation};
+use crate::messages::{FileSystemEvent, GossipOperation};
 use crate::extensions::RhioExtensions;
 
 #[derive(Debug)]
