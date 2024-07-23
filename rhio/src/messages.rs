@@ -1,32 +1,6 @@
-use p2panda_core::{Body, Hash, Header, Operation};
+use anyhow::Result;
+use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
-
-use crate::extensions::RhioExtensions;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GossipOperation {
-    pub body: Body,
-    pub header: Header<RhioExtensions>,
-}
-
-impl Into<Operation<RhioExtensions>> for GossipOperation {
-    fn into(self) -> Operation<RhioExtensions> {
-        Operation {
-            hash: self.header.hash(),
-            header: self.header,
-            body: Some(self.body),
-        }
-    }
-}
-
-impl From<Operation<RhioExtensions>> for GossipOperation {
-    fn from(value: Operation<RhioExtensions>) -> Self {
-        GossipOperation {
-            body: value.body.expect("all gossip operations have a body"),
-            header: value.header,
-        }
-    }
-}
 
 pub type FileName = String;
 
@@ -36,4 +10,17 @@ pub enum FileSystemEvent {
     Modify,
     Remove,
     Snapshot(Vec<(FileName, Hash)>),
+}
+
+impl FileSystemEvent {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let event = ciborium::from_reader::<FileSystemEvent, _>(bytes)?;
+        Ok(event)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&self, &mut bytes).expect("succesfully encodes bytes");
+        bytes
+    }
 }

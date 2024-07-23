@@ -1,19 +1,18 @@
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
-use p2panda_core::operation::{validate_backlink, validate_operation, Body, Header, Operation};
-use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
+use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
+use p2panda_store::MemoryStore as LogsMemoryStore;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::messages::{FileSystemEvent, GossipOperation};
+use crate::messages::FileSystemEvent;
+use crate::operations::{create, decode_header_and_body, encode_header_and_body, ingest};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
@@ -155,12 +154,19 @@ impl RhioActor {
 
     async fn on_fs_event(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
         // Validate operation
-        let Ok(gossip_operation) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
+        let Ok((body, header)) = decode_header_and_body(&bytes) else {
             error!("invalid operation from {delivered_from}");
             return;
         };
 
-        let (operation, fs_event) = match ingest(&mut self.store, gossip_operation.into()) {
+        // Decode and validate the operation body (currently we only expect FileSystemEvents in
+        // the body).
+        let fs_event = body
+            .as_ref()
+            .map(|body| FileSystemEvent::from_bytes(&body.to_bytes()).expect("valid body bytes"));
+
+        // Ingest the operation, this performs all expected validation.
+        match ingest(&mut self.store, header.clone(), body) {
             Ok(result) => result,
             Err(err) => {
                 error!("Failed to ingest operation from {delivered_from}: {err}");
@@ -170,31 +176,32 @@ impl RhioActor {
 
         debug!(
             "Received operation: {} {} {} {} {:?}",
-            operation.header.public_key,
-            operation.header.seq_num,
-            operation.header.timestamp,
-            operation.hash,
+            header.public_key,
+            header.seq_num,
+            header.timestamp,
+            header.hash(),
             fs_event,
         );
 
         // Process the event and run any generated actions.
-        let actions = self.fs.process(fs_event, operation.header.timestamp);
-        for action in actions {
-            self.handle_fs_action(action).await;
+        if let Some(fs_event) = fs_event {
+            let actions = self.fs.process(fs_event, header.timestamp);
+            for action in actions {
+                self.handle_fs_action(action).await;
+            }
         }
     }
 
     async fn send_fs_event(&mut self, fs_event: FileSystemEvent) -> Result<()> {
         // Create an operation for this event.
-        let operation = create(&mut self.store, &self.private_key, &fs_event)?;
+        let (header, body) = create(&mut self.store, &self.private_key, &fs_event)?;
 
         // Send the event to the FileSystem aggregator, we don't expect any actions
         // to come back.
-        let _ = self.fs.process(fs_event, operation.header.timestamp);
+        let _ = self.fs.process(fs_event, header.timestamp);
 
         // Broadcast data in gossip overlay
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&GossipOperation::from(operation), &mut bytes)?;
+        let bytes = encode_header_and_body(header, Some(body))?;
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())
@@ -241,95 +248,4 @@ impl RhioActor {
             Err(err) => error!("failed to export blob to filesystem {err}"),
         };
     }
-}
-
-fn ingest<S>(
-    store: &mut S,
-    operation: Operation<RhioExtensions>,
-) -> Result<(Operation<RhioExtensions>, FileSystemEvent)>
-where
-    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
-{
-    // Validate operation format.
-    validate_operation(&operation)?;
-
-    // Get latest operation.
-    let log_id: LogId = RhioExtensions::extract(&operation);
-    let latest_operation = store
-        .latest_operation(operation.header.public_key, log_id)
-        .expect("memory store does not error");
-
-    // Validate that it matches the backlink.
-    if let Some(latest_operation) = latest_operation {
-        validate_backlink(&latest_operation.header, &operation.header)?;
-    }
-
-    // Decode and validate the operation body.
-    let fs_event = ciborium::from_reader::<FileSystemEvent, _>(
-        &operation
-            .body
-            .as_ref()
-            .expect("body should be given")
-            .to_bytes()[..],
-    )?;
-
-    // Persist the operation.
-    store
-        .insert_operation(operation.clone())
-        .expect("no errors from memory store");
-
-    Ok((operation, fs_event))
-}
-
-fn create<S>(
-    store: &mut S,
-    private_key: &PrivateKey,
-    fs_event: &FileSystemEvent,
-) -> Result<Operation<RhioExtensions>>
-where
-    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
-{
-    // Encode body.
-    let mut body_bytes: Vec<u8> = Vec::new();
-    ciborium::ser::into_writer(&fs_event, &mut body_bytes)?;
-    let body = Body::new(&body_bytes);
-
-    // Sign and encode header.
-    let public_key = private_key.public_key();
-    let latest_operation = store.latest_operation(public_key, public_key.to_string().into())?;
-
-    let (seq_num, backlink) = match latest_operation {
-        Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
-        None => (0, None),
-    };
-
-    let timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)?
-        .as_secs();
-
-    let mut header = Header {
-        version: 1,
-        public_key,
-        signature: None,
-        payload_size: body.size(),
-        payload_hash: Some(body.hash()),
-        timestamp,
-        seq_num,
-        backlink,
-        previous: vec![],
-        extensions: Some(RhioExtensions::default()),
-    };
-    header.sign(private_key);
-
-    // Construct operation
-    let operation = Operation {
-        hash: header.hash(),
-        header: header.clone(),
-        body: Some(body.clone()),
-    };
-
-    // Persist operation in our memory store
-    store.insert_operation(operation.clone())?;
-
-    Ok(operation)
 }

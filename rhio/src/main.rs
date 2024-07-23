@@ -5,6 +5,7 @@ mod extensions;
 mod logging;
 mod messages;
 mod node;
+mod operations;
 mod private_key;
 
 use std::path::PathBuf;
