@@ -1,9 +1,9 @@
 mod actor;
 mod aggregate;
 mod config;
-mod messages;
 mod extensions;
 mod logging;
+mod messages;
 mod node;
 mod private_key;
 

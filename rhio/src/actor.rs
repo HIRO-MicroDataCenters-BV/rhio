@@ -12,8 +12,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
-use crate::messages::{FileSystemEvent, GossipOperation};
 use crate::extensions::RhioExtensions;
+use crate::messages::{FileSystemEvent, GossipOperation};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
@@ -127,8 +127,11 @@ impl RhioActor {
                         .fs
                         .file_announced(hash, &PathBuf::from(relative_path_str))
                     {
-                        self.send_fs_event(FileSystemEvent::Create(relative_path_str.to_string(), hash))
-                            .await?;
+                        self.send_fs_event(FileSystemEvent::Create(
+                            relative_path_str.to_string(),
+                            hash,
+                        ))
+                        .await?;
                     }
                 }
             }

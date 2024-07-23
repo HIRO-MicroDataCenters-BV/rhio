@@ -24,7 +24,11 @@ impl FileSystem {
         }
     }
 
-    pub fn process(&mut self, event: FileSystemEvent, timestamp: Timestamp) -> Vec<FileSystemAction> {
+    pub fn process(
+        &mut self,
+        event: FileSystemEvent,
+        timestamp: Timestamp,
+    ) -> Vec<FileSystemAction> {
         self.on_event(event, timestamp)
     }
 
