@@ -145,12 +145,12 @@ impl RhioActor {
                 bytes,
                 delivered_from,
             } => {
-                self.on_message(bytes, delivered_from).await;
+                self.on_fs_event(bytes, delivered_from).await;
             }
         }
     }
 
-    async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
+    async fn on_fs_event(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
         // Validate operation
         let Ok(gossip_operation) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
             error!("invalid operation from {delivered_from}");
