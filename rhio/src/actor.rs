@@ -194,14 +194,14 @@ impl RhioActor {
 
     async fn send_fs_event(&mut self, fs_event: FileSystemEvent) -> Result<()> {
         // Create an operation for this event.
-        let (header, body) = create(&mut self.store, &self.private_key, &fs_event)?;
+        let operation = create(&mut self.store, &self.private_key, &fs_event)?;
 
         // Send the event to the FileSystem aggregator, we don't expect any actions
         // to come back.
-        let _ = self.fs.process(fs_event, header.timestamp);
+        let _ = self.fs.process(fs_event, operation.header.timestamp);
 
         // Broadcast data in gossip overlay
-        let bytes = encode_header_and_body(header, Some(body))?;
+        let bytes = encode_header_and_body(operation.header, operation.body)?;
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())

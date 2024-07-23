@@ -49,7 +49,7 @@ pub fn create<S>(
     store: &mut S,
     private_key: &PrivateKey,
     fs_event: &FileSystemEvent,
-) -> Result<(Header<RhioExtensions>, Body)>
+) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
 {
@@ -84,13 +84,15 @@ where
     header.sign(private_key);
 
     // Persist operation in our memory store
-    store.insert_operation(Operation {
+    let operation = Operation {
         hash: header.hash(),
         header: header.clone(),
         body: Some(body.clone()),
-    })?;
+    };
 
-    Ok((header, body))
+    store.insert_operation(operation.clone())?;
+
+    Ok(operation)
 }
 
 pub fn decode_header_and_body(bytes: &[u8]) -> Result<(Option<Body>, Header<RhioExtensions>)> {
