@@ -7,12 +7,16 @@ edition = "2021"
 crate-type = ["cdylib"]
 name = "rhio_py"
 
+[features]
+uniffi-cli = ["uniffi/cli"]
+
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
 
 [dependencies]
 uniffi = "0.28.0"
 
 [dependencies-build]
-uniffi = { version = "0.28.0", features = ["build"] }
+uniffi = { version = "0.28.0", features = ["build", "cli"] }
