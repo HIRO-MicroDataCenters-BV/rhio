@@ -1,27 +1,14 @@
-mod actor;
-mod config;
-mod extensions;
-mod logging;
-mod message;
-mod node;
-mod private_key;
-
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use notify_debouncer_full::notify::{RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
-use p2panda_net::TopicId;
+use rhio::config::load_config;
+use rhio::logging::setup_tracing;
+use rhio::node::Node;
+use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use tokio::sync::mpsc;
 use tracing::{error, info};
-
-use crate::config::load_config;
-use crate::logging::setup_tracing;
-use crate::node::Node;
-use crate::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-
-// @TODO: Use real topic id
-const TOPIC_ID: TopicId = [1; 32];
 
 #[tokio::main]
 async fn main() -> Result<()> {
