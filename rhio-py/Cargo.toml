@@ -3,4 +3,12 @@ name = "rhio-py"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib"]
+name = "rhio_py"
+
 [dependencies]
+uniffi = "0.28.0"
+
+[dependencies-build]
+uniffi = { version = "0.28.0", features = ["build"] }
