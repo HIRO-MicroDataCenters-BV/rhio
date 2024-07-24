@@ -1,4 +1,9 @@
-pub fn add(left: usize, right: usize) -> usize {
+use uniffi;
+
+uniffi::setup_scaffolding!();
+
+#[uniffi::export]
+pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
 
