@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -28,6 +29,7 @@ pub struct RhioActor {
     fs: FileSystem,
     blobs: Blobs<BlobMemoryStore>,
     blobs_export_path: PathBuf,
+    exported_blobs: HashMap<PathBuf, Hash>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
@@ -51,6 +53,7 @@ impl RhioActor {
             fs: FileSystem::new(),
             blobs,
             blobs_export_path,
+            exported_blobs: HashMap::new(),
             private_key,
             store,
             gossip_tx,
@@ -106,9 +109,12 @@ impl RhioActor {
         absolute_path: PathBuf,
         relative_path: PathBuf,
     ) -> Result<()> {
-        if self.fs.file_exists(&relative_path) {
-            return Ok(());
-        }
+        // Don't import blobs which just got exported to the filesystem again.
+        if let Some(exported_blob_hash) = self.exported_blobs.remove(&relative_path) {
+            if self.fs.file_announced(exported_blob_hash, &relative_path) {
+                return Ok(());
+            }
+        };
 
         let mut stream = self.blobs.import_blob(absolute_path.clone()).await;
         while let Some(event) = stream.next().await {
@@ -117,13 +123,12 @@ impl RhioActor {
                     error!("failed importing file: {err}");
                 }
                 ImportBlobEvent::Done(hash) => {
-                    info!("imported file {} with hash {hash}", absolute_path.display());
-                    let hash = Hash::from_bytes(*hash.as_bytes());
-
-                    if !self.fs.file_announced(hash, &relative_path) {
-                        self.send_fs_event(FileSystemEvent::Create(relative_path.clone(), hash))
-                            .await?;
+                    info!("imported file {absolute_path:?} with hash {hash}");
+                    if self.fs.file_announced(hash, &relative_path) {
+                        return Ok(());
                     }
+                    self.send_fs_event(FileSystemEvent::Create(relative_path.clone(), hash))
+                        .await?;
                 }
             }
         }
@@ -236,7 +241,10 @@ impl RhioActor {
             .export_blob(hash, &self.blobs_export_path, path_str)
             .await
         {
-            Ok(_) => info!("exported blob to filesystem {path_str}"),
+            Ok(_) => {
+                info!("exported blob to filesystem {path_str} {hash}");
+                self.exported_blobs.insert(path, hash);
+            }
             Err(err) => error!("failed to export blob to filesystem {err}"),
         };
     }
