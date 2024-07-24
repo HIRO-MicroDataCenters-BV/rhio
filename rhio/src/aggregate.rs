@@ -1,4 +1,5 @@
 use p2panda_core::Hash;
+use tracing::debug;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -39,24 +40,18 @@ impl FileSystem {
         }
     }
 
-    pub fn file_exists(&self, path: &PathBuf) -> bool {
-        self.paths.contains_key(path)
-    }
-
     fn on_event(&mut self, event: FileSystemEvent, timestamp: Timestamp) -> Vec<FileSystemAction> {
         let mut actions = Vec::new();
 
         // Handle messages
         match event {
             FileSystemEvent::Create(path, hash) => {
-                // Add path and hash to blobs map.
-                let path = PathBuf::from(path);
-
                 // If the latest timestamp (with fallback to hash) at this path is greater than
                 // the new timestamp, then ignore this event and return here already. This is LWW
                 // logic in action.
                 if let Some((latest_hash, latest_timestamp)) = self.paths.get(&path) {
                     if (timestamp, hash) < (*latest_timestamp, *latest_hash) {
+                        debug!("ignore old file system event: {path:?} {hash}");
                         return actions;
                     }
                 };
@@ -71,6 +66,7 @@ impl FileSystem {
                     // @TODO: We could also delete it from the blob store at this point.
                     let hash_in_use = self.paths.values().any(|(hash, _)| hash == &current_hash);
                     if current_hash != hash && !hash_in_use {
+                        debug!("remove unused blob hash: {current_hash}");
                         self.blobs.remove(&current_hash);
                     }
                 };
