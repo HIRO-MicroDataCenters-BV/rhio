@@ -1,11 +1,15 @@
 # rhio-py
 
-Use `uniffi` to build python bindings for `rhio`.
+Use `uniffi` and `maturin` to build ffi bindings for `rhio` and compile a `Python` package.
 
 ```bash
-# build the cdylib file
-cargo run build --release
-
-# generate bindings for Python (they get output to the `builds` director) 
-./build.sh
+# Create and activate a virtual env
+virtualenv .
+source ./bin/activate
+# Install dependencies
+pip install uniffi-bindgen asyncio
+# Build wheel
+maturin develop
+# Run the example
+python3 python/main.py --help
 ```
