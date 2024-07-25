@@ -17,6 +17,8 @@ path = "uniffi-bindgen.rs"
 [dependencies]
 uniffi = { version = "0.28.0", features = ["cli", "tokio"] }
 rhio = { path = "../rhio" }
+anyhow = "1.0.86"
+thiserror = "1.0.63"
 
 [dependencies-build]
 uniffi = { version = "0.28.0", features = ["build"] }

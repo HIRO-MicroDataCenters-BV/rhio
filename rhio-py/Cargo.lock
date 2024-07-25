@@ -3793,7 +3793,9 @@ dependencies = [
 name = "rhio-ffi"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "rhio",
+ "thiserror",
  "uniffi",
 ]
 
