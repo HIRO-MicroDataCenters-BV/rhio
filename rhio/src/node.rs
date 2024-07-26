@@ -83,14 +83,22 @@ impl Node {
         self.network.node_id()
     }
 
-    pub async fn import_file(&self, absolute_path: PathBuf) -> Result<()> {
+    pub async fn import_blob(&self, path: PathBuf) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::ImportBlob { path, reply })
+            .await?;
+        reply_rx.await?
+    }
+
+    pub async fn sync_file(&self, absolute_path: PathBuf) -> Result<()> {
         // We derive the relative path by stripping off the base blobs config path. This is done
         // as we want to import by absolute path, but announce relative paths (relative to the
         // configured blob directory).
         let relative_path = to_relative_path(&absolute_path, &self.config.blobs_path);
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::ImportFile {
+            .send(ToRhioActor::SyncFile {
                 absolute_path,
                 relative_path,
                 reply,

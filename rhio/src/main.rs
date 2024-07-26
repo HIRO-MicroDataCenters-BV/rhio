@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             Some(paths) = files_rx.recv() => {
                 for path in paths {
-                    if let Err(err) = node.import_file(path.clone()).await {
+                    if let Err(err) = node.sync_file(path.clone()).await {
                         error!("failed announcing new file: {err}");
                     }
                 }

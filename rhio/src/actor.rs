@@ -17,9 +17,13 @@ use crate::operations::{create, ingest};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
-    ImportFile {
+    SyncFile {
         absolute_path: PathBuf,
         relative_path: PathBuf,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    ImportBlob {
+        path: PathBuf,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
@@ -88,12 +92,16 @@ impl RhioActor {
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToRhioActor::ImportFile {
+            ToRhioActor::SyncFile {
                 absolute_path,
                 relative_path,
                 reply,
             } => {
-                let result = self.on_import_file(absolute_path, relative_path).await;
+                let result = self.on_sync_file(absolute_path, relative_path).await;
+                reply.send(result).ok();
+            }
+            ToRhioActor::ImportBlob { path, reply } => {
+                let result = self.on_import_blob(path).await;
                 reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
@@ -103,12 +111,22 @@ impl RhioActor {
 
         Ok(true)
     }
+    async fn on_import_blob(&mut self, path: PathBuf) -> Result<()> {
+        let mut stream = self.blobs.import_blob(path.clone()).await;
+        while let Some(event) = stream.next().await {
+            match event {
+                ImportBlobEvent::Abort(err) => {
+                    error!("failed importing file: {err}");
+                }
+                ImportBlobEvent::Done(hash) => {
+                    info!("imported file {path:?} with hash {hash}");
+                }
+            }
+        }
+        Ok(())
+    }
 
-    async fn on_import_file(
-        &mut self,
-        absolute_path: PathBuf,
-        relative_path: PathBuf,
-    ) -> Result<()> {
+    async fn on_sync_file(&mut self, absolute_path: PathBuf, relative_path: PathBuf) -> Result<()> {
         // Don't import blobs which just got exported to the filesystem again.
         if let Some(exported_blob_hash) = self.exported_blobs.remove(&relative_path) {
             if self.fs.file_announced(exported_blob_hash, &relative_path) {
@@ -127,8 +145,7 @@ impl RhioActor {
                     if self.fs.file_announced(hash, &relative_path) {
                         return Ok(());
                     }
-                    self.send_fs_event(FileSystemEvent::Create(relative_path.clone(), hash))
-                        .await?;
+                    self.send_fs_event(relative_path.clone(), hash).await?;
                 }
             }
         }
@@ -174,13 +191,38 @@ impl RhioActor {
                 );
 
                 match operation.message {
-                    Message::FilesystemEvent(event) => {
+                    Message::FileSystem(event) => {
                         self.on_fs_event(event, operation.header.timestamp).await
                     }
+                    Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(hash).await,
                     Message::Arbitrary(_) => todo!(),
                 }
             }
         }
+    }
+
+    async fn on_blob_announcement_event(&mut self, hash: Hash) {
+        if self.download_blob(hash).await.is_err() {
+            return;
+        }
+    }
+
+    async fn send_blob_announcement_event(&mut self, hash: Hash) -> Result<()> {
+        let message = Message::BlobAnnouncement(hash);
+
+        // Create an operation for this event.
+        let operation = create(&mut self.store, &self.private_key, &message)?;
+
+        // Broadcast data in gossip overlay
+        let bytes = GossipOperation {
+            header: operation.header,
+            message,
+        }
+        .to_bytes();
+
+        self.gossip_tx.send(InEvent::Message { bytes }).await?;
+
+        Ok(())
     }
 
     async fn on_fs_event(&mut self, event: FileSystemEvent, timestamp: u64) {
@@ -191,22 +233,23 @@ impl RhioActor {
         }
     }
 
-    async fn send_fs_event(&mut self, event: FileSystemEvent) -> Result<()> {
+    async fn send_fs_event(&mut self, path: PathBuf, hash: Hash) -> Result<()> {
+        let fs_event = FileSystemEvent::Create(path, hash);
+        let message = Message::FileSystem(fs_event.clone());
+
         // Create an operation for this event.
-        let operation = create(
-            &mut self.store,
-            &self.private_key,
-            &Message::FilesystemEvent(event.clone()),
-        )?;
+        let operation = create(&mut self.store, &self.private_key, &message)?;
 
         // Send the event to the FileSystem aggregator, we don't expect any actions
         // to come back.
-        let _ = self.fs.process(event.clone(), operation.header.timestamp);
+        let _ = self
+            .fs
+            .process(fs_event.clone(), operation.header.timestamp);
 
         // Broadcast data in gossip overlay
         let bytes = GossipOperation {
             header: operation.header,
-            message: Message::FilesystemEvent(event),
+            message: message,
         }
         .to_bytes();
 

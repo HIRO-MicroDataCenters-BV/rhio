@@ -8,7 +8,13 @@ use crate::extensions::RhioExtensions;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Message {
-    FilesystemEvent(FileSystemEvent),
+    // Sync files in a directory
+    FileSystem(FileSystemEvent),
+
+    // Share arbitrary blobs
+    BlobAnnouncement(Hash),
+
+    // Arbitrary messages
     Arbitrary(Vec<u8>),
 }
 
