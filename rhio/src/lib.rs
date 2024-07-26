@@ -1,8 +1,10 @@
 pub mod actor;
+pub mod aggregate;
 pub mod config;
 pub mod extensions;
 pub mod logging;
-pub mod message;
+pub mod messages;
+pub mod operations;
 pub mod node;
 pub mod private_key;
 
