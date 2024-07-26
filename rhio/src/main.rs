@@ -1,8 +1,9 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use notify_debouncer_full::notify::{RecursiveMode, Watcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
+use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
 use rhio::node::Node;
@@ -22,8 +23,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    // Spawn p2panda node
-    let mut node = Node::spawn(config.network_config, private_key.clone()).await?;
+    let mut node = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
@@ -35,15 +35,20 @@ async fn main() -> Result<()> {
     println!();
 
     // Watch for changes in the blobs directory
-    let (files_tx, mut files_rx) = mpsc::channel::<DebouncedEvent>(1);
+    let (files_tx, mut files_rx) = mpsc::channel::<Vec<PathBuf>>(1);
     let mut debouncer = new_debouncer(
         Duration::from_secs(2),
         None,
         move |result: DebounceEventResult| match result {
             Ok(events) => {
                 for event in events {
+                    match event.kind {
+                        EventKind::Create(_) => (),
+                        _ => continue, // ignore all other events
+                    }
+
                     info!("file added / changed: {event:?}");
-                    if let Err(err) = files_tx.blocking_send(event) {
+                    if let Err(err) = files_tx.blocking_send(event.paths.clone()) {
                         error!("failed sending file event: {err}");
                     }
                 }
@@ -68,8 +73,8 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            Some(event) = files_rx.recv() => {
-                for path in &event.paths {
+            Some(paths) = files_rx.recv() => {
+                for path in paths {
                     if let Err(err) = node.import_file(path.clone()).await {
                         error!("failed announcing new file: {err}");
                     }

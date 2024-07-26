@@ -1,30 +1,35 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
-use p2panda_core::operation::{validate_backlink, validate_operation, Body, Header, Operation};
-use p2panda_core::{Extension, Hash, PrivateKey, PublicKey};
+use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_store::{LogId, LogStore, MemoryStore as LogsMemoryStore, OperationStore};
+use p2panda_store::MemoryStore as LogsMemoryStore;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error, info};
 
+use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::message::{GossipOperation, Message};
+use crate::messages::FileSystemEvent;
+use crate::operations::{create, decode_header_and_body, encode_header_and_body, ingest};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
     ImportFile {
-        path: PathBuf,
+        absolute_path: PathBuf,
+        relative_path: PathBuf,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
 }
 
 pub struct RhioActor {
+    fs: FileSystem,
     blobs: Blobs<BlobMemoryStore>,
+    blobs_export_path: PathBuf,
+    exported_blobs: HashMap<PathBuf, Hash>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: mpsc::Sender<InEvent>,
@@ -36,6 +41,7 @@ pub struct RhioActor {
 impl RhioActor {
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
+        blobs_export_path: PathBuf,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
         gossip_tx: mpsc::Sender<InEvent>,
@@ -44,7 +50,10 @@ impl RhioActor {
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
+            fs: FileSystem::new(),
             blobs,
+            blobs_export_path,
+            exported_blobs: HashMap::new(),
             private_key,
             store,
             gossip_tx,
@@ -79,8 +88,12 @@ impl RhioActor {
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
         match msg {
-            ToRhioActor::ImportFile { path, reply } => {
-                let result = self.on_import_file(path).await;
+            ToRhioActor::ImportFile {
+                absolute_path,
+                relative_path,
+                reply,
+            } => {
+                let result = self.on_import_file(absolute_path, relative_path).await;
                 reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
@@ -91,16 +104,31 @@ impl RhioActor {
         Ok(true)
     }
 
-    async fn on_import_file(&mut self, path: PathBuf) -> Result<()> {
-        let mut stream = self.blobs.import_blob(path.clone()).await;
+    async fn on_import_file(
+        &mut self,
+        absolute_path: PathBuf,
+        relative_path: PathBuf,
+    ) -> Result<()> {
+        // Don't import blobs which just got exported to the filesystem again.
+        if let Some(exported_blob_hash) = self.exported_blobs.remove(&relative_path) {
+            if self.fs.file_announced(exported_blob_hash, &relative_path) {
+                return Ok(());
+            }
+        };
+
+        let mut stream = self.blobs.import_blob(absolute_path.clone()).await;
         while let Some(event) = stream.next().await {
             match event {
                 ImportBlobEvent::Abort(err) => {
                     error!("failed importing file: {err}");
                 }
                 ImportBlobEvent::Done(hash) => {
-                    info!("imported file {} with hash {hash}", path.display());
-                    self.send_message(Message::AnnounceBlob(hash)).await?;
+                    info!("imported file {absolute_path:?} with hash {hash}");
+                    if self.fs.file_announced(hash, &relative_path) {
+                        return Ok(());
+                    }
+                    self.send_fs_event(FileSystemEvent::Create(relative_path.clone(), hash))
+                        .await?;
                 }
             }
         }
@@ -116,74 +144,64 @@ impl RhioActor {
                 bytes,
                 delivered_from,
             } => {
-                self.on_message(bytes, delivered_from).await;
+                self.on_fs_event(bytes, delivered_from).await;
             }
         }
     }
 
-    async fn on_message(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
+    async fn on_fs_event(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
         // Validate operation
-        let Ok(event) = ciborium::from_reader::<GossipOperation, _>(&bytes[..]) else {
+        let Ok((body, header)) = decode_header_and_body(&bytes) else {
             error!("invalid operation from {delivered_from}");
             return;
         };
 
-        let operation = Operation {
-            hash: event.header.hash(),
-            header: event.header,
-            body: Some(event.body),
-        };
+        // Decode and validate the operation body (currently we only expect FileSystemEvents in
+        // the body).
+        let fs_event = body
+            .as_ref()
+            .map(|body| FileSystemEvent::from_bytes(&body.to_bytes()).expect("valid body bytes"));
 
-        if let Err(err) = validate_operation(&operation) {
-            error!("invalid operation received: {err}");
-            return;
-        }
-
-        let log_id: LogId = RhioExtensions::extract(&operation);
-        if let Some(latest_operation) = self
-            .store
-            .latest_operation(operation.header.public_key, log_id)
-            .expect("memory store does not error")
-        {
-            if validate_backlink(&latest_operation.header, &operation.header).is_err() {
-                error!("invalid backlink");
+        // Ingest the operation, this performs all expected validation.
+        match ingest(&mut self.store, header.clone(), body) {
+            Ok(result) => result,
+            Err(err) => {
+                error!("Failed to ingest operation from {delivered_from}: {err}");
                 return;
-            };
-        }
-
-        // Validate message
-        let Ok(message) = ciborium::from_reader::<Message, _>(
-            &operation
-                .body
-                .as_ref()
-                .expect("body should be given")
-                .to_bytes()[..],
-        ) else {
-            error!("invalid message from {delivered_from}");
-            return;
+            }
         };
 
         debug!(
             "Received operation: {} {} {} {} {:?}",
-            operation.header.public_key,
-            operation.header.seq_num,
-            operation.header.timestamp,
-            operation.hash,
-            message,
+            header.public_key,
+            header.seq_num,
+            header.timestamp,
+            header.hash(),
+            fs_event,
         );
 
-        self.store
-            .insert_operation(operation)
-            .expect("no errors from memory store");
-
-        // Handle messages
-        match message {
-            Message::AnnounceBlob(hash) => {
-                if let Err(err) = self.download_blob(hash).await {
-                    error!("failed handling announced blob for {hash}: {err}");
-                }
+        // Process the event and run any generated actions.
+        if let Some(fs_event) = fs_event {
+            let actions = self.fs.process(fs_event, header.timestamp);
+            for action in actions {
+                self.handle_fs_action(action).await;
             }
         }
+    }
+
+    async fn send_fs_event(&mut self, fs_event: FileSystemEvent) -> Result<()> {
+        // Create an operation for this event.
+        let operation = create(&mut self.store, &self.private_key, &fs_event)?;
+
+        // Send the event to the FileSystem aggregator, we don't expect any actions
+        // to come back.
+        let _ = self.fs.process(fs_event, operation.header.timestamp);
+
+        // Broadcast data in gossip overlay
+        let bytes = encode_header_and_body(operation.header, operation.body)?;
+        self.gossip_tx.send(InEvent::Message { bytes }).await?;
+
+        Ok(())
     }
 
     async fn download_blob(&mut self, hash: Hash) -> Result<()> {
@@ -201,56 +219,33 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn send_message(&mut self, message: Message) -> Result<()> {
-        // Encode body
-        let mut body_bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&message, &mut body_bytes)?;
-        let body = Body::new(&body_bytes);
+    async fn handle_fs_action(&mut self, action: FileSystemAction) {
+        match action {
+            FileSystemAction::DownloadAndExport { hash, path } => {
+                if self.download_blob(hash).await.is_err() {
+                    return;
+                }
+                self.export_blob(hash, path).await;
+            }
+            FileSystemAction::Export { hash, path } => {
+                self.export_blob(hash, path).await;
+            }
+        }
+    }
 
-        // Sign and encode header
-        let public_key = self.private_key.public_key();
-        let latest_operation = self
-            .store
-            .latest_operation(public_key, public_key.to_string().into())?;
+    async fn export_blob(&mut self, hash: Hash, path: PathBuf) {
+        let path_str = path.to_str().expect("is a valid unicode str");
 
-        let (seq_num, backlink) = match latest_operation {
-            Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
-            None => (0, None),
+        match self
+            .blobs
+            .export_blob(hash, &self.blobs_export_path, path_str)
+            .await
+        {
+            Ok(_) => {
+                info!("exported blob to filesystem {path_str} {hash}");
+                self.exported_blobs.insert(path, hash);
+            }
+            Err(err) => error!("failed to export blob to filesystem {err}"),
         };
-
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
-
-        let mut header = Header {
-            version: 1,
-            public_key,
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp,
-            seq_num,
-            backlink,
-            previous: vec![],
-            extensions: Some(RhioExtensions::default()),
-        };
-        header.sign(&self.private_key);
-
-        let operation = Operation {
-            hash: header.hash(),
-            header: header.clone(),
-            body: Some(body.clone()),
-        };
-
-        // Persist operation in our memory store
-        self.store.insert_operation(operation)?;
-
-        // Broadcast data in gossip overlay
-        let gossip_event = GossipOperation { body, header };
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(&gossip_event, &mut bytes)?;
-        self.gossip_tx.send(InEvent::Message { bytes }).await?;
-
-        Ok(())
     }
 }

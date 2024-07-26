@@ -11,6 +11,7 @@ use p2panda_net::{Network, NetworkBuilder};
 use tokio_util::task::LocalPoolHandle;
 
 use crate::download::download_blob;
+use crate::export::export_blob;
 use crate::import::{import_blob, ImportBlobEvent};
 use crate::protocol::{BlobsProtocol, BLOBS_ALPN};
 use crate::DownloadBlobEvent;
@@ -72,5 +73,10 @@ where
             hash,
         )
         .await
+    }
+
+    pub async fn export_blob(&self, hash: Hash, path: &PathBuf, file_name: &str) -> Result<()> {
+        export_blob(&self.store, hash, path, file_name).await?;
+        Ok(())
     }
 }
