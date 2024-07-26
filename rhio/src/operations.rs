@@ -7,7 +7,7 @@ use p2panda_core::{
 use p2panda_store::{LogId, LogStore, OperationStore};
 
 use crate::extensions::RhioExtensions;
-use crate::messages::FileSystemEvent;
+use crate::messages::Message;
 
 pub fn ingest<S>(
     store: &mut S,
@@ -48,13 +48,13 @@ where
 pub fn create<S>(
     store: &mut S,
     private_key: &PrivateKey,
-    fs_event: &FileSystemEvent,
+    message: &Message,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
 {
     // Encode body.
-    let body = Body::new(&fs_event.to_bytes());
+    let body = Body::new(&message.to_bytes());
 
     // Sign and encode header.
     let public_key = private_key.public_key();

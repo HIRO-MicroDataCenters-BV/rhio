@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
-use p2panda_core::{Hash, PrivateKey, PublicKey};
+use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -12,8 +12,8 @@ use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::messages::FileSystemEvent;
-use crate::operations::{create, decode_header_and_body, encode_header_and_body, ingest};
+use crate::messages::{FileSystemEvent, GossipOperation, Message};
+use crate::operations::{create, ingest};
 
 #[derive(Debug)]
 pub enum ToRhioActor {
@@ -144,61 +144,72 @@ impl RhioActor {
                 bytes,
                 delivered_from,
             } => {
-                self.on_fs_event(bytes, delivered_from).await;
+                let operation = match GossipOperation::from_bytes(&bytes) {
+                    Ok(operation) => operation,
+                    Err(err) => {
+                        error!("failed to decode gossip operaiton: {err}");
+                        return;
+                    }
+                };
+
+                // Ingest the operation, this performs all expected validation.
+                match ingest(
+                    &mut self.store,
+                    operation.header.clone(),
+                    Some(operation.body()),
+                ) {
+                    Ok(result) => result,
+                    Err(err) => {
+                        error!("Failed to ingest operation from {delivered_from}: {err}");
+                        return;
+                    }
+                };
+
+                debug!(
+                    "Received operation: {} {} {} {}",
+                    operation.header.public_key,
+                    operation.header.seq_num,
+                    operation.header.timestamp,
+                    operation.header.hash(),
+                );
+
+                match operation.message {
+                    Message::FilesystemEvent(event) => {
+                        self.on_fs_event(event, operation.header.timestamp).await
+                    }
+                    Message::Arbitrary(_) => todo!(),
+                }
             }
         }
     }
 
-    async fn on_fs_event(&mut self, bytes: Vec<u8>, delivered_from: PublicKey) {
-        // Validate operation
-        let Ok((body, header)) = decode_header_and_body(&bytes) else {
-            error!("invalid operation from {delivered_from}");
-            return;
-        };
-
-        // Decode and validate the operation body (currently we only expect FileSystemEvents in
-        // the body).
-        let fs_event = body
-            .as_ref()
-            .map(|body| FileSystemEvent::from_bytes(&body.to_bytes()).expect("valid body bytes"));
-
-        // Ingest the operation, this performs all expected validation.
-        match ingest(&mut self.store, header.clone(), body) {
-            Ok(result) => result,
-            Err(err) => {
-                error!("Failed to ingest operation from {delivered_from}: {err}");
-                return;
-            }
-        };
-
-        debug!(
-            "Received operation: {} {} {} {} {:?}",
-            header.public_key,
-            header.seq_num,
-            header.timestamp,
-            header.hash(),
-            fs_event,
-        );
-
+    async fn on_fs_event(&mut self, event: FileSystemEvent, timestamp: u64) {
         // Process the event and run any generated actions.
-        if let Some(fs_event) = fs_event {
-            let actions = self.fs.process(fs_event, header.timestamp);
-            for action in actions {
-                self.handle_fs_action(action).await;
-            }
+        let actions = self.fs.process(event, timestamp);
+        for action in actions {
+            self.handle_fs_action(action).await;
         }
     }
 
-    async fn send_fs_event(&mut self, fs_event: FileSystemEvent) -> Result<()> {
+    async fn send_fs_event(&mut self, event: FileSystemEvent) -> Result<()> {
         // Create an operation for this event.
-        let operation = create(&mut self.store, &self.private_key, &fs_event)?;
+        let operation = create(
+            &mut self.store,
+            &self.private_key,
+            &Message::FilesystemEvent(event.clone()),
+        )?;
 
         // Send the event to the FileSystem aggregator, we don't expect any actions
         // to come back.
-        let _ = self.fs.process(fs_event, operation.header.timestamp);
+        let _ = self.fs.process(event.clone(), operation.header.timestamp);
 
         // Broadcast data in gossip overlay
-        let bytes = encode_header_and_body(operation.header, operation.body)?;
+        let bytes = GossipOperation {
+            header: operation.header,
+            message: Message::FilesystemEvent(event),
+        }
+        .to_bytes();
+
         self.gossip_tx.send(InEvent::Message { bytes }).await?;
 
         Ok(())
