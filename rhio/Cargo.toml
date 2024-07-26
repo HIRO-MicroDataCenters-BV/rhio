@@ -3,6 +3,9 @@ name = "rhio"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "rhio"
+
 [dependencies]
 anyhow = "1.0.86"
 ciborium = "0.2.2"
