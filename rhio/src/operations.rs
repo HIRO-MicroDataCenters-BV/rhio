@@ -48,6 +48,7 @@ where
 pub fn create<S>(
     store: &mut S,
     private_key: &PrivateKey,
+    log_id: &LogId,
     message: &Message,
 ) -> Result<Operation<RhioExtensions>>
 where
@@ -58,7 +59,7 @@ where
 
     // Sign and encode header.
     let public_key = private_key.public_key();
-    let latest_operation = store.latest_operation(public_key, public_key.to_string().into())?;
+    let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -68,6 +69,10 @@ where
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
+
+    let extensions = RhioExtensions {
+        log_id: Some(log_id.clone()),
+    };
 
     let mut header = Header {
         version: 1,
@@ -79,7 +84,7 @@ where
         seq_num,
         backlink,
         previous: vec![],
-        extensions: Some(RhioExtensions::default()),
+        extensions: Some(extensions),
     };
     header.sign(private_key);
 

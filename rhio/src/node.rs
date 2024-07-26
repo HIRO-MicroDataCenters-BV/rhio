@@ -13,7 +13,8 @@ use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
-use crate::TOPIC_ID;
+use crate::topic_id::TopicId;
+use crate::GOSSIP_TOPIC_ID_STR;
 
 pub struct Node {
     config: Config,
@@ -45,15 +46,17 @@ impl Node {
         }
 
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-        let (topic_tx, topic_rx) = network.subscribe(TOPIC_ID).await?;
+        let (gossip_tx, gossip_rx) = network
+            .subscribe(TopicId::from_str(GOSSIP_TOPIC_ID_STR).into())
+            .await?;
 
         let mut rhio_actor = RhioActor::new(
             blobs.clone(),
             config.blobs_path.clone(),
             private_key.clone(),
             log_store,
-            topic_tx,
-            topic_rx,
+            gossip_tx,
+            gossip_rx,
             rhio_actor_rx,
             ready_tx,
         );
@@ -81,6 +84,18 @@ impl Node {
 
     pub fn id(&self) -> PublicKey {
         self.network.node_id()
+    }
+
+    pub async fn publish_event(&self, log_suffix: String, bytes: Vec<u8>) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::PublishEvent {
+                log_suffix,
+                bytes,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> Result<()> {
