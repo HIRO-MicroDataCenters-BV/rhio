@@ -36,17 +36,6 @@ impl GossipOperation {
     pub fn body(&self) -> Body {
         Body::new(&self.message.to_bytes())
     }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let operation = ciborium::from_reader::<Self, _>(bytes)?;
-        Ok(operation)
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&self, &mut bytes).expect("succesfully encodes bytes");
-        bytes
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
