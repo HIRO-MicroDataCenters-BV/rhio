@@ -5,9 +5,9 @@ use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
-use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_net::network::{Receiver, Sender, TypedOutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
@@ -42,8 +42,8 @@ pub struct RhioActor {
     exported_blobs: HashMap<PathBuf, Hash>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
-    gossip_tx: mpsc::Sender<InEvent>,
-    gossip_rx: broadcast::Receiver<OutEvent>,
+    gossip_tx: Sender<GossipOperation>,
+    gossip_rx: Receiver<GossipOperation>,
     inbox: mpsc::Receiver<ToRhioActor>,
     ready_tx: mpsc::Sender<()>,
 }
@@ -54,8 +54,8 @@ impl RhioActor {
         blobs_export_path: PathBuf,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
-        gossip_tx: mpsc::Sender<InEvent>,
-        gossip_rx: broadcast::Receiver<OutEvent>,
+        gossip_tx: Sender<GossipOperation>,
+        gossip_rx: Receiver<GossipOperation>,
         inbox: mpsc::Receiver<ToRhioActor>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
@@ -139,13 +139,12 @@ impl RhioActor {
         let operation = create(&mut self.store, &self.private_key, &log_id, &message)?;
 
         // Broadcast data in gossip overlay
-        let bytes = GossipOperation {
+        let operation = GossipOperation {
             header: operation.header,
             message,
-        }
-        .to_bytes();
+        };
 
-        self.gossip_tx.send(InEvent::Message { bytes }).await?;
+        self.gossip_tx.send(operation).await?;
 
         Ok(())
     }
@@ -192,24 +191,17 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn on_gossip_event(&mut self, event: OutEvent) {
+    async fn on_gossip_event(&mut self, event: TypedOutEvent<GossipOperation>) {
         match event {
-            OutEvent::Ready => {
+            TypedOutEvent::Ready => {
                 self.ready_tx.send(()).await.ok();
             }
-            OutEvent::Message {
-                bytes,
+            TypedOutEvent::Message {
+                message,
                 delivered_from,
             } => {
-                let operation = match GossipOperation::from_bytes(&bytes) {
-                    Ok(operation) => operation,
-                    Err(err) => {
-                        error!("failed to decode gossip operaiton: {err}");
-                        return;
-                    }
-                };
-
                 // Ingest the operation, this performs all expected validation.
+                let operation = message;
                 match ingest(
                     &mut self.store,
                     operation.header.clone(),

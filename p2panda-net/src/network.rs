@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,6 +17,8 @@ use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -434,13 +437,21 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe(
+    pub async fn subscribe<T: DeserializeOwned + Serialize>(
         &self,
         topic: TopicId,
-    ) -> Result<(mpsc::Sender<InEvent>, broadcast::Receiver<OutEvent>)> {
+    ) -> Result<(Sender<T>, Receiver<T>)> {
         let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
         let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
         self.inner.engine.subscribe(topic, out_tx, in_rx).await?;
+        let out_rx = Receiver {
+            rx: out_rx,
+            _phantom: PhantomData::<T>,
+        };
+        let in_tx = Sender {
+            tx: in_tx,
+            _phantom: PhantomData::<T>,
+        };
         Ok((in_tx, out_rx))
     }
 
@@ -464,6 +475,38 @@ impl Network {
     }
 }
 
+pub struct Receiver<T>
+where
+    T: DeserializeOwned,
+{
+    rx: broadcast::Receiver<OutEvent>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: DeserializeOwned + Clone> Receiver<T> {
+    pub async fn recv(&mut self) -> Result<TypedOutEvent<T>> {
+        match self.rx.recv().await {
+            Ok(event) => event.downcast(),
+            Err(_) => todo!(),
+        }
+    }
+}
+
+pub struct Sender<T>
+where
+    T: Serialize,
+{
+    tx: mpsc::Sender<InEvent>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Serialize> Sender<T> {
+    pub async fn send(&self, message: T) -> Result<()> {
+        let _ = self.tx.send(InEvent::try_from_message(message)?).await?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum InEvent {
     Message { bytes: Vec<u8> },
@@ -477,6 +520,45 @@ pub enum OutEvent {
         bytes: Vec<u8>,
         delivered_from: PublicKey,
     },
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub enum TypedOutEvent<T>
+where
+    T: Clone,
+{
+    Ready,
+    Message {
+        message: T,
+        delivered_from: PublicKey,
+    },
+}
+
+impl OutEvent {
+    pub fn downcast<T: DeserializeOwned + Clone>(self) -> Result<TypedOutEvent<T>> {
+        match self {
+            OutEvent::Ready => Ok(TypedOutEvent::Ready),
+            OutEvent::Message {
+                bytes,
+                delivered_from,
+            } => {
+                let message: T = ciborium::from_reader(&bytes[..])?;
+                Ok(TypedOutEvent::Message {
+                    message,
+                    delivered_from,
+                })
+            }
+        }
+    }
+}
+
+impl InEvent {
+    pub fn try_from_message<T: Serialize>(message: T) -> Result<InEvent> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&message, &mut bytes)?;
+        Ok(InEvent::Message { bytes })
+    }
 }
 
 async fn handle_connection(
