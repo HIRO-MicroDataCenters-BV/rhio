@@ -440,7 +440,7 @@ impl Network {
     // "live" mode via gossip broadcast
     pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(Sender<T>, Receiver<T>)>
     where
-        T: DeserializeOwned + Serialize + Clone,
+        T: Message,
     {
         let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
         let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
