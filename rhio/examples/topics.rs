@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Result;
 use p2panda_core::PrivateKey;
 use rhio::config::Config;
-use rhio::messages::Message;
+use rhio::messages::{Message, MessageContext};
 use rhio::node::Node;
 use rhio::topic_id::TopicId;
 
@@ -33,11 +33,20 @@ async fn main() -> Result<()> {
 
     // Listen for arriving messages
     tokio::spawn(async move {
-        while let Ok(Message::Application(message)) = chat_rx.recv().await {
+        while let Ok((
+            Message::Application(message),
+            MessageContext {
+                delivered_from,
+                received_at,
+            },
+        )) = chat_rx.recv().await
+        {
             println!(
-                "{} on {}",
+                "{} from {} on topic {} at {}",
                 message,
-                chat_topic_id.to_string()
+                delivered_from,
+                chat_topic_id.to_string(),
+                received_at
             )
         }
     });

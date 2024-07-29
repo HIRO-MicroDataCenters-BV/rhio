@@ -6,17 +6,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::extensions::RhioExtensions;
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug)]
-pub enum RhioOutEvent<T>
-where
-    T: Clone,
-{
-    Ready,
-    Message {
-        message: T,
-        delivered_from: PublicKey,
-    },
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MessageContext {
+    pub received_at: u64,
+    pub delivered_from: PublicKey,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

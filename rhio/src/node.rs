@@ -20,7 +20,7 @@ use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
-use crate::messages::Message;
+use crate::messages::{Message, MessageContext};
 use crate::topic_id::TopicId;
 
 pub struct Node<T = ()> {
@@ -134,7 +134,10 @@ where
     pub async fn topic(
         &self,
         topic: TopicId,
-    ) -> Result<(TopicSender<T>, broadcast::Receiver<Message<T>>)>
+    ) -> Result<(
+        TopicSender<T>,
+        broadcast::Receiver<(Message<T>, MessageContext)>,
+    )>
     where
         T: TopicMessage + Send + Sync + 'static,
     {

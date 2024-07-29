@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
@@ -15,7 +16,7 @@ use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::messages::{FileSystemEvent, GossipOperation, Message};
+use crate::messages::{FileSystemEvent, GossipOperation, Message, MessageContext};
 use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
@@ -37,7 +38,7 @@ pub enum ToRhioActor<T> {
     },
     Subscribe {
         topic: TopicId,
-        reply: oneshot::Sender<broadcast::Receiver<Message<T>>>,
+        reply: oneshot::Sender<broadcast::Receiver<(Message<T>, MessageContext)>>,
     },
     Shutdown,
 }
@@ -51,7 +52,7 @@ pub struct RhioActor<T> {
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_clients_tx: HashMap<TopicId, broadcast::Sender<Message<T>>>,
+    topic_clients_tx: HashMap<TopicId, broadcast::Sender<(Message<T>, MessageContext)>>,
     inbox: mpsc::Receiver<ToRhioActor<T>>,
     pending_topics: HashSet<TopicId>,
     ready_tx: mpsc::Sender<()>,
@@ -293,12 +294,19 @@ where
                             .await
                     }
                     Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(*hash).await,
-                    Message::Application(message) => {
-                    }
+                    Message::Application(_) => {}
                 }
 
+                let message_context = MessageContext {
+                    delivered_from,
+                    received_at: time::SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("can calculate duration since UNIX_EPOCH")
+                        .as_secs(),
+                };
+
                 let tx = self.topic_clients_tx.get(&topic).expect("topic is known");
-                let _ = tx.send(operation.message.clone());
+                let _ = tx.send((operation.message.clone(), message_context));
             }
         }
     }
