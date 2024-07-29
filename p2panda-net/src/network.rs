@@ -29,6 +29,7 @@ use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
+use crate::message::Message;
 use crate::protocols::{ProtocolHandler, ProtocolMap};
 use crate::{NetworkId, TopicId};
 
@@ -467,15 +468,12 @@ impl Network {
     }
 }
 
-pub struct Receiver<T>
-where
-    T: DeserializeOwned,
-{
+pub struct Receiver<T: Message> {
     rx: broadcast::Receiver<OutEvent>,
     _phantom: PhantomData<T>,
 }
 
-impl<T: DeserializeOwned + Clone> Receiver<T> {
+impl<T: Message> Receiver<T> {
     fn new(rx: broadcast::Receiver<OutEvent>) -> Receiver<T> {
         Self {
             rx,
@@ -491,15 +489,12 @@ impl<T: DeserializeOwned + Clone> Receiver<T> {
     }
 }
 
-pub struct Sender<T>
-where
-    T: Serialize,
-{
+pub struct Sender<T: Message> {
     tx: mpsc::Sender<InEvent>,
     _phantom: PhantomData<T>,
 }
 
-impl<T: Serialize> Sender<T> {
+impl<T: Message> Sender<T> {
     fn new(tx: mpsc::Sender<InEvent>) -> Sender<T> {
         Self {
             tx,
@@ -542,14 +537,14 @@ where
 }
 
 impl OutEvent {
-    pub fn downcast<T: DeserializeOwned + Clone>(self) -> Result<TypedOutEvent<T>> {
+    pub fn downcast<T: Message>(self) -> Result<TypedOutEvent<T>> {
         match self {
             OutEvent::Ready => Ok(TypedOutEvent::Ready),
             OutEvent::Message {
                 bytes,
                 delivered_from,
             } => {
-                let message: T = ciborium::from_reader(&bytes[..])?;
+                let message = T::from_bytes(&bytes)?;
                 Ok(TypedOutEvent::Message {
                     message,
                     delivered_from,
@@ -560,10 +555,10 @@ impl OutEvent {
 }
 
 impl InEvent {
-    pub fn try_from_message<T: Serialize>(message: T) -> Result<InEvent> {
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&message, &mut bytes)?;
-        Ok(InEvent::Message { bytes })
+    pub fn try_from_message<T: Message>(message: T) -> Result<InEvent> {
+        Ok(InEvent::Message {
+            bytes: message.to_bytes(),
+        })
     }
 }
 

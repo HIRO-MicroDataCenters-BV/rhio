@@ -16,6 +16,7 @@ use tracing::{debug, error, warn};
 
 use crate::engine::gossip::{GossipActor, ToGossipActor};
 use crate::engine::message::NetworkMessage;
+use crate::message::{FromBytes, ToBytes};
 use crate::network::{InEvent, OutEvent};
 
 /// Maximum size of random sample set when choosing peers to join gossip overlay.
@@ -264,7 +265,7 @@ impl EngineActor {
     async fn announce_topics(&mut self) -> Result<()> {
         let topics = self.topics.earmarked().await;
         let message = NetworkMessage::new_announcement(topics);
-        let bytes = message.to_bytes()?;
+        let bytes = message.to_bytes();
         self.gossip.broadcast(self.network_id, bytes.into()).await?;
         Ok(())
     }

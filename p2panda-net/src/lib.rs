@@ -6,6 +6,7 @@ mod engine;
 mod handshake;
 pub mod network;
 mod protocols;
+mod message;
 
 #[cfg(feature = "mdns")]
 pub use discovery::mdns::LocalDiscovery;
