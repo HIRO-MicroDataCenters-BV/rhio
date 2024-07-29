@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::extensions::RhioExtensions;
-use crate::messages::Message;
+use crate::messages::{Message, ToBytes};
 
 pub fn ingest<S>(
     store: &mut S,

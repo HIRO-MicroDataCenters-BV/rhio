@@ -16,7 +16,7 @@ use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::messages::{FileSystemEvent, GossipOperation, Message, MessageContext};
+use crate::messages::{FileSystemEvent, FromBytes, GossipOperation, Message, MessageContext, ToBytes};
 use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};

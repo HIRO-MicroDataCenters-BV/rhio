@@ -24,17 +24,6 @@ pub enum Message<T> {
     Application(T),
 }
 
-impl<T> Message<T>
-where
-    T: Serialize + DeserializeOwned + Clone,
-{
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&self, &mut bytes).expect("succesfully encodes bytes");
-        bytes
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GossipOperation<T> {
     pub message: Message<T>,
@@ -48,17 +37,6 @@ where
     pub fn body(&self) -> Body {
         Body::new(&self.message.to_bytes())
     }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&(&self), &mut bytes).expect("succesfully encodes bytes");
-        bytes
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let operation = ciborium::from_reader::<Self, _>(bytes)?;
-        Ok(operation)
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -69,15 +47,25 @@ pub enum FileSystemEvent {
     Snapshot(Vec<(PathBuf, Hash)>),
 }
 
-impl FileSystemEvent {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let event = ciborium::from_reader::<FileSystemEvent, _>(bytes)?;
-        Ok(event)
-    }
+pub trait ToBytes {
+    fn to_bytes(&self) -> Vec<u8>;
+}
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&self, &mut bytes).expect("succesfully encodes bytes");
+pub trait FromBytes<T> {
+    fn from_bytes(bytes: &[u8]) -> Result<T>;
+}
+
+impl<T: Serialize> ToBytes for T {
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&self, &mut bytes).expect("type can be serialized");
         bytes
+    }
+}
+
+impl<T: DeserializeOwned> FromBytes<T> for T {
+    fn from_bytes(bytes: &[u8]) -> Result<T> {
+        let value = ciborium::from_reader(bytes)?;
+        Ok(value)
     }
 }

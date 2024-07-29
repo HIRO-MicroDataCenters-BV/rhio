@@ -12,7 +12,7 @@ mod message;
 pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
 pub use protocols::ProtocolHandler;
-pub use message::Message;
+pub use message::{ToBytes, FromBytes};
 
 pub type NetworkId = [u8; 32];
 

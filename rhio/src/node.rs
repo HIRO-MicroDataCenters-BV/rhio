@@ -9,7 +9,7 @@ use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::config::DEFAULT_STUN_PORT;
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_net::{LocalDiscovery, Message as TopicMessage, Network, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -137,10 +137,7 @@ where
     ) -> Result<(
         TopicSender<T>,
         broadcast::Receiver<(Message<T>, MessageContext)>,
-    )>
-    where
-        T: TopicMessage + Send + Sync + 'static,
-    {
+    )> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
             .send(ToRhioActor::Subscribe { topic, reply })
@@ -177,7 +174,7 @@ pub struct TopicSender<T> {
 
 impl<T> TopicSender<T>
 where
-    T: TopicMessage + Send + Sync + 'static,
+    T: Send + Sync + 'static,
 {
     pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor<T>>) -> TopicSender<T> {
         TopicSender {

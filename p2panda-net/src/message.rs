@@ -4,8 +4,6 @@ use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-pub trait Message: ToBytes + FromBytes<Self> + Clone {}
-
 pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
 }
@@ -30,5 +28,3 @@ impl<T: DeserializeOwned> FromBytes<T> for T {
         Ok(value)
     }
 }
-
-impl<T: ToBytes + FromBytes<Self> + Clone> Message for T {}
