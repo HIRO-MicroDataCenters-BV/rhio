@@ -1,20 +1,25 @@
+use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::config::DEFAULT_STUN_PORT;
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
+use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_net::{LocalDiscovery, Message, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_stream::{Stream, StreamMap};
 use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
 use crate::topic_id::TopicId;
-use crate::GOSSIP_TOPIC_ID_STR;
+use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
 pub struct Node {
     config: Config,
@@ -45,18 +50,35 @@ impl Node {
                 network_builder.relay(relay_addr.to_owned(), false, DEFAULT_STUN_PORT);
         }
 
-        let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-        let (gossip_tx, gossip_rx) = network
-            .subscribe(TopicId::from_str(GOSSIP_TOPIC_ID_STR).into())
-            .await?;
+        let (mut network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+
+        let mut gossip_tx_map = HashMap::new();
+        let mut gossip_rx_stream_map = StreamMap::new();
+        add_topic(
+            &mut network,
+            BLOB_ANNOUNCE_TOPIC,
+            &mut gossip_tx_map,
+            &mut gossip_rx_stream_map,
+        )
+        .await
+        .expect("can subscribe topic");
+
+        add_topic(
+            &mut network,
+            FILE_SYSTEM_EVENT_TOPIC,
+            &mut gossip_tx_map,
+            &mut gossip_rx_stream_map,
+        )
+        .await
+        .expect("can subscribe topic");
 
         let mut rhio_actor = RhioActor::new(
             blobs.clone(),
             config.blobs_path.clone(),
             private_key.clone(),
             log_store,
-            gossip_tx,
-            gossip_rx,
+            gossip_tx_map,
+            gossip_rx_stream_map,
             rhio_actor_rx,
             ready_tx,
         );
@@ -86,11 +108,12 @@ impl Node {
         self.network.node_id()
     }
 
-    pub async fn publish_event(&self, log_suffix: String, bytes: Vec<u8>) -> Result<()> {
+    pub async fn publish_event(&self, log_id: String, bytes: Vec<u8>) -> Result<()> {
+        let topic = TopicId::from_str(&log_id);
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
             .send(ToRhioActor::PublishEvent {
-                log_suffix,
+                topic,
                 bytes,
                 reply,
             })
@@ -122,6 +145,26 @@ impl Node {
         reply_rx.await?
     }
 
+    //     pub async fn subscribe(&self, log_id: &str) -> Result<(RhioSender<T>, broadcast::Receiver<T>)>
+    //     where
+    //         T: Message,
+    //     {
+    //         let topic = TopicId::from_str(log_id);
+    //         let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
+    //         let (out_tx, out_rx) = broadcast::channel(128);
+    //         let (reply, reply_rx) = oneshot::channel();
+    //         self.rhio_actor_tx
+    //             .send(ToRhioActor::Subscribe {
+    //                 topic,
+    //                 // out_tx,
+    //                 // reply,
+    //             })
+    //             .await?;
+    //         reply_rx.await?;
+    //         let tx = RhioSender::new(&log_id, topic, self.rhio_actor_tx.clone());
+    //         Ok((tx, out_rx))
+    //     }
+
     pub async fn ready(&mut self) -> Option<()> {
         self.ready_rx.recv().await
     }
@@ -139,4 +182,53 @@ fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
     path.strip_prefix(base)
         .expect("Blob import path contains blob dir")
         .to_path_buf()
+}
+
+// pub struct RhioSender<T: Message> {
+//     topic_id: TopicId,
+//     tx: mpsc::Sender<ToRhioActor>,
+//     _phantom: PhantomData<T>,
+// }
+//
+// impl<T> RhioSender<T>
+// where
+//     T: Message + Send + Sync + 'static,
+// {
+//     pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> RhioSender<T> {
+//         RhioSender {
+//             topic_id,
+//             tx,
+//             _phantom: PhantomData::<T>,
+//         }
+//     }
+//     pub async fn send(&self, message: T) -> Result<()> {
+//         let (reply, reply_rx) = oneshot::channel();
+//         self.tx
+//             .send(ToRhioActor::PublishEvent {
+//                 topic: self.topic_id,
+//                 bytes: message.to_bytes(),
+//                 reply,
+//             })
+//             .await?;
+//         reply_rx.await?
+//     }
+// }
+
+async fn add_topic(
+    network: &mut Network,
+    topic_str: &str,
+    tx_map: &mut HashMap<TopicId, mpsc::Sender<InEvent>>,
+    rx_streams_map: &mut StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
+) -> Result<()> {
+    let topic = TopicId::from_str(topic_str);
+    let (tx, mut rx) = network.subscribe(topic.into()).await?;
+    tx_map.insert(topic, tx);
+
+    let rx_stream = Box::pin(async_stream::stream! {
+      while let Ok(item) = rx.recv().await {
+          yield item;
+      }
+    }) as Pin<Box<dyn Stream<Item = OutEvent> + Send>>;
+    rx_streams_map.insert(topic, rx_stream);
+    Ok(())
 }

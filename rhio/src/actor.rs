@@ -1,22 +1,23 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
-use p2panda_net::network::{Receiver, Sender, TypedOutEvent};
+use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, info};
 
 use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
 use crate::messages::{FileSystemEvent, GossipOperation, Message};
 use crate::operations::{create, ingest};
-use crate::{BLOB_ANNOUNCEMENT_LOG_SUFFIX, FILE_SYSTEM_SYNC_LOG_SUFFIX};
+use crate::topic_id::TopicId;
+use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
-#[derive(Debug)]
 pub enum ToRhioActor {
     SyncFile {
         absolute_path: PathBuf,
@@ -28,9 +29,14 @@ pub enum ToRhioActor {
         reply: oneshot::Sender<Result<()>>,
     },
     PublishEvent {
-        log_suffix: String,
+        topic: TopicId,
         bytes: Vec<u8>,
         reply: oneshot::Sender<Result<()>>,
+    },
+    Subscribe {
+        topic: TopicId,
+        // out_tx: broadcast::Sender,
+        // reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
 }
@@ -42,8 +48,9 @@ pub struct RhioActor {
     exported_blobs: HashMap<PathBuf, Hash>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
-    gossip_tx: Sender<GossipOperation>,
-    gossip_rx: Receiver<GossipOperation>,
+    gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
+    gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
+    // topic_clients_tx: HashMap<TopicId, broadcast::Sender<Vec<u8>>>,
     inbox: mpsc::Receiver<ToRhioActor>,
     ready_tx: mpsc::Sender<()>,
 }
@@ -54,8 +61,8 @@ impl RhioActor {
         blobs_export_path: PathBuf,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
-        gossip_tx: Sender<GossipOperation>,
-        gossip_rx: Receiver<GossipOperation>,
+        gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
+        gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
         inbox: mpsc::Receiver<ToRhioActor>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
@@ -68,6 +75,7 @@ impl RhioActor {
             store,
             gossip_tx,
             gossip_rx,
+            // topic_clients_tx: HashMap::new(),
             inbox,
             ready_tx,
         }
@@ -86,14 +94,30 @@ impl RhioActor {
                     }
 
                 },
-                msg = self.gossip_rx.recv() => {
-                    let msg = msg?;
+                Some((topic_id, msg)) = self.gossip_rx.next() => {
                     self
-                        .on_gossip_event(msg)
+                        .on_gossip_event(topic_id, msg)
                         .await;
                 },
             }
         }
+    }
+
+    async fn send_operation(&mut self, topic: TopicId, operation: GossipOperation) -> Result<()> {
+        match self.gossip_tx.get_mut(&topic) {
+            Some(tx) => {
+                tx.send(InEvent::Message {
+                    bytes: operation.to_bytes(),
+                })
+                .await
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Attempted to send operation on unknown topic {topic:?}"
+                ))
+            }
+        }?;
+        Ok(())
     }
 
     async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
@@ -111,29 +135,41 @@ impl RhioActor {
                 reply.send(result).ok();
             }
             ToRhioActor::PublishEvent {
-                log_suffix,
+                topic,
                 bytes,
                 reply,
             } => {
-                let result = self.on_publish_event(&log_suffix, bytes).await;
+                let result = self.on_publish_event(topic, bytes).await;
                 reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
                 return Ok(false);
             }
+            ToRhioActor::Subscribe { topic } => todo!(),
         }
 
         Ok(true)
     }
 
-    async fn on_publish_event(&mut self, log_suffix: &str, bytes: Vec<u8>) -> Result<()> {
-        self.publish_operation(log_suffix, Message::Arbitrary(bytes))
-            .await
+    async fn on_publish_event(&mut self, topic: TopicId, bytes: Vec<u8>) -> Result<()> {
+        let operation = self
+            .create_operation(topic, Message::Application(bytes))
+            .await?;
+        self.send_operation(topic, operation).await
     }
 
-    async fn publish_operation(&mut self, log_suffix: &str, message: Message) -> Result<()> {
+    async fn create_operation(
+        &mut self,
+        topic: TopicId,
+        message: Message,
+    ) -> Result<GossipOperation> {
         // The log id is {PUBLIC_KEY}/{SUFFIX} string.
-        let log_id = format!("{}/{}", self.private_key.public_key().to_hex(), log_suffix).into();
+        let log_id = format!(
+            "{}/{}",
+            self.private_key.public_key().to_hex(),
+            topic.to_string()
+        )
+        .into();
 
         // Create an operation for this event.
         let operation = create(&mut self.store, &self.private_key, &log_id, &message)?;
@@ -144,9 +180,10 @@ impl RhioActor {
             message,
         };
 
-        self.gossip_tx.send(operation).await?;
+        // @TODO
+        // self.gossip_tx.send(operation).await?;
 
-        Ok(())
+        Ok(operation)
     }
 
     async fn on_import_blob(&mut self, path: PathBuf) -> Result<()> {
@@ -191,17 +228,23 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn on_gossip_event(&mut self, event: TypedOutEvent<GossipOperation>) {
+    async fn on_gossip_event(&mut self, topic_id: TopicId, event: OutEvent) {
         match event {
-            TypedOutEvent::Ready => {
+            OutEvent::Ready => {
                 self.ready_tx.send(()).await.ok();
             }
-            TypedOutEvent::Message {
-                message,
+            OutEvent::Message {
+                bytes,
                 delivered_from,
             } => {
                 // Ingest the operation, this performs all expected validation.
-                let operation = message;
+                let operation = match GossipOperation::from_bytes(&bytes) {
+                    Ok(operation) => operation,
+                    Err(err) => {
+                        error!("Failed to decode gossip operation: {err}");
+                        return;
+                    }
+                };
                 match ingest(
                     &mut self.store,
                     operation.header.clone(),
@@ -227,7 +270,7 @@ impl RhioActor {
                         self.on_fs_event(event, operation.header.timestamp).await
                     }
                     Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(hash).await,
-                    Message::Arbitrary(_) => todo!(),
+                    Message::Application(bytes) => todo!(),
                 }
             }
         }
@@ -240,10 +283,10 @@ impl RhioActor {
     }
 
     async fn send_blob_announcement_event(&mut self, hash: Hash) -> Result<()> {
+        let topic = TopicId::from_str(BLOB_ANNOUNCE_TOPIC);
         let message = Message::BlobAnnouncement(hash);
-        self.publish_operation(BLOB_ANNOUNCEMENT_LOG_SUFFIX, message)
-            .await?;
-        Ok(())
+        let operation = self.create_operation(topic, message).await?;
+        self.send_operation(topic, operation).await
     }
 
     async fn on_fs_event(&mut self, event: FileSystemEvent, timestamp: u64) {
@@ -265,11 +308,11 @@ impl RhioActor {
     }
 
     async fn send_fs_event(&mut self, path: PathBuf, hash: Hash) -> Result<()> {
+        let topic = TopicId::from_str(FILE_SYSTEM_EVENT_TOPIC);
         let fs_event = FileSystemEvent::Create(path, hash);
         let message = Message::FileSystem(fs_event.clone());
-        self.publish_operation(FILE_SYSTEM_SYNC_LOG_SUFFIX, message)
-            .await?;
-        Ok(())
+        let operation = self.create_operation(topic, message).await?;
+        self.send_operation(topic, operation).await
     }
 
     async fn download_blob(&mut self, hash: Hash) -> Result<()> {

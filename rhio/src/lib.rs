@@ -9,9 +9,7 @@ pub mod operations;
 pub mod private_key;
 pub mod topic_id;
 
-const GOSSIP_TOPIC_ID_STR: &str = "rhio/gossip";
-
-const BLOB_ANNOUNCEMENT_LOG_SUFFIX: &str = "blob_announcement";
-const FILE_SYSTEM_SYNC_LOG_SUFFIX: &str = "file_system_sync";
+const BLOB_ANNOUNCE_TOPIC: &str = "rhio/blob_announce";
+const FILE_SYSTEM_EVENT_TOPIC: &str = "rhio/file_system_event";
 
 pub use node::Node;

@@ -5,6 +5,39 @@ use p2panda_core::{Body, Hash, Header};
 use serde::{Deserialize, Serialize};
 
 use crate::extensions::RhioExtensions;
+//
+// #[allow(clippy::large_enum_variant)]
+// #[derive(Clone, Debug)]
+// pub enum RhioOutEvent<T>
+// where
+//     T: Clone,
+// {
+//     Ready,
+//     Message {
+//         message: T,
+//         delivered_from: PublicKey,
+//     },
+// }
+//
+// impl<T: MessageTrait> TryFrom<OutEvent> for RhioOutEvent<T> {
+//     type Error = anyhow::Error;
+//
+//     fn try_from(value: OutEvent) -> std::result::Result<Self, Self::Error> {
+//         match value {
+//             OutEvent::Ready => Ok(RhioOutEvent::Ready),
+//             OutEvent::Message {
+//                 bytes,
+//                 delivered_from,
+//             } => {
+//                 let message = T::from_bytes(&bytes)?;
+//                 Ok(RhioOutEvent::Message {
+//                     message,
+//                     delivered_from,
+//                 })
+//             }
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Message {
@@ -14,8 +47,8 @@ pub enum Message {
     // Share arbitrary blobs
     BlobAnnouncement(Hash),
 
-    // Arbitrary messages
-    Arbitrary(Vec<u8>),
+    // Application messages
+    Application(Vec<u8>),
 }
 
 impl Message {
@@ -35,6 +68,17 @@ pub struct GossipOperation {
 impl GossipOperation {
     pub fn body(&self) -> Body {
         Body::new(&self.message.to_bytes())
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&(&self), &mut bytes).expect("succesfully encodes bytes");
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let operation = ciborium::from_reader::<Self, _>(bytes)?;
+        Ok(operation)
     }
 }
 
