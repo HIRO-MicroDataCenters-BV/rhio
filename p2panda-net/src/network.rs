@@ -503,7 +503,7 @@ impl<T: Message> Sender<T> {
     }
 
     pub async fn send(&self, message: T) -> Result<()> {
-        let _ = self.tx.send(InEvent::try_from_message(message)?).await?;
+        let _ = self.tx.send(InEvent::from_message(message)).await?;
         Ok(())
     }
 }
@@ -555,10 +555,10 @@ impl OutEvent {
 }
 
 impl InEvent {
-    pub fn try_from_message<T: Message>(message: T) -> Result<InEvent> {
-        Ok(InEvent::Message {
+    pub fn from_message<T: Message>(message: T) -> InEvent {
+        InEvent::Message {
             bytes: message.to_bytes(),
-        })
+        }
     }
 }
 
