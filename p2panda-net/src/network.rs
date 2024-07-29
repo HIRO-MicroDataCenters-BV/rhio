@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,8 +16,6 @@ use iroh_net::relay::{RelayMap, RelayNode};
 use iroh_net::util::SharedAbortingJoinHandle;
 use iroh_net::{Endpoint, NodeAddr, NodeId};
 use p2panda_core::{PrivateKey, PublicKey};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -29,7 +26,6 @@ use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
-use crate::message::Message;
 use crate::protocols::{ProtocolHandler, ProtocolMap};
 use crate::{NetworkId, TopicId};
 
@@ -438,14 +434,14 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(Sender<T>, Receiver<T>)>
-    where
-        T: Message,
-    {
+    pub async fn subscribe(
+        &self,
+        topic: TopicId,
+    ) -> Result<(mpsc::Sender<InEvent>, broadcast::Receiver<OutEvent>)> {
         let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
         let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
         self.inner.engine.subscribe(topic, out_tx, in_rx).await?;
-        Ok((Sender::new(in_tx), Receiver::new(out_rx)))
+        Ok((in_tx, out_rx))
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -468,46 +464,6 @@ impl Network {
     }
 }
 
-pub struct Receiver<T: Message> {
-    rx: broadcast::Receiver<OutEvent>,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: Message> Receiver<T> {
-    fn new(rx: broadcast::Receiver<OutEvent>) -> Receiver<T> {
-        Self {
-            rx,
-            _phantom: PhantomData::<T>,
-        }
-    }
-
-    pub async fn recv(&mut self) -> Result<TypedOutEvent<T>> {
-        match self.rx.recv().await {
-            Ok(event) => event.downcast(),
-            Err(err) => Err(anyhow!(err)),
-        }
-    }
-}
-
-pub struct Sender<T: Message> {
-    tx: mpsc::Sender<InEvent>,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: Message> Sender<T> {
-    fn new(tx: mpsc::Sender<InEvent>) -> Sender<T> {
-        Self {
-            tx,
-            _phantom: PhantomData::<T>,
-        }
-    }
-
-    pub async fn send(&self, message: T) -> Result<()> {
-        let _ = self.tx.send(InEvent::from_message(message)).await?;
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum InEvent {
     Message { bytes: Vec<u8> },
@@ -521,45 +477,6 @@ pub enum OutEvent {
         bytes: Vec<u8>,
         delivered_from: PublicKey,
     },
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug)]
-pub enum TypedOutEvent<T>
-where
-    T: Clone,
-{
-    Ready,
-    Message {
-        message: T,
-        delivered_from: PublicKey,
-    },
-}
-
-impl OutEvent {
-    pub fn downcast<T: Message>(self) -> Result<TypedOutEvent<T>> {
-        match self {
-            OutEvent::Ready => Ok(TypedOutEvent::Ready),
-            OutEvent::Message {
-                bytes,
-                delivered_from,
-            } => {
-                let message = T::from_bytes(&bytes)?;
-                Ok(TypedOutEvent::Message {
-                    message,
-                    delivered_from,
-                })
-            }
-        }
-    }
-}
-
-impl InEvent {
-    pub fn from_message<T: Message>(message: T) -> InEvent {
-        InEvent::Message {
-            bytes: message.to_bytes(),
-        }
-    }
 }
 
 async fn handle_connection(

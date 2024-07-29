@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use p2panda_core::{PrivateKey, PublicKey, Signature};
-use p2panda_net::network::TypedOutEvent;
+use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::{LocalDiscovery, NetworkBuilder};
 use rand::random;
 use serde::{Deserialize, Serialize};
@@ -30,21 +30,26 @@ async fn main() -> Result<()> {
         .build()
         .await?;
 
-    let (tx, mut rx) = network.subscribe::<Message>(topic_id).await?;
+    let (tx, mut rx) = network.subscribe(topic_id).await?;
     let (ready_tx, mut ready_rx) = mpsc::channel::<()>(1);
 
     tokio::task::spawn(async move {
         while let Ok(event) = rx.recv().await {
             match event {
-                TypedOutEvent::Ready => {
+                OutEvent::Ready => {
                     ready_tx.send(()).await.ok();
                 }
-                TypedOutEvent::Message {
-                    message,
+                OutEvent::Message {
+                    bytes,
                     delivered_from,
-                } => {
-                    let _ = message.verify();
-                    print!("{}: {}", message.public_key, message.text)},
+                } => match Message::decode_and_verify(&bytes) {
+                    Ok(message) => {
+                        print!("{}: {}", message.public_key, message.text);
+                    }
+                    Err(err) => {
+                        eprintln!("invalid message from {delivered_from}: {err}");
+                    }
+                },
             }
         }
     });
@@ -57,8 +62,8 @@ async fn main() -> Result<()> {
     std::thread::spawn(move || input_loop(line_tx));
 
     while let Some(text) = line_rx.recv().await {
-        let message = Message::new(&private_key, &text)?;
-        tx.send(message).await.ok();
+        let bytes = Message::sign_and_encode(&private_key, &text)?;
+        tx.send(InEvent::Message { bytes }).await.ok();
     }
 
     tokio::signal::ctrl_c().await?;
@@ -68,7 +73,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize)]
 struct Message {
     id: u32,
     signature: Signature,
@@ -77,7 +82,7 @@ struct Message {
 }
 
 impl Message {
-    pub fn new(private_key: &PrivateKey, text: &str) -> Result<Self> {
+    pub fn sign_and_encode(private_key: &PrivateKey, text: &str) -> Result<Vec<u8>> {
         // Sign text content
         let mut text_bytes: Vec<u8> = Vec::new();
         ciborium::ser::into_writer(text, &mut text_bytes)?;
@@ -91,18 +96,24 @@ impl Message {
             public_key: private_key.public_key(),
             text: text.to_owned(),
         };
+        let mut bytes: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(&message, &mut bytes)?;
 
-        Ok(message)
+        Ok(bytes)
     }
 
-    fn verify(&self) -> Result<()> {
+    fn decode_and_verify(bytes: &[u8]) -> Result<Self> {
+        // Decode message
+        let message: Self = ciborium::de::from_reader(bytes)?;
+
         // Verify signature
         let mut text_bytes: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(&self.text, &mut text_bytes)?;
-        if !self.public_key.verify(&text_bytes, &self.signature) {
+        ciborium::ser::into_writer(&message.text, &mut text_bytes)?;
+        if !message.public_key.verify(&text_bytes, &message.signature) {
             bail!("invalid signature");
         }
-        Ok(())
+
+        Ok(message)
     }
 }
 

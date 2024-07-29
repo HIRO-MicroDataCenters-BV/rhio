@@ -1,43 +1,23 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use p2panda_core::{Body, Hash, Header};
+use p2panda_core::{Body, Hash, Header, PublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::extensions::RhioExtensions;
-//
-// #[allow(clippy::large_enum_variant)]
-// #[derive(Clone, Debug)]
-// pub enum RhioOutEvent<T>
-// where
-//     T: Clone,
-// {
-//     Ready,
-//     Message {
-//         message: T,
-//         delivered_from: PublicKey,
-//     },
-// }
-//
-// impl<T: MessageTrait> TryFrom<OutEvent> for RhioOutEvent<T> {
-//     type Error = anyhow::Error;
-//
-//     fn try_from(value: OutEvent) -> std::result::Result<Self, Self::Error> {
-//         match value {
-//             OutEvent::Ready => Ok(RhioOutEvent::Ready),
-//             OutEvent::Message {
-//                 bytes,
-//                 delivered_from,
-//             } => {
-//                 let message = T::from_bytes(&bytes)?;
-//                 Ok(RhioOutEvent::Message {
-//                     message,
-//                     delivered_from,
-//                 })
-//             }
-//         }
-//     }
-// }
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub enum RhioOutEvent<T>
+where
+    T: Clone,
+{
+    Ready,
+    Message {
+        message: T,
+        delivered_from: PublicKey,
+    },
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Message {

@@ -9,15 +9,16 @@ use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::config::DEFAULT_STUN_PORT;
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_net::{LocalDiscovery, Message, Network, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, Message as TopicMessage, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamMap};
 use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
+use crate::messages::Message;
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
@@ -145,25 +146,24 @@ impl Node {
         reply_rx.await?
     }
 
-    //     pub async fn subscribe(&self, log_id: &str) -> Result<(RhioSender<T>, broadcast::Receiver<T>)>
-    //     where
-    //         T: Message,
-    //     {
-    //         let topic = TopicId::from_str(log_id);
-    //         let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
-    //         let (out_tx, out_rx) = broadcast::channel(128);
-    //         let (reply, reply_rx) = oneshot::channel();
-    //         self.rhio_actor_tx
-    //             .send(ToRhioActor::Subscribe {
-    //                 topic,
-    //                 // out_tx,
-    //                 // reply,
-    //             })
-    //             .await?;
-    //         reply_rx.await?;
-    //         let tx = RhioSender::new(&log_id, topic, self.rhio_actor_tx.clone());
-    //         Ok((tx, out_rx))
-    //     }
+    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(RhioSender<T>, RhioReceiver<T>)>
+    where
+        T: TopicMessage + Send + Sync + 'static,
+    {
+        let (out_tx, out_rx) = broadcast::channel(128);
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::Subscribe {
+                topic,
+                out_tx,
+                reply,
+            })
+            .await?;
+        let _ = reply_rx.await?;
+        let tx = RhioSender::new(topic, self.rhio_actor_tx.clone());
+        let rx = RhioReceiver::new(out_rx);
+        Ok((tx, rx))
+    }
 
     pub async fn ready(&mut self) -> Option<()> {
         self.ready_rx.recv().await
@@ -184,35 +184,56 @@ fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
         .to_path_buf()
 }
 
-// pub struct RhioSender<T: Message> {
-//     topic_id: TopicId,
-//     tx: mpsc::Sender<ToRhioActor>,
-//     _phantom: PhantomData<T>,
-// }
-//
-// impl<T> RhioSender<T>
-// where
-//     T: Message + Send + Sync + 'static,
-// {
-//     pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> RhioSender<T> {
-//         RhioSender {
-//             topic_id,
-//             tx,
-//             _phantom: PhantomData::<T>,
-//         }
-//     }
-//     pub async fn send(&self, message: T) -> Result<()> {
-//         let (reply, reply_rx) = oneshot::channel();
-//         self.tx
-//             .send(ToRhioActor::PublishEvent {
-//                 topic: self.topic_id,
-//                 bytes: message.to_bytes(),
-//                 reply,
-//             })
-//             .await?;
-//         reply_rx.await?
-//     }
-// }
+pub struct RhioSender<T: TopicMessage> {
+    topic_id: TopicId,
+    tx: mpsc::Sender<ToRhioActor>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> RhioSender<T>
+where
+    T: TopicMessage + Send + Sync + 'static,
+{
+    pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> RhioSender<T> {
+        RhioSender {
+            topic_id,
+            tx,
+            _phantom: PhantomData::<T>,
+        }
+    }
+    pub async fn send(&self, message: T) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ToRhioActor::PublishEvent {
+                topic: self.topic_id,
+                bytes: message.to_bytes(),
+                reply,
+            })
+            .await?;
+        reply_rx.await?
+    }
+}
+
+pub struct RhioReceiver<T: TopicMessage> {
+    rx: broadcast::Receiver<Message>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: TopicMessage> RhioReceiver<T> {
+    fn new(rx: broadcast::Receiver<Message>) -> RhioReceiver<T> {
+        Self {
+            rx,
+            _phantom: PhantomData::<T>,
+        }
+    }
+
+    pub async fn recv(&mut self) -> Result<Message> {
+        match self.rx.recv().await {
+            Ok(message) => Ok(message),
+            Err(err) => Err(anyhow::anyhow!(err)),
+        }
+    }
+}
 
 async fn add_topic(
     network: &mut Network,

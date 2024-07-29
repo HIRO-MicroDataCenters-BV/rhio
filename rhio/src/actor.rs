@@ -7,7 +7,7 @@ use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as Bl
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, info};
 
@@ -35,8 +35,8 @@ pub enum ToRhioActor {
     },
     Subscribe {
         topic: TopicId,
-        // out_tx: broadcast::Sender,
-        // reply: oneshot::Sender<Result<()>>,
+        out_tx: broadcast::Sender<Message>,
+        reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
 }
@@ -50,7 +50,7 @@ pub struct RhioActor {
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    // topic_clients_tx: HashMap<TopicId, broadcast::Sender<Vec<u8>>>,
+    topic_clients_tx: HashMap<TopicId, Vec<broadcast::Sender<Message>>>,
     inbox: mpsc::Receiver<ToRhioActor>,
     ready_tx: mpsc::Sender<()>,
 }
@@ -75,7 +75,7 @@ impl RhioActor {
             store,
             gossip_tx,
             gossip_rx,
-            // topic_clients_tx: HashMap::new(),
+            topic_clients_tx: HashMap::new(),
             inbox,
             ready_tx,
         }
@@ -145,7 +145,17 @@ impl RhioActor {
             ToRhioActor::Shutdown => {
                 return Ok(false);
             }
-            ToRhioActor::Subscribe { topic } => todo!(),
+            ToRhioActor::Subscribe {
+                topic,
+                out_tx,
+                reply,
+            } => {
+                self.topic_clients_tx
+                    .entry(topic)
+                    .and_modify(|vec| vec.push(out_tx.clone()))
+                    .or_insert(vec![out_tx]);
+                reply.send(Ok(())).ok();
+            }
         }
 
         Ok(true)
@@ -179,9 +189,6 @@ impl RhioActor {
             header: operation.header,
             message,
         };
-
-        // @TODO
-        // self.gossip_tx.send(operation).await?;
 
         Ok(operation)
     }
@@ -228,7 +235,7 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn on_gossip_event(&mut self, topic_id: TopicId, event: OutEvent) {
+    async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
         match event {
             OutEvent::Ready => {
                 self.ready_tx.send(()).await.ok();
@@ -265,12 +272,17 @@ impl RhioActor {
                     operation.header.hash(),
                 );
 
-                match operation.message {
+                match &operation.message {
                     Message::FileSystem(event) => {
-                        self.on_fs_event(event, operation.header.timestamp).await
+                        self.on_fs_event(event.clone(), operation.header.timestamp)
+                            .await
                     }
-                    Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(hash).await,
-                    Message::Application(bytes) => todo!(),
+                    Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(*hash).await,
+                    Message::Application(_) => (),
+                }
+
+                for tx in self.topic_clients_tx.get(&topic).expect("topic is known") {
+                    let _ = tx.send(operation.message.clone());
                 }
             }
         }
