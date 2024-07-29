@@ -1,7 +1,8 @@
 use p2panda_core::hash::Hash;
 use p2panda_net::TopicId as InnerTopicId;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TopicId(InnerTopicId);
 
 impl TopicId {

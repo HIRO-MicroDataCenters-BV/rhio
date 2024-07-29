@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 
@@ -53,12 +53,13 @@ pub struct RhioActor<T> {
     gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
     topic_clients_tx: HashMap<TopicId, broadcast::Sender<Message<T>>>,
     inbox: mpsc::Receiver<ToRhioActor<T>>,
+    pending_topics: HashSet<TopicId>,
     ready_tx: mpsc::Sender<()>,
 }
 
 impl<T> RhioActor<T>
 where
-    T: Serialize + DeserializeOwned + Clone,
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
 {
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
@@ -70,6 +71,11 @@ where
         inbox: mpsc::Receiver<ToRhioActor<T>>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
+        let mut pending_topics = HashSet::new();
+        for topic in gossip_tx.keys() {
+            pending_topics.insert(*topic);
+        }
+
         Self {
             fs: FileSystem::new(),
             blobs,
@@ -81,6 +87,7 @@ where
             gossip_rx,
             topic_clients_tx: HashMap::new(),
             inbox,
+            pending_topics,
             ready_tx,
         }
     }
@@ -159,7 +166,7 @@ where
                 } else {
                     let (tx, rx) = broadcast::channel(128);
                     self.topic_clients_tx.insert(topic, tx);
-                    reply.send(rx).ok();
+                    let _ = reply.send(rx).ok();
                 };
             }
         }
@@ -242,7 +249,10 @@ where
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
         match event {
             OutEvent::Ready => {
-                self.ready_tx.send(()).await.ok();
+                self.pending_topics.remove(&topic);
+                if self.pending_topics.is_empty() {
+                    self.ready_tx.send(()).await.ok();
+                }
             }
             OutEvent::Message {
                 bytes,
@@ -256,6 +266,7 @@ where
                         return;
                     }
                 };
+
                 match ingest(
                     &mut self.store,
                     operation.header.clone(),
@@ -282,7 +293,8 @@ where
                             .await
                     }
                     Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(*hash).await,
-                    Message::Application(_) => (),
+                    Message::Application(message) => {
+                    }
                 }
 
                 let tx = self.topic_clients_tx.get(&topic).expect("topic is known");

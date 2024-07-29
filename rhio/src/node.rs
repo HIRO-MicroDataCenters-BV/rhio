@@ -22,12 +22,8 @@ use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
 use crate::messages::Message;
 use crate::topic_id::TopicId;
-use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
-pub struct Node<T = ()>
-where
-    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
-{
+pub struct Node<T = ()> {
     config: Config,
     network: Network,
     rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
@@ -37,7 +33,7 @@ where
 
 impl<T> Node<T>
 where
-    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
 {
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
@@ -63,23 +59,17 @@ where
 
         let mut gossip_tx_map = HashMap::new();
         let mut gossip_rx_stream_map = StreamMap::new();
-        add_topic(
-            &mut network,
-            BLOB_ANNOUNCE_TOPIC,
-            &mut gossip_tx_map,
-            &mut gossip_rx_stream_map,
-        )
-        .await
-        .expect("can subscribe topic");
 
-        add_topic(
-            &mut network,
-            FILE_SYSTEM_EVENT_TOPIC,
-            &mut gossip_tx_map,
-            &mut gossip_rx_stream_map,
-        )
-        .await
-        .expect("can subscribe topic");
+        for topic in &config.topics {
+            add_topic(
+                &mut network,
+                *topic,
+                &mut gossip_tx_map,
+                &mut gossip_rx_stream_map,
+            )
+            .await
+            .expect("can subscribe topic");
+        }
 
         let mut rhio_actor = RhioActor::new(
             blobs.clone(),
@@ -176,7 +166,7 @@ fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
         .to_path_buf()
 }
 
-pub struct TopicSender<T: TopicMessage> {
+pub struct TopicSender<T> {
     topic_id: TopicId,
     tx: mpsc::Sender<ToRhioActor<T>>,
     _phantom: PhantomData<T>,
@@ -209,11 +199,10 @@ where
 
 async fn add_topic(
     network: &mut Network,
-    topic_str: &str,
+    topic: TopicId,
     tx_map: &mut HashMap<TopicId, mpsc::Sender<InEvent>>,
     rx_streams_map: &mut StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
 ) -> Result<()> {
-    let topic = TopicId::from_str(topic_str);
     let (tx, mut rx) = network.subscribe(topic.into()).await?;
     tx_map.insert(topic, tx);
 
