@@ -6,11 +6,8 @@ use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
-use rhio::messages::Message;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-use rhio::topic_id::TopicId;
-use rhio::FILE_SYSTEM_EVENT_TOPIC;
 use tokio::sync::mpsc;
 use tracing::{error, info};
 
@@ -26,7 +23,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let mut node = Node::spawn(config.clone(), private_key.clone()).await?;
+    let mut node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
@@ -73,31 +70,6 @@ async fn main() -> Result<()> {
 
     let _ = node.ready().await;
     println!("gossip overlay joined!");
-
-    // Get tx and rx for sending and receiving events on the FILE_SYSTEM_EVENT_TOPIC gossip
-    // topic.
-    //
-    // @TODO: Support configuring the network with custom application topics
-    let (fs_tx, mut fs_rx) = node
-        .subscribe::<Message>(TopicId::from_str(FILE_SYSTEM_EVENT_TOPIC))
-        .await?;
-
-    // Listen for arriving events.
-    tokio::spawn(async move {
-        while let Ok(msg) = fs_rx.recv().await {
-            println!("{msg:?}")
-        }
-    });
-
-    // Send "hello" on the channel.
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            let _ = fs_tx
-                .send(Message::Application("hello".as_bytes().to_vec()))
-                .await;
-        }
-    });
 
     loop {
         tokio::select! {

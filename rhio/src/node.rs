@@ -11,6 +11,8 @@ use p2panda_net::config::DEFAULT_STUN_PORT;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::{LocalDiscovery, Message as TopicMessage, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamMap};
@@ -22,15 +24,21 @@ use crate::messages::Message;
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
-pub struct Node {
+pub struct Node<T = ()>
+where
+    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+{
     config: Config,
     network: Network,
-    rhio_actor_tx: mpsc::Sender<ToRhioActor>,
+    rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: JoinHandle<()>,
     ready_rx: mpsc::Receiver<()>,
 }
 
-impl Node {
+impl<T> Node<T>
+where
+    T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
+{
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
         let (ready_tx, ready_rx) = mpsc::channel::<()>(1);
@@ -109,13 +117,13 @@ impl Node {
         self.network.node_id()
     }
 
-    pub async fn publish_event(&self, log_id: String, bytes: Vec<u8>) -> Result<()> {
+    pub async fn publish_event(&self, log_id: String, message: Message<T>) -> Result<()> {
         let topic = TopicId::from_str(&log_id);
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
             .send(ToRhioActor::PublishEvent {
                 topic,
-                bytes,
+                message,
                 reply,
             })
             .await?;
@@ -148,7 +156,10 @@ impl Node {
 
     // @TODO: Not using this generic parameter correctly yet, it should be used to denote the
     // message type sent on the Topic channels.
-    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(TopicSender<T>, TopicReceiver<T>)>
+    pub async fn subscribe(
+        &self,
+        topic: TopicId,
+    ) -> Result<(TopicSender<T>, broadcast::Receiver<Message<T>>)>
     where
         T: TopicMessage + Send + Sync + 'static,
     {
@@ -163,8 +174,7 @@ impl Node {
             .await?;
         let _ = reply_rx.await?;
         let tx = TopicSender::new(topic, self.rhio_actor_tx.clone());
-        let rx = TopicReceiver::new(out_rx);
-        Ok((tx, rx))
+        Ok((tx, out_rx))
     }
 
     pub async fn ready(&mut self) -> Option<()> {
@@ -188,7 +198,7 @@ fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
 
 pub struct TopicSender<T: TopicMessage> {
     topic_id: TopicId,
-    tx: mpsc::Sender<ToRhioActor>,
+    tx: mpsc::Sender<ToRhioActor<T>>,
     _phantom: PhantomData<T>,
 }
 
@@ -196,44 +206,24 @@ impl<T> TopicSender<T>
 where
     T: TopicMessage + Send + Sync + 'static,
 {
-    pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> TopicSender<T> {
+    pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor<T>>) -> TopicSender<T> {
         TopicSender {
             topic_id,
             tx,
             _phantom: PhantomData::<T>,
         }
     }
-    pub async fn send(&self, message: T) -> Result<()> {
+
+    pub async fn send(&self, message: Message<T>) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.tx
             .send(ToRhioActor::PublishEvent {
                 topic: self.topic_id,
-                bytes: message.to_bytes(),
+                message,
                 reply,
             })
             .await?;
         reply_rx.await?
-    }
-}
-
-pub struct TopicReceiver<T: TopicMessage> {
-    rx: broadcast::Receiver<Message>,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: TopicMessage> TopicReceiver<T> {
-    fn new(rx: broadcast::Receiver<Message>) -> TopicReceiver<T> {
-        Self {
-            rx,
-            _phantom: PhantomData::<T>,
-        }
-    }
-
-    pub async fn recv(&mut self) -> Result<Message> {
-        match self.rx.recv().await {
-            Ok(message) => Ok(message),
-            Err(err) => Err(anyhow::anyhow!(err)),
-        }
     }
 }
 

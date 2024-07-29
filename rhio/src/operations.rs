@@ -5,6 +5,8 @@ use p2panda_core::{
     validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
 };
 use p2panda_store::{LogId, LogStore, OperationStore};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::extensions::RhioExtensions;
 use crate::messages::Message;
@@ -45,14 +47,15 @@ where
     Ok(operation)
 }
 
-pub fn create<S>(
+pub fn create<S, T>(
     store: &mut S,
     private_key: &PrivateKey,
     log_id: &LogId,
-    message: &Message,
+    message: &Message<T>,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+    T: Serialize + DeserializeOwned + Clone,
 {
     // Encode body.
     let body = Body::new(&message.to_bytes());

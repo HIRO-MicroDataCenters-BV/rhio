@@ -7,6 +7,8 @@ use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as Bl
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, info};
@@ -18,7 +20,7 @@ use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
-pub enum ToRhioActor {
+pub enum ToRhioActor<T> {
     SyncFile {
         absolute_path: PathBuf,
         relative_path: PathBuf,
@@ -30,18 +32,18 @@ pub enum ToRhioActor {
     },
     PublishEvent {
         topic: TopicId,
-        bytes: Vec<u8>,
+        message: Message<T>,
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
         topic: TopicId,
-        out_tx: broadcast::Sender<Message>,
+        out_tx: broadcast::Sender<Message<T>>,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown,
 }
 
-pub struct RhioActor {
+pub struct RhioActor<T> {
     fs: FileSystem,
     blobs: Blobs<BlobMemoryStore>,
     blobs_export_path: PathBuf,
@@ -50,12 +52,15 @@ pub struct RhioActor {
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_clients_tx: HashMap<TopicId, Vec<broadcast::Sender<Message>>>,
-    inbox: mpsc::Receiver<ToRhioActor>,
+    topic_clients_tx: HashMap<TopicId, Vec<broadcast::Sender<Message<T>>>>,
+    inbox: mpsc::Receiver<ToRhioActor<T>>,
     ready_tx: mpsc::Sender<()>,
 }
 
-impl RhioActor {
+impl<T> RhioActor<T>
+where
+    T: Serialize + DeserializeOwned + Clone,
+{
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
         blobs_export_path: PathBuf,
@@ -63,7 +68,7 @@ impl RhioActor {
         store: LogsMemoryStore<RhioExtensions>,
         gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
         gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-        inbox: mpsc::Receiver<ToRhioActor>,
+        inbox: mpsc::Receiver<ToRhioActor<T>>,
         ready_tx: mpsc::Sender<()>,
     ) -> Self {
         Self {
@@ -103,7 +108,11 @@ impl RhioActor {
         }
     }
 
-    async fn send_operation(&mut self, topic: TopicId, operation: GossipOperation) -> Result<()> {
+    async fn send_operation(
+        &mut self,
+        topic: TopicId,
+        operation: GossipOperation<T>,
+    ) -> Result<()> {
         match self.gossip_tx.get_mut(&topic) {
             Some(tx) => {
                 tx.send(InEvent::Message {
@@ -120,7 +129,7 @@ impl RhioActor {
         Ok(())
     }
 
-    async fn on_actor_message(&mut self, msg: ToRhioActor) -> Result<bool> {
+    async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
             ToRhioActor::SyncFile {
                 absolute_path,
@@ -136,10 +145,10 @@ impl RhioActor {
             }
             ToRhioActor::PublishEvent {
                 topic,
-                bytes,
+                message,
                 reply,
             } => {
-                let result = self.on_publish_event(topic, bytes).await;
+                let result = self.on_publish_event(topic, message).await;
                 reply.send(result).ok();
             }
             ToRhioActor::Shutdown => {
@@ -161,18 +170,16 @@ impl RhioActor {
         Ok(true)
     }
 
-    async fn on_publish_event(&mut self, topic: TopicId, bytes: Vec<u8>) -> Result<()> {
-        let operation = self
-            .create_operation(topic, Message::Application(bytes))
-            .await?;
+    async fn on_publish_event(&mut self, topic: TopicId, message: Message<T>) -> Result<()> {
+        let operation = self.create_operation(topic, message).await?;
         self.send_operation(topic, operation).await
     }
 
     async fn create_operation(
         &mut self,
         topic: TopicId,
-        message: Message,
-    ) -> Result<GossipOperation> {
+        message: Message<T>,
+    ) -> Result<GossipOperation<T>> {
         // The log id is {PUBLIC_KEY}/{SUFFIX} string.
         let log_id = format!(
             "{}/{}",
