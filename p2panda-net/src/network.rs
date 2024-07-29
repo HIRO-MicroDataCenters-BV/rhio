@@ -437,22 +437,14 @@ impl Network {
     // Peers subscribed to a topic can be discovered by others via the gossiping overlay ("neighbor
     // up event"). They'll sync data initially (when a sync protocol is given) and then start
     // "live" mode via gossip broadcast
-    pub async fn subscribe<T: DeserializeOwned + Serialize>(
-        &self,
-        topic: TopicId,
-    ) -> Result<(Sender<T>, Receiver<T>)> {
+    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(Sender<T>, Receiver<T>)>
+    where
+        T: DeserializeOwned + Serialize + Clone,
+    {
         let (in_tx, in_rx) = mpsc::channel::<InEvent>(128);
         let (out_tx, out_rx) = broadcast::channel::<OutEvent>(128);
         self.inner.engine.subscribe(topic, out_tx, in_rx).await?;
-        let out_rx = Receiver {
-            rx: out_rx,
-            _phantom: PhantomData::<T>,
-        };
-        let in_tx = Sender {
-            tx: in_tx,
-            _phantom: PhantomData::<T>,
-        };
-        Ok((in_tx, out_rx))
+        Ok((Sender::new(in_tx), Receiver::new(out_rx)))
     }
 
     pub fn endpoint(&self) -> &Endpoint {
@@ -484,10 +476,17 @@ where
 }
 
 impl<T: DeserializeOwned + Clone> Receiver<T> {
+    fn new(rx: broadcast::Receiver<OutEvent>) -> Receiver<T> {
+        Self {
+            rx,
+            _phantom: PhantomData::<T>,
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<TypedOutEvent<T>> {
         match self.rx.recv().await {
             Ok(event) => event.downcast(),
-            Err(_) => todo!(),
+            Err(err) => Err(anyhow!(err)),
         }
     }
 }
@@ -501,6 +500,13 @@ where
 }
 
 impl<T: Serialize> Sender<T> {
+    fn new(tx: mpsc::Sender<InEvent>) -> Sender<T> {
+        Self {
+            tx,
+            _phantom: PhantomData::<T>,
+        }
+    }
+
     pub async fn send(&self, message: T) -> Result<()> {
         let _ = self.tx.send(InEvent::try_from_message(message)?).await?;
         Ok(())
