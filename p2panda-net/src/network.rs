@@ -516,6 +516,7 @@ mod tests {
     use iroh_net::relay::{RelayNode, RelayUrl as IrohRelayUrl};
     use p2panda_core::PrivateKey;
 
+    use crate::addrs::DEFAULT_STUN_PORT;
     use crate::config::Config;
     use crate::{NetworkBuilder, RelayMode, RelayUrl};
 
@@ -546,7 +547,7 @@ mod tests {
         let relay_node = RelayNode {
             url: IrohRelayUrl::from(relay_address),
             stun_only: false,
-            stun_port: 0,
+            stun_port: DEFAULT_STUN_PORT,
         };
         assert_eq!(builder.relay_mode, RelayMode::Custom(relay_node));
     }
