@@ -146,7 +146,9 @@ impl Node {
         reply_rx.await?
     }
 
-    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(RhioSender<T>, RhioReceiver<T>)>
+    // @TODO: Not using this generic parameter correctly yet, it should be used to denote the
+    // message type sent on the Topic channels.
+    pub async fn subscribe<T>(&self, topic: TopicId) -> Result<(TopicSender<T>, TopicReceiver<T>)>
     where
         T: TopicMessage + Send + Sync + 'static,
     {
@@ -160,8 +162,8 @@ impl Node {
             })
             .await?;
         let _ = reply_rx.await?;
-        let tx = RhioSender::new(topic, self.rhio_actor_tx.clone());
-        let rx = RhioReceiver::new(out_rx);
+        let tx = TopicSender::new(topic, self.rhio_actor_tx.clone());
+        let rx = TopicReceiver::new(out_rx);
         Ok((tx, rx))
     }
 
@@ -184,18 +186,18 @@ fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
         .to_path_buf()
 }
 
-pub struct RhioSender<T: TopicMessage> {
+pub struct TopicSender<T: TopicMessage> {
     topic_id: TopicId,
     tx: mpsc::Sender<ToRhioActor>,
     _phantom: PhantomData<T>,
 }
 
-impl<T> RhioSender<T>
+impl<T> TopicSender<T>
 where
     T: TopicMessage + Send + Sync + 'static,
 {
-    pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> RhioSender<T> {
-        RhioSender {
+    pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> TopicSender<T> {
+        TopicSender {
             topic_id,
             tx,
             _phantom: PhantomData::<T>,
@@ -214,13 +216,13 @@ where
     }
 }
 
-pub struct RhioReceiver<T: TopicMessage> {
+pub struct TopicReceiver<T: TopicMessage> {
     rx: broadcast::Receiver<Message>,
     _phantom: PhantomData<T>,
 }
 
-impl<T: TopicMessage> RhioReceiver<T> {
-    fn new(rx: broadcast::Receiver<Message>) -> RhioReceiver<T> {
+impl<T: TopicMessage> TopicReceiver<T> {
+    fn new(rx: broadcast::Receiver<Message>) -> TopicReceiver<T> {
         Self {
             rx,
             _phantom: PhantomData::<T>,
