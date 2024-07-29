@@ -37,8 +37,7 @@ pub enum ToRhioActor<T> {
     },
     Subscribe {
         topic: TopicId,
-        out_tx: broadcast::Sender<Message<T>>,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<broadcast::Receiver<Message<T>>>,
     },
     Shutdown,
 }
@@ -52,7 +51,7 @@ pub struct RhioActor<T> {
     store: LogsMemoryStore<RhioExtensions>,
     gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_clients_tx: HashMap<TopicId, Vec<broadcast::Sender<Message<T>>>>,
+    topic_clients_tx: HashMap<TopicId, broadcast::Sender<Message<T>>>,
     inbox: mpsc::Receiver<ToRhioActor<T>>,
     ready_tx: mpsc::Sender<()>,
 }
@@ -154,16 +153,14 @@ where
             ToRhioActor::Shutdown => {
                 return Ok(false);
             }
-            ToRhioActor::Subscribe {
-                topic,
-                out_tx,
-                reply,
-            } => {
-                self.topic_clients_tx
-                    .entry(topic)
-                    .and_modify(|vec| vec.push(out_tx.clone()))
-                    .or_insert(vec![out_tx]);
-                reply.send(Ok(())).ok();
+            ToRhioActor::Subscribe { topic, reply } => {
+                if let Some(tx) = self.topic_clients_tx.get(&topic) {
+                    reply.send(tx.subscribe()).ok();
+                } else {
+                    let (tx, rx) = broadcast::channel(128);
+                    self.topic_clients_tx.insert(topic, tx);
+                    reply.send(rx).ok();
+                };
             }
         }
 
@@ -288,9 +285,8 @@ where
                     Message::Application(_) => (),
                 }
 
-                for tx in self.topic_clients_tx.get(&topic).expect("topic is known") {
-                    let _ = tx.send(operation.message.clone());
-                }
+                let tx = self.topic_clients_tx.get(&topic).expect("topic is known");
+                let _ = tx.send(operation.message.clone());
             }
         }
     }

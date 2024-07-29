@@ -117,19 +117,6 @@ where
         self.network.node_id()
     }
 
-    pub async fn publish_event(&self, log_id: String, message: Message<T>) -> Result<()> {
-        let topic = TopicId::from_str(&log_id);
-        let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
-            .send(ToRhioActor::PublishEvent {
-                topic,
-                message,
-                reply,
-            })
-            .await?;
-        reply_rx.await?
-    }
-
     pub async fn import_blob(&self, path: PathBuf) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -154,27 +141,20 @@ where
         reply_rx.await?
     }
 
-    // @TODO: Not using this generic parameter correctly yet, it should be used to denote the
-    // message type sent on the Topic channels.
-    pub async fn subscribe(
+    pub async fn topic(
         &self,
         topic: TopicId,
     ) -> Result<(TopicSender<T>, broadcast::Receiver<Message<T>>)>
     where
         T: TopicMessage + Send + Sync + 'static,
     {
-        let (out_tx, out_rx) = broadcast::channel(128);
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::Subscribe {
-                topic,
-                out_tx,
-                reply,
-            })
+            .send(ToRhioActor::Subscribe { topic, reply })
             .await?;
-        let _ = reply_rx.await?;
+        let rx = reply_rx.await?;
         let tx = TopicSender::new(topic, self.rhio_actor_tx.clone());
-        Ok((tx, out_rx))
+        Ok((tx, rx))
     }
 
     pub async fn ready(&mut self) -> Option<()> {
