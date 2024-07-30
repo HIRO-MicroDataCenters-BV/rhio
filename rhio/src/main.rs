@@ -36,7 +36,13 @@ async fn main() -> Result<()> {
     } else {
         println!("‣ node public key: {}", node.id());
     }
-    println!("‣ watching folder: {}", config.blobs_path.display());
+
+    let Some(blobs_path) = &config.blobs_path else {
+        println!("‣ missing blobs folder path");
+        node.shutdown().await?;
+        return Ok(());
+    };
+    println!("‣ watching folder: {}", blobs_path.display());
     println!();
 
     // Join p2p gossip overlay and announce blobs from our directory there
@@ -76,7 +82,7 @@ async fn main() -> Result<()> {
     .unwrap();
     debouncer
         .watcher()
-        .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
+        .watch(&blobs_path, RecursiveMode::NonRecursive)?;
 
     let mut file_system = FileSystem::new();
     let mut exported_blobs = HashSet::new();
