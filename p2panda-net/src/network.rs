@@ -462,6 +462,10 @@ impl Network {
         &self.inner.endpoint
     }
 
+    pub async fn add_peer(&self, node_addr: NodeAddr) -> Result<()> {
+        self.inner.engine.add_peer(node_addr).await
+    }
+
     pub async fn known_peers(&self) -> Result<Vec<NodeAddr>> {
         self.inner.engine.known_peers().await
     }
