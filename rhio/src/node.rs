@@ -78,6 +78,7 @@ where
         self.network.node_id()
     }
 
+    /// Import a blob from the filesystem.
     pub async fn import_blob(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -86,6 +87,7 @@ where
         reply_rx.await?
     }
 
+    /// Export a blob to the filesystem.
     pub async fn export_blob(&self, hash: Hash, path: PathBuf) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -94,6 +96,7 @@ where
         reply_rx.await?
     }
 
+    /// Download a blob from the network.
     pub async fn download_blob(&self, hash: Hash) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -102,6 +105,9 @@ where
         reply_rx.await?
     }
 
+    /// Subscribe to a gossip topic.
+    ///
+    /// Returns a sender, receiver and future which resolves once the gossip overlay is ready.
     pub async fn subscribe(
         &self,
         topic: TopicId,
