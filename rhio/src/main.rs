@@ -87,11 +87,17 @@ async fn main() -> Result<()> {
     let mut file_system = FileSystem::new();
     let mut exported_blobs = HashSet::new();
 
+    let Some(blobs_path) = &config.blobs_path else {
+        error!("no blobs path configured!");
+        node.shutdown().await?;
+        return Ok(());
+    };
+
     loop {
         tokio::select! {
             Some(paths) = files_rx.recv() => {
                 for path in paths {
-                    let relative_path = to_relative_path(&path, &config.blobs_path);
+                    let relative_path = to_relative_path(&path, &blobs_path);
                     if !exported_blobs.remove(&relative_path) {
                         info!("file added: {path:?}");
                         let hash = node.import_blob(path.clone()).await.expect("can import blob");
@@ -109,12 +115,12 @@ async fn main() -> Result<()> {
                             match action {
                                 FileSystemAction::DownloadAndExport { hash, path } => {
                                     if node.download_blob(hash).await.is_ok() {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, blobs_path.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                     }
                                 }
                                 FileSystemAction::Export { hash, path } => {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, blobs_path.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                 }
                             }
