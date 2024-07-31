@@ -86,6 +86,22 @@ where
         reply_rx.await?
     }
 
+    pub async fn export_blob(&self, hash: Hash, path: PathBuf) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::ExportBlob { hash, path, reply })
+            .await?;
+        reply_rx.await?
+    }
+
+    pub async fn download_blob(&self, hash: Hash) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::DownloadBlob { hash, reply })
+            .await?;
+        reply_rx.await?
+    }
+
     pub async fn subscribe(
         &self,
         topic: TopicId,

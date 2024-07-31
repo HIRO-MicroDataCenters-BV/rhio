@@ -6,7 +6,7 @@ use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
-use p2panda_blobs::{Blobs, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
@@ -25,6 +25,15 @@ pub enum ToRhioActor<T> {
     ImportBlob {
         path: PathBuf,
         reply: oneshot::Sender<Result<Hash>>,
+    },
+    ExportBlob {
+        hash: Hash,
+        path: PathBuf,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    DownloadBlob {
+        hash: Hash,
+        reply: oneshot::Sender<Result<()>>,
     },
     PublishEvent {
         topic: TopicId,
@@ -127,7 +136,22 @@ where
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
             ToRhioActor::ImportBlob { path, reply } => {
-                let result = self.on_import_blob(path).await;
+                let hash = self.on_import_blob(&path).await?;
+                info!("imported blob: {hash} {path:?}");
+                reply.send(Ok(hash)).ok();
+            }
+            ToRhioActor::ExportBlob { path, reply, hash } => {
+                let result = self.on_export_blob(hash, &path).await;
+                if result.is_ok() {
+                    info!("exported blob: {hash} {path:?}");
+                }
+                reply.send(result).ok();
+            }
+            ToRhioActor::DownloadBlob { hash, reply } => {
+                let result = self.on_download_blob(hash).await;
+                if result.is_ok() {
+                    info!("downloaded blob {hash}");
+                }
                 reply.send(result).ok();
             }
             ToRhioActor::PublishEvent {
@@ -255,7 +279,7 @@ where
         })
     }
 
-    async fn on_import_blob(&mut self, path: PathBuf) -> Result<Hash> {
+    async fn on_import_blob(&mut self, path: &PathBuf) -> Result<Hash> {
         let mut stream = self.blobs.import_blob(path.clone()).await;
         while let Some(event) = stream.next().await {
             match event {
@@ -263,7 +287,6 @@ where
                     return Err(anyhow::anyhow!("failed importing blob: {err}"))
                 }
                 ImportBlobEvent::Done(hash) => {
-                    info!("imported blob {path:?} with hash {hash}");
                     return Ok(hash);
                 }
             }
@@ -331,35 +354,20 @@ where
         }
     }
 
-    // @TODO: bring back these methods with own ToActor enum variants
-    //
-    // async fn download_blob(&mut self, hash: Hash) -> Result<()> {
-    //     let mut stream = self.blobs.download_blob(hash).await;
-    //     while let Some(event) = stream.next().await {
-    //         match event {
-    //             DownloadBlobEvent::Abort(err) => {
-    //                 error!("failed downloading file: {err}");
-    //             }
-    //             DownloadBlobEvent::Done => {
-    //                 info!("downloaded blob {hash}");
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
-    //     async fn export_blob(&mut self, hash: Hash, path: PathBuf) {
-    //         let path_str = path.to_str().expect("is a valid unicode str");
-    //
-    //         match self
-    //             .blobs
-    //             .export_blob(hash, &self.blobs_export_path, path_str)
-    //             .await
-    //         {
-    //             Ok(_) => {
-    //                 info!("exported blob to filesystem {path_str} {hash}");
-    //                 self.exported_blobs.insert(path, hash);
-    //             }
-    //             Err(err) => error!("failed to export blob to filesystem {err}"),
-    //         };
-    //     }
+    async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
+        let mut stream = self.blobs.download_blob(hash).await;
+        while let Some(event) = stream.next().await {
+            match event {
+                DownloadBlobEvent::Abort(err) => {
+                    error!("failed downloading file: {err}");
+                }
+                DownloadBlobEvent::Done => (),
+            }
+        }
+        Ok(())
+    }
+
+    async fn on_export_blob(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
+        self.blobs.export_blob(hash, path).await
+    }
 }

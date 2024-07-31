@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -60,7 +61,6 @@ async fn main() -> Result<()> {
                         _ => continue, // ignore all other events
                     }
 
-                    info!("file added / changed: {event:?}");
                     if let Err(err) = files_tx.blocking_send(event.paths.clone()) {
                         error!("failed sending file event: {err}");
                     }
@@ -79,17 +79,22 @@ async fn main() -> Result<()> {
         .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
     let mut file_system = FileSystem::new();
+    let mut exported_blobs = HashSet::new();
 
     loop {
         tokio::select! {
             Some(paths) = files_rx.recv() => {
                 for path in paths {
+                    let relative_path = to_relative_path(&path, &config.blobs_path);
+                    if !exported_blobs.remove(&relative_path) {
+                        info!("file added: {path:?}");
                         let hash = node.import_blob(path.clone()).await.expect("can import blob");
-                        let fs_event = FileSystemEvent::Create(to_relative_path(&path, &config.blobs_path), hash);
+                        let fs_event = FileSystemEvent::Create(relative_path, hash);
                         let context = fs_topic_tx.send(Message::FileSystem(fs_event.clone())).await.expect("can send topic event");
                         let _ = file_system.process(fs_event, context.operation_timestamp);
                     }
                 }
+            }
             Ok((message, context)) = fs_topic_rx.recv() => {
                 match message {
                     Message::FileSystem(event) => {
@@ -97,15 +102,14 @@ async fn main() -> Result<()> {
                         for action in actions {
                             match action {
                                 FileSystemAction::DownloadAndExport { hash, path } => {
-                                    println!("download and export blob: {hash} {path:?}")
-                                    // if node.download_blob(hash).await.is_err() {
-                                    //     continue;
-                                    // }
-                                    // node.export_blob(hash, path).await;
+                                    if node.download_blob(hash).await.is_ok() {
+                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        exported_blobs.insert(path);
+                                    }
                                 }
                                 FileSystemAction::Export { hash, path } => {
-                                    println!("export blob: {hash} {path:?}")
-                                    // node.export_blob(hash, path).await;
+                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        exported_blobs.insert(path);
                                 }
                             }
                         }

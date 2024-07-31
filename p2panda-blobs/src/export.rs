@@ -11,12 +11,7 @@ use iroh_blobs::util::progress::{FlumeProgressSender, IdGenerator, ProgressSende
 use p2panda_core::Hash;
 use tracing::trace;
 
-pub async fn export_blob<S: Store>(
-    store: &S,
-    hash: Hash,
-    outpath: &PathBuf,
-    file_name: &str,
-) -> anyhow::Result<()> {
+pub async fn export_blob<S: Store>(store: &S, hash: Hash, outpath: &PathBuf) -> anyhow::Result<()> {
     let (sender, _receiver) = flume::bounded(1024);
     let progress = FlumeProgressSender::new(sender);
 
@@ -27,6 +22,12 @@ pub async fn export_blob<S: Store>(
     let id = progress.new_id();
     let hash = IrohHash::from_bytes(*hash.as_bytes());
     let entry = store.get(&hash).await?.context("entry not there")?;
+
+    let file_name = outpath
+        .file_name()
+        .expect("no filename")
+        .to_str()
+        .expect("filename not valid UTF-8 string");
 
     // Create temporary directory where we first export the blob to.
     let tmp_path = temp_dir();
@@ -54,7 +55,7 @@ pub async fn export_blob<S: Store>(
         .await?;
 
     // When exporting is complete copy the blob file into place.
-    tokio::fs::copy(tmp_file.clone(), outpath.join(file_name)).await?;
+    tokio::fs::copy(tmp_file.clone(), outpath).await?;
 
     // Drop the temporary file.
     drop(tmp_file);
