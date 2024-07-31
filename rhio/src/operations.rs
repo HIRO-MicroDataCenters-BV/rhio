@@ -47,7 +47,7 @@ where
     Ok(operation)
 }
 
-pub fn create<S, T> (
+pub fn create<S, T>(
     store: &mut S,
     private_key: &PrivateKey,
     log_id: &LogId,
@@ -55,7 +55,7 @@ pub fn create<S, T> (
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
-    T: Serialize + DeserializeOwned + Clone
+    T: Serialize + DeserializeOwned + Clone,
 {
     // Encode body.
     let body = Body::new(&message.to_bytes());

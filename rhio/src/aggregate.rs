@@ -1,7 +1,7 @@
 use p2panda_core::Hash;
-use tracing::debug;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use tracing::debug;
 
 use crate::messages::FileSystemEvent;
 
