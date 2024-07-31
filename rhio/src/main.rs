@@ -87,6 +87,8 @@ async fn main() -> Result<()> {
     let mut file_system = FileSystem::new();
     let mut exported_blobs = HashSet::new();
 
+    // @TODO: Currently this is required for main to be interesting, we should add logging of other network
+    // events maybe, or generally consider what the cli is for.
     let Some(blobs_path) = &config.blobs_path else {
         error!("no blobs path configured!");
         node.shutdown().await?;
