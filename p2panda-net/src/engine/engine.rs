@@ -203,7 +203,12 @@ impl EngineActor {
         // Make sure the endpoint also knows about this address
         match self.endpoint.add_node_addr(node_addr.clone()) {
             Ok(_) => {
-                if self.peers.add_peer(self.network_id, node_addr).is_none() {
+                if let Some(addr) = self.peers.add_peer(self.network_id, node_addr) {
+                    debug!(
+                        "updated address for {} in known peers list: {:?}",
+                        node_id, addr
+                    );
+                } else {
                     debug!("added new peer to handler {}", node_id);
 
                     // Attempt joining network when trying for the first time
