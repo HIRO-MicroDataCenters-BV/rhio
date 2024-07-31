@@ -334,9 +334,12 @@ impl NetworkInner {
                             if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
                                 warn!("Failed to update direct addresses for discovery: {err:?}");
                             }
-                        }
+                        },
+                        else => break,
                     }
                 }
+
+                Ok(())
             });
         }
 
