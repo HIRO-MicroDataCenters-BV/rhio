@@ -12,7 +12,7 @@ type ChatMessage = String;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let chat_topic_id = TopicId::from_str("my_chat");
+    let chat_topic_id = TopicId::new_from_str("my_chat");
     let private_key = PrivateKey::new();
     let config = Config::default();
 

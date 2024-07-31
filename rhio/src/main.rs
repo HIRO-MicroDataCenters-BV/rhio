@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     // Join p2p gossip overlay and announce blobs from our directory there
     println!("joining gossip overlay ..");
 
-    let fs_topic = TopicId::from_str(FILE_SYSTEM_EVENT_TOPIC);
+    let fs_topic = TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC);
     let (fs_topic_tx, mut fs_topic_rx, ready) = node.subscribe(fs_topic).await?;
     ready.await;
 
@@ -128,7 +128,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn to_relative_path(path: &PathBuf, base: &PathBuf) -> PathBuf {
+fn to_relative_path(path: &Path, base: &Path) -> PathBuf {
     path.strip_prefix(base)
         .expect("Blob import path contains blob dir")
         .to_path_buf()

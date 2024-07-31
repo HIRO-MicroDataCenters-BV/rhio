@@ -6,20 +6,20 @@ use serde::{Deserialize, Serialize};
 pub struct TopicId(InnerTopicId);
 
 impl TopicId {
-    pub fn from_str(str: &str) -> Self {
+    pub fn new_from_str(str: &str) -> Self {
         let hash = Hash::new(str);
         Self(*hash.as_bytes())
     }
 }
 
-impl Into<InnerTopicId> for TopicId {
-    fn into(self) -> InnerTopicId {
-        self.0
+impl From<TopicId> for InnerTopicId {
+    fn from(val: TopicId) -> Self {
+        val.0
     }
 }
 
-impl ToString for TopicId {
-    fn to_string(&self) -> String {
-        Hash::from_bytes(self.0).to_hex()
+impl std::fmt::Display for TopicId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Hash::from_bytes(self.0).to_hex())
     }
 }

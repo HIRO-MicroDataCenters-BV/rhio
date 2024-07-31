@@ -28,8 +28,8 @@ impl Default for Config {
     fn default() -> Self {
         let path = Path::new(DEFAULT_BLOBS_PATH);
         let topics = vec![
-            TopicId::from_str(BLOB_ANNOUNCE_TOPIC),
-            TopicId::from_str(FILE_SYSTEM_EVENT_TOPIC),
+            TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC),
+            TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC),
         ];
 
         let absolute_path = absolute(path).expect("to establish absolute path");

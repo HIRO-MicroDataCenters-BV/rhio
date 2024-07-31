@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::{self, SystemTime};
 
@@ -20,6 +20,11 @@ use crate::extensions::RhioExtensions;
 use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
+
+pub type SubscribeResult<T> = Result<(
+    broadcast::Receiver<(Message<T>, MessageMeta)>,
+    Pin<Box<dyn Future<Output = ()> + Send>>,
+)>;
 
 pub enum ToRhioActor<T> {
     ImportBlob {
@@ -44,12 +49,7 @@ pub enum ToRhioActor<T> {
         topic: TopicId,
         topic_tx: mpsc::Sender<InEvent>,
         topic_rx: broadcast::Receiver<OutEvent>,
-        reply: oneshot::Sender<
-            Result<(
-                broadcast::Receiver<(Message<T>, MessageMeta)>,
-                Pin<Box<dyn Future<Output = ()> + Send>>,
-            )>,
-        >,
+        reply: oneshot::Sender<SubscribeResult<T>>,
     },
     Shutdown,
 }
@@ -230,7 +230,7 @@ where
             }
         };
 
-        return Ok((rx, fut.boxed()));
+        Ok((rx, fut.boxed()))
     }
 
     async fn on_publish_event(
@@ -264,12 +264,7 @@ where
         message: Message<T>,
     ) -> Result<GossipOperation<T>> {
         // The log id is {PUBLIC_KEY}/{TOPIC_ID} string.
-        let log_id = format!(
-            "{}/{}",
-            self.private_key.public_key().to_hex(),
-            topic.to_string()
-        )
-        .into();
+        let log_id = format!("{}/{}", self.private_key.public_key().to_hex(), topic).into();
 
         // Create an operation for this event.
         let operation = create(&mut self.store, &self.private_key, &log_id, &message)?;
@@ -279,19 +274,16 @@ where
         })
     }
 
-    async fn on_import_blob(&mut self, path: &PathBuf) -> Result<Hash> {
-        let mut stream = self.blobs.import_blob(path.clone()).await;
-        while let Some(event) = stream.next().await {
-            match event {
-                ImportBlobEvent::Abort(err) => {
-                    return Err(anyhow::anyhow!("failed importing blob: {err}"))
-                }
-                ImportBlobEvent::Done(hash) => {
-                    return Ok(hash);
-                }
-            }
+    async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
+        let mut stream = self.blobs.import_blob(path.to_path_buf()).await;
+        let event = stream
+            .next()
+            .await
+            .expect("no event arrived on blob import stream");
+        match event {
+            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
+            ImportBlobEvent::Done(hash) => Ok(hash),
         }
-        Err(anyhow::anyhow!("failed to import blob"))
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {

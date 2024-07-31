@@ -10,6 +10,7 @@ pub enum FileSystemAction {
     Export { hash: Hash, path: PathBuf },
 }
 
+#[derive(Default)]
 pub struct FileSystem {
     blobs: HashSet<Hash>,
     paths: HashMap<PathBuf, (Hash, u64)>,
