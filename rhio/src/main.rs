@@ -1,3 +1,5 @@
+#![feature(assert_matches)]
+
 mod actor;
 mod config;
 mod extensions;

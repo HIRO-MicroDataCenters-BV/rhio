@@ -89,3 +89,62 @@ impl Node {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::assert_matches::assert_matches;
+
+    use p2panda_net::{network::OutEvent, Config as NetworkConfig};
+
+    use crate::config::Config;
+    use crate::private_key::generate_ephemeral_private_key;
+
+    use super::Node;
+
+    #[tokio::test]
+    async fn join_gossip_overlay() {
+        let private_key_1 = generate_ephemeral_private_key();
+        let private_key_2 = generate_ephemeral_private_key();
+
+        let config_1 = Config::default();
+        let config_2 = Config::default();
+
+        let network_config_1 = config_1.network_config;
+        let network_config_2 = NetworkConfig {
+            bind_port: 2023,
+            ..config_2.network_config
+        };
+
+        // Spawn the first node and retrieve its address
+        let mut node_1 = Node::spawn(network_config_1, private_key_1).await.unwrap();
+
+        let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
+
+        // Spawn the second node and add the address of the first node
+        let mut node_2 = Node::spawn(network_config_2, private_key_2).await.unwrap();
+
+        node_2
+            .network
+            .endpoint()
+            .add_node_addr(node_1_addr)
+            .unwrap();
+
+        let _ = node_1.ready().await;
+        let _ = node_2.ready().await;
+
+        // Subscribe to the same topic from both nodes
+        let (_tx_1, mut rx_1) = node_1.network.subscribe([0; 32]).await.unwrap();
+        let (_tx_2, mut rx_2) = node_2.network.subscribe([0; 32]).await.unwrap();
+
+        // Receive the first message for both nodes
+        let rx_2_msg = rx_2.recv().await.unwrap();
+        let rx_1_msg = rx_1.recv().await.unwrap();
+
+        // Ensure the gossip-overlay has been joined for the given topic
+        assert_matches!(rx_1_msg, OutEvent::Ready);
+        assert_matches!(rx_2_msg, OutEvent::Ready);
+
+        node_1.shutdown().await.unwrap();
+        node_2.shutdown().await.unwrap();
+    }
+}
