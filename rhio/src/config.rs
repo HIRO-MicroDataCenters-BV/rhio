@@ -11,29 +11,19 @@ use p2panda_net::config::{Config as NetworkConfig, NodeAddr as PandaNodeAddr};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::topic_id::TopicId;
-use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
-
 pub type NodeAddr = PandaNodeAddr;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub blobs_path: Option<PathBuf>,
-    pub topics: Vec<TopicId>,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let topics = vec![
-            TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC),
-            TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC),
-        ];
-
         Self {
             blobs_path: None,
-            topics,
             network_config: NetworkConfig::default(),
         }
     }
