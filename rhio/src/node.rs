@@ -115,14 +115,17 @@ mod tests {
             ..config_2.network_config
         };
 
-        // Spawn the first node and retrieve its address
+        // Spawn the first node
         let mut node_1 = Node::spawn(network_config_1, private_key_1).await.unwrap();
 
+        // Retrieve the address of the first node
         let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
 
-        // Spawn the second node and add the address of the first node
+        // Spawn the second node
         let mut node_2 = Node::spawn(network_config_2, private_key_2).await.unwrap();
 
+        // Add the address of the first node, resulting in an automatic connection attempt under
+        // the hood
         node_2
             .network
             .endpoint()
