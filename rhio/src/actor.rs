@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
-use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use futures_lite::FutureExt;
+use p2panda_blobs::{Blobs, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
@@ -14,48 +16,45 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, info};
 
-use crate::aggregate::{FileSystem, FileSystemAction};
 use crate::extensions::RhioExtensions;
-use crate::messages::{FileSystemEvent, FromBytes, GossipOperation, Message, MessageContext, ToBytes};
+use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
-use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
 pub enum ToRhioActor<T> {
-    SyncFile {
-        absolute_path: PathBuf,
-        relative_path: PathBuf,
-        reply: oneshot::Sender<Result<()>>,
-    },
     ImportBlob {
         path: PathBuf,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<Hash>>,
     },
     PublishEvent {
         topic: TopicId,
         message: Message<T>,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<MessageMeta>>,
     },
     Subscribe {
         topic: TopicId,
-        reply: oneshot::Sender<broadcast::Receiver<(Message<T>, MessageContext)>>,
+        topic_tx: mpsc::Sender<InEvent>,
+        topic_rx: broadcast::Receiver<OutEvent>,
+        reply: oneshot::Sender<
+            Result<(
+                broadcast::Receiver<(Message<T>, MessageMeta)>,
+                Pin<Box<dyn Future<Output = ()> + Send>>,
+            )>,
+        >,
     },
     Shutdown,
 }
 
 pub struct RhioActor<T> {
-    fs: FileSystem,
     blobs: Blobs<BlobMemoryStore>,
-    blobs_export_path: PathBuf,
-    exported_blobs: HashMap<PathBuf, Hash>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
-    gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
-    gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_clients_tx: HashMap<TopicId, broadcast::Sender<(Message<T>, MessageContext)>>,
+    topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
+    topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
+    topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<(Message<T>, MessageMeta)>>,
+    broadcast_join: broadcast::Sender<TopicId>,
+    joined_topics: HashSet<TopicId>,
     inbox: mpsc::Receiver<ToRhioActor<T>>,
-    pending_topics: HashSet<TopicId>,
-    ready_tx: mpsc::Sender<()>,
 }
 
 impl<T> RhioActor<T>
@@ -64,32 +63,21 @@ where
 {
     pub fn new(
         blobs: Blobs<BlobMemoryStore>,
-        blobs_export_path: PathBuf,
         private_key: PrivateKey,
         store: LogsMemoryStore<RhioExtensions>,
-        gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
-        gossip_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
-        ready_tx: mpsc::Sender<()>,
     ) -> Self {
-        let mut pending_topics = HashSet::new();
-        for topic in gossip_tx.keys() {
-            pending_topics.insert(*topic);
-        }
-
+        let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
         Self {
-            fs: FileSystem::new(),
             blobs,
-            blobs_export_path,
-            exported_blobs: HashMap::new(),
             private_key,
             store,
-            gossip_tx,
-            gossip_rx,
-            topic_clients_tx: HashMap::new(),
+            topic_gossip_tx: HashMap::default(),
+            topic_topic_rx: StreamMap::default(),
+            topic_subscribers_tx: HashMap::new(),
+            broadcast_join,
+            joined_topics: HashSet::new(),
             inbox,
-            pending_topics,
-            ready_tx,
         }
     }
 
@@ -106,7 +94,7 @@ where
                     }
 
                 },
-                Some((topic_id, msg)) = self.gossip_rx.next() => {
+                Some((topic_id, msg)) = self.topic_topic_rx.next() => {
                     self
                         .on_gossip_event(topic_id, msg)
                         .await;
@@ -120,7 +108,7 @@ where
         topic: TopicId,
         operation: GossipOperation<T>,
     ) -> Result<()> {
-        match self.gossip_tx.get_mut(&topic) {
+        match self.topic_gossip_tx.get_mut(&topic) {
             Some(tx) => {
                 tx.send(InEvent::Message {
                     bytes: operation.to_bytes(),
@@ -138,14 +126,6 @@ where
 
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
-            ToRhioActor::SyncFile {
-                absolute_path,
-                relative_path,
-                reply,
-            } => {
-                let result = self.on_sync_file(absolute_path, relative_path).await;
-                reply.send(result).ok();
-            }
             ToRhioActor::ImportBlob { path, reply } => {
                 let result = self.on_import_blob(path).await;
                 reply.send(result).ok();
@@ -161,23 +141,97 @@ where
             ToRhioActor::Shutdown => {
                 return Ok(false);
             }
-            ToRhioActor::Subscribe { topic, reply } => {
-                if let Some(tx) = self.topic_clients_tx.get(&topic) {
-                    reply.send(tx.subscribe()).ok();
-                } else {
-                    let (tx, rx) = broadcast::channel(128);
-                    self.topic_clients_tx.insert(topic, tx);
-                    let _ = reply.send(rx).ok();
-                };
+            ToRhioActor::Subscribe {
+                topic,
+                topic_tx,
+                topic_rx,
+                reply,
+            } => {
+                let result = self.on_subscribe(topic, topic_tx, topic_rx).await;
+                reply.send(result).ok();
             }
         }
 
         Ok(true)
     }
 
-    async fn on_publish_event(&mut self, topic: TopicId, message: Message<T>) -> Result<()> {
+    async fn on_subscribe(
+        &mut self,
+        topic: TopicId,
+        topic_tx: mpsc::Sender<InEvent>,
+        mut topic_rx: broadcast::Receiver<OutEvent>,
+    ) -> Result<(
+        broadcast::Receiver<(Message<T>, MessageMeta)>,
+        Pin<Box<dyn Future<Output = ()> + Send>>,
+    )> {
+        // If we didn't already subscribe to this topic, then add the topic gossip channels
+        // to our sender and receiver maps.
+        if !self.topic_gossip_tx.contains_key(&topic) {
+            self.topic_gossip_tx.insert(topic, topic_tx);
+
+            let rx_stream = Box::pin(async_stream::stream! {
+              while let Ok(item) = topic_rx.recv().await {
+                  yield item;
+              }
+            });
+
+            self.topic_topic_rx.insert(topic, rx_stream);
+        }
+
+        // Get a receiver channel which will be sent decoded gossip events arriving on this topic.
+        let rx = if let Some(tx) = self.topic_subscribers_tx.get(&topic) {
+            tx.subscribe()
+        } else {
+            let (tx, rx) = broadcast::channel(128);
+            self.topic_subscribers_tx.insert(topic, tx);
+            rx
+        };
+
+        // Subscribe to the broadcast channel which receives "topic joined" events.
+        let mut joined_rx = self.broadcast_join.subscribe();
+
+        // Flag if the topic has already been joined.
+        let has_joined = self.joined_topics.contains(&topic);
+
+        // Future which returns when the topic has been joined (or is already joined).
+        let fut = async move {
+            if has_joined {
+                return;
+            }
+            loop {
+                let joined_topic = joined_rx.recv().await.expect("channel is not dropped");
+                if joined_topic == topic {
+                    return;
+                }
+            }
+        };
+
+        return Ok((rx, fut.boxed()));
+    }
+
+    async fn on_publish_event(
+        &mut self,
+        topic: TopicId,
+        message: Message<T>,
+    ) -> Result<MessageMeta> {
+        // Create a p2panda operation which contains a topic message in it's body. The topic id
+        // will be used in the log id.
         let operation = self.create_operation(topic, message).await?;
-        self.send_operation(topic, operation).await
+
+        // Send the operation on it's gossip topic.
+        self.send_operation(topic, operation.clone()).await?;
+
+        // Construct the message meta data which will be sent to any subscribing clients along
+        // with the topic message itself.
+        let message_context = MessageMeta {
+            operation_timestamp: operation.header.timestamp,
+            delivered_from: self.private_key.public_key(),
+            received_at: time::SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("can calculate duration since UNIX_EPOCH")
+                .as_secs(),
+        };
+        Ok(message_context)
     }
 
     async fn create_operation(
@@ -185,7 +239,7 @@ where
         topic: TopicId,
         message: Message<T>,
     ) -> Result<GossipOperation<T>> {
-        // The log id is {PUBLIC_KEY}/{SUFFIX} string.
+        // The log id is {PUBLIC_KEY}/{TOPIC_ID} string.
         let log_id = format!(
             "{}/{}",
             self.private_key.public_key().to_hex(),
@@ -195,65 +249,35 @@ where
 
         // Create an operation for this event.
         let operation = create(&mut self.store, &self.private_key, &log_id, &message)?;
-
-        // Broadcast data in gossip overlay
-        let operation = GossipOperation {
+        Ok(GossipOperation {
             header: operation.header,
             message,
-        };
-
-        Ok(operation)
+        })
     }
 
-    async fn on_import_blob(&mut self, path: PathBuf) -> Result<()> {
+    async fn on_import_blob(&mut self, path: PathBuf) -> Result<Hash> {
         let mut stream = self.blobs.import_blob(path.clone()).await;
         while let Some(event) = stream.next().await {
             match event {
                 ImportBlobEvent::Abort(err) => {
-                    error!("failed importing file: {err}");
+                    return Err(anyhow::anyhow!("failed importing blob: {err}"))
                 }
                 ImportBlobEvent::Done(hash) => {
-                    info!("imported file {path:?} with hash {hash}");
-                    self.send_blob_announcement_event(hash).await?;
+                    info!("imported blob {path:?} with hash {hash}");
+                    return Ok(hash);
                 }
             }
         }
-        Ok(())
-    }
-
-    async fn on_sync_file(&mut self, absolute_path: PathBuf, relative_path: PathBuf) -> Result<()> {
-        // Don't import blobs which just got exported to the filesystem again.
-        if let Some(exported_blob_hash) = self.exported_blobs.remove(&relative_path) {
-            if self.fs.file_announced(exported_blob_hash, &relative_path) {
-                return Ok(());
-            }
-        };
-
-        let mut stream = self.blobs.import_blob(absolute_path.clone()).await;
-        while let Some(event) = stream.next().await {
-            match event {
-                ImportBlobEvent::Abort(err) => {
-                    error!("failed importing file: {err}");
-                }
-                ImportBlobEvent::Done(hash) => {
-                    info!("imported file {absolute_path:?} with hash {hash}");
-                    if self.fs.file_announced(hash, &relative_path) {
-                        return Ok(());
-                    }
-                    self.send_fs_event(relative_path.clone(), hash).await?;
-                }
-            }
-        }
-        Ok(())
+        Err(anyhow::anyhow!("failed to import blob"))
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
         match event {
             OutEvent::Ready => {
-                self.pending_topics.remove(&topic);
-                if self.pending_topics.is_empty() {
-                    self.ready_tx.send(()).await.ok();
-                }
+                self.joined_topics.insert(topic);
+                self.broadcast_join
+                    .send(topic)
+                    .expect("broadcast_join channel not dropped");
             }
             OutEvent::Message {
                 bytes,
@@ -288,16 +312,8 @@ where
                     operation.header.hash(),
                 );
 
-                match &operation.message {
-                    Message::FileSystem(event) => {
-                        self.on_fs_event(event.clone(), operation.header.timestamp)
-                            .await
-                    }
-                    Message::BlobAnnouncement(hash) => self.on_blob_announcement_event(*hash).await,
-                    Message::Application(_) => {}
-                }
-
-                let message_context = MessageContext {
+                let message_context = MessageMeta {
+                    operation_timestamp: operation.header.timestamp,
                     delivered_from,
                     received_at: time::SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
@@ -305,79 +321,45 @@ where
                         .as_secs(),
                 };
 
-                let tx = self.topic_clients_tx.get(&topic).expect("topic is known");
+                let tx = self
+                    .topic_subscribers_tx
+                    .get(&topic)
+                    .expect("topic is known");
+
                 let _ = tx.send((operation.message.clone(), message_context));
             }
         }
     }
 
-    async fn on_blob_announcement_event(&mut self, hash: Hash) {
-        if self.download_blob(hash).await.is_err() {
-            return;
-        }
-    }
-
-    async fn send_blob_announcement_event(&mut self, hash: Hash) -> Result<()> {
-        let topic = TopicId::from_str(BLOB_ANNOUNCE_TOPIC);
-        let message = Message::BlobAnnouncement(hash);
-        let operation = self.create_operation(topic, message).await?;
-        self.send_operation(topic, operation).await
-    }
-
-    async fn on_fs_event(&mut self, event: FileSystemEvent, timestamp: u64) {
-        // Process the event and run any generated actions.
-        let actions = self.fs.process(event, timestamp);
-        for action in actions {
-            match action {
-                FileSystemAction::DownloadAndExport { hash, path } => {
-                    if self.download_blob(hash).await.is_err() {
-                        return;
-                    }
-                    self.export_blob(hash, path).await;
-                }
-                FileSystemAction::Export { hash, path } => {
-                    self.export_blob(hash, path).await;
-                }
-            }
-        }
-    }
-
-    async fn send_fs_event(&mut self, path: PathBuf, hash: Hash) -> Result<()> {
-        let topic = TopicId::from_str(FILE_SYSTEM_EVENT_TOPIC);
-        let fs_event = FileSystemEvent::Create(path, hash);
-        let message = Message::FileSystem(fs_event.clone());
-        let operation = self.create_operation(topic, message).await?;
-        self.send_operation(topic, operation).await
-    }
-
-    async fn download_blob(&mut self, hash: Hash) -> Result<()> {
-        let mut stream = self.blobs.download_blob(hash).await;
-        while let Some(event) = stream.next().await {
-            match event {
-                DownloadBlobEvent::Abort(err) => {
-                    error!("failed downloading file: {err}");
-                }
-                DownloadBlobEvent::Done => {
-                    info!("downloaded blob {hash}");
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn export_blob(&mut self, hash: Hash, path: PathBuf) {
-        let path_str = path.to_str().expect("is a valid unicode str");
-
-        match self
-            .blobs
-            .export_blob(hash, &self.blobs_export_path, path_str)
-            .await
-        {
-            Ok(_) => {
-                info!("exported blob to filesystem {path_str} {hash}");
-                self.exported_blobs.insert(path, hash);
-            }
-            Err(err) => error!("failed to export blob to filesystem {err}"),
-        };
-    }
+    // @TODO: bring back these methods with own ToActor enum variants
+    //
+    // async fn download_blob(&mut self, hash: Hash) -> Result<()> {
+    //     let mut stream = self.blobs.download_blob(hash).await;
+    //     while let Some(event) = stream.next().await {
+    //         match event {
+    //             DownloadBlobEvent::Abort(err) => {
+    //                 error!("failed downloading file: {err}");
+    //             }
+    //             DownloadBlobEvent::Done => {
+    //                 info!("downloaded blob {hash}");
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
+    //     async fn export_blob(&mut self, hash: Hash, path: PathBuf) {
+    //         let path_str = path.to_str().expect("is a valid unicode str");
+    //
+    //         match self
+    //             .blobs
+    //             .export_blob(hash, &self.blobs_export_path, path_str)
+    //             .await
+    //         {
+    //             Ok(_) => {
+    //                 info!("exported blob to filesystem {path_str} {hash}");
+    //                 self.exported_blobs.insert(path, hash);
+    //             }
+    //             Err(err) => error!("failed to export blob to filesystem {err}"),
+    //         };
+    //     }
 }

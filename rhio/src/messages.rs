@@ -7,7 +7,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::extensions::RhioExtensions;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MessageContext {
+pub struct MessageMeta {
+    pub operation_timestamp: u64,
     pub received_at: u64,
     pub delivered_from: PublicKey,
 }
