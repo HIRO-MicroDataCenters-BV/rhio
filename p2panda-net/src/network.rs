@@ -434,11 +434,12 @@ impl Network {
     }
 
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        if let Some(addrs) = self.inner.endpoint.direct_addresses().next().await {
-            Some(addrs.into_iter().map(|direct| direct.addr).collect())
-        } else {
-            None
-        }
+        self.inner
+            .endpoint
+            .direct_addresses()
+            .next()
+            .await
+            .map(|addrs| addrs.into_iter().map(|direct| direct.addr).collect())
     }
 
     // Subscribes to a topic and establishes a bi-directional stream from which we can read and
