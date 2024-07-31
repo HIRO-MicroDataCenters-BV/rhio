@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use rhio::config::{parse_node_addr, parse_url, Config as RhioConfig, NodeAddr};
 use rhio::private_key::generate_ephemeral_private_key;
-use rhio::topic_id::TopicId;
 use rhio::Node as RhioNode;
 use uniffi;
 
@@ -37,8 +36,6 @@ pub struct Node {
 pub struct Config {
     #[uniffi(default = None)]
     pub blobs_path: Option<String>,
-    #[uniffi(default = [])]
-    pub topics: Vec<String>,
     #[uniffi(default = 2024)]
     pub bind_port: u16,
     #[uniffi(default = None)]
@@ -57,10 +54,6 @@ impl TryInto<RhioConfig> for Config {
         if let Some(path) = self.blobs_path {
             config.blobs_path = Some(PathBuf::from(&path));
         };
-
-        self.topics
-            .iter()
-            .for_each(|topic| config.topics.push(TopicId::from_str(&topic)));
 
         config.network_config.bind_port = self.bind_port;
 
