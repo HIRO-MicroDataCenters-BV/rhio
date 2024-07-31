@@ -4,15 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["mdns"]
-mdns = [
-  "dep:hickory-proto",
-  "dep:socket2",
-]
+default = ["mdns", "cbor"]
+mdns = ["dep:hickory-proto", "dep:socket2"]
+cbor = ["dep:ciborium"]
 
 [dependencies]
 anyhow = "1.0.86"
-ciborium = "0.2.2"
+ciborium = { version = "0.2.2", optional = true }
 flume = "0.11.0"
 futures-buffered = "0.2.6"
 futures-lite = "2.3.0"

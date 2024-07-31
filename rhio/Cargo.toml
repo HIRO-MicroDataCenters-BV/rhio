@@ -8,9 +8,11 @@ name = "rhio"
 
 [dependencies]
 anyhow = "1.0.86"
+async-stream = "0.3.5"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env"] }
+futures-lite = "2.3.0"
 futures-util = "0.3.30"
 hex = "0.4.3"
 notify-debouncer-full = "0.3.1"
@@ -20,6 +22,7 @@ p2panda-net = {path = "../p2panda-net"}
 p2panda-store = {path = "../p2panda-store"}
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
+tokio-stream = "0.1.15"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 url = "2.5.2"

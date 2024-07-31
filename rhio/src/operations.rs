@@ -5,9 +5,11 @@ use p2panda_core::{
     validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
 };
 use p2panda_store::{LogId, LogStore, OperationStore};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::extensions::RhioExtensions;
-use crate::messages::FileSystemEvent;
+use crate::messages::{Message, ToBytes};
 
 pub fn ingest<S>(
     store: &mut S,
@@ -45,20 +47,22 @@ where
     Ok(operation)
 }
 
-pub fn create<S>(
+pub fn create<S, T>(
     store: &mut S,
     private_key: &PrivateKey,
-    fs_event: &FileSystemEvent,
+    log_id: &LogId,
+    message: &Message<T>,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+    T: Serialize + DeserializeOwned + Clone,
 {
     // Encode body.
-    let body = Body::new(&fs_event.to_bytes());
+    let body = Body::new(&message.to_bytes());
 
     // Sign and encode header.
     let public_key = private_key.public_key();
-    let latest_operation = store.latest_operation(public_key, public_key.to_string().into())?;
+    let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -68,6 +72,10 @@ where
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
+
+    let extensions = RhioExtensions {
+        log_id: Some(log_id.clone()),
+    };
 
     let mut header = Header {
         version: 1,
@@ -79,7 +87,7 @@ where
         seq_num,
         backlink,
         previous: vec![],
-        extensions: Some(RhioExtensions::default()),
+        extensions: Some(extensions),
     };
     header.sign(private_key);
 
