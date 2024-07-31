@@ -97,12 +97,15 @@ mod tests {
     use p2panda_net::{network::OutEvent, Config as NetworkConfig};
 
     use crate::config::Config;
+    use crate::logging::setup_tracing;
     use crate::private_key::generate_ephemeral_private_key;
 
     use super::Node;
 
     #[tokio::test]
     async fn join_gossip_overlay() {
+        setup_tracing();
+
         let private_key_1 = generate_ephemeral_private_key();
         let private_key_2 = generate_ephemeral_private_key();
 
@@ -126,11 +129,7 @@ mod tests {
 
         // Add the address of the first node, resulting in an automatic connection attempt under
         // the hood
-        node_2
-            .network
-            .endpoint()
-            .add_node_addr(node_1_addr)
-            .unwrap();
+        node_2.network.add_peer(node_1_addr).await.unwrap();
 
         let _ = node_1.ready().await;
         let _ = node_2.ready().await;
