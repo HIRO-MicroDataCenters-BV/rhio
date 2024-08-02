@@ -1,8 +1,8 @@
-from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message
+from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, FileSystemEvent
 
 import asyncio
 import argparse
-from watchfiles import awatch
+from watchfiles import awatch, Change
 
 class Callback(GossipMessageCallback):
     def __init__(self, name):
@@ -51,7 +51,10 @@ async def main():
     if config.blobs_path:        
         async for changes in awatch(config.blobs_path):
             print(changes)
-                
+            for (change_type, path) in changes:
+                # we only handle "added" events
+                if change_type == 1:
+                    hash = await node.import_blob(path)
 
 if __name__ == "__main__":
     asyncio.run(main())
