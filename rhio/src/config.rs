@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::net::{AddrParseError, SocketAddr};
+use std::path::{absolute, Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Result;
@@ -9,6 +10,8 @@ use p2panda_net::{Config as NetworkConfig, NodeAddress, RelayUrl};
 use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
+use crate::topic_id::TopicId;
+use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
 const DEFAULT_BLOBS_PATH: &str = "blobs";
 
@@ -18,6 +21,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub blobs_path: PathBuf,
+    pub topics: Vec<TopicId>,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
 }
@@ -29,8 +33,17 @@ impl Default for Config {
             ..NetworkConfig::default()
         };
 
+        let topics = vec![
+            TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC),
+            TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC),
+        ];
+
+        let path = PathBuf::from(DEFAULT_BLOBS_PATH);
+        let absolute_path = absolute(path).expect("to establish absolute path");
+
         Self {
-            blobs_path: DEFAULT_BLOBS_PATH.into(),
+            blobs_path: absolute_path,
+            topics,
             network_config,
         }
     }
@@ -75,10 +88,15 @@ fn parse_url(value: &str) -> Result<RelayUrl> {
 }
 
 pub fn load_config() -> Result<Config> {
-    let config = Figment::new()
+    let mut config: Config = Figment::new()
         .merge(Serialized::defaults(Config::default()))
         .merge(Env::raw())
         .merge(Serialized::defaults(Cli::parse()))
         .extract()?;
+
+    // Make blobs path absolute.
+    let absolute_path = absolute(&config.blobs_path).expect("to establish absolute path");
+    config.blobs_path = absolute_path;
+
     Ok(config)
 }

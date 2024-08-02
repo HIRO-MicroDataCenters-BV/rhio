@@ -1,6 +1,24 @@
 [package]
-name = "rhio-py"
+name = "rhio-ffi"
 version = "0.1.0"
 edition = "2021"
 
+[package.metadata.maturin]
+name = "rhio"
+
+[lib]
+name = "rhio_ffi"
+crate-type = ["staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
 [dependencies]
+uniffi = { version = "0.28.0", features = ["cli", "tokio"] }
+rhio = { path = "../rhio" }
+anyhow = "1.0.86"
+thiserror = "1.0.63"
+
+[dependencies-build]
+uniffi = { version = "0.28.0", features = ["build"] }

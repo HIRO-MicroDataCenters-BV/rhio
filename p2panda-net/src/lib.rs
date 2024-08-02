@@ -7,6 +7,7 @@ mod engine;
 mod handshake;
 pub mod network;
 mod protocols;
+mod message;
 
 pub use addrs::{NodeAddress, RelayUrl};
 pub use config::Config;
@@ -14,6 +15,7 @@ pub use config::Config;
 pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
 pub use protocols::ProtocolHandler;
+pub use message::{ToBytes, FromBytes};
 
 pub type NetworkId = [u8; 32];
 
