@@ -104,8 +104,7 @@ impl NetworkBuilder {
     ///
     /// Relay nodes are STUN servers to help establishing a peer-to-peer connection if either or
     /// both of the peers are behind a NAT. If this connection attempt fails, the Relay node might
-    /// on top offer a "proxy" functionality on top, which will help to relay the data in that
-    /// case.
+    /// offer a "proxy" functionality on top, which will help to relay the data in that case.
     pub fn relay(mut self, url: RelayUrl, stun_only: bool, stun_port: u16) -> Self {
         self.relay_mode = RelayMode::Custom(RelayNode {
             url: url.into(),
@@ -483,12 +482,16 @@ impl Network {
 }
 
 #[derive(Clone, Debug)]
+/// An event to be broadcast to the gossip-overlay.
 pub enum InEvent {
     Message { bytes: Vec<u8> },
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
+/// An event received from the gossip-overlay.
+// @TODO: Maybe consider renaming these two enums...
+// Could be switched to OutboundEvent and InboundEvent (in relation to the gossip-overlay).
 pub enum OutEvent {
     Ready,
     Message {
