@@ -104,8 +104,7 @@ impl NetworkBuilder {
     ///
     /// Relay nodes are STUN servers to help establishing a peer-to-peer connection if either or
     /// both of the peers are behind a NAT. If this connection attempt fails, the Relay node might
-    /// on top offer a "proxy" functionality on top, which will help to relay the data in that
-    /// case.
+    /// offer a "proxy" functionality on top, which will help to relay the data in that case.
     pub fn relay(mut self, url: RelayUrl, stun_only: bool, stun_port: u16) -> Self {
         self.relay_mode = RelayMode::Custom(RelayNode {
             url: url.into(),
@@ -334,9 +333,12 @@ impl NetworkInner {
                             if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
                                 warn!("Failed to update direct addresses for discovery: {err:?}");
                             }
-                        }
+                        },
+                        else => break,
                     }
                 }
+
+                Ok(())
             });
         }
 
@@ -431,11 +433,12 @@ impl Network {
     }
 
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        if let Some(addrs) = self.inner.endpoint.direct_addresses().next().await {
-            Some(addrs.into_iter().map(|direct| direct.addr).collect())
-        } else {
-            None
-        }
+        self.inner
+            .endpoint
+            .direct_addresses()
+            .next()
+            .await
+            .map(|addrs| addrs.into_iter().map(|direct| direct.addr).collect())
     }
 
     // Subscribes to a topic and establishes a bi-directional stream from which we can read and
@@ -458,6 +461,10 @@ impl Network {
         &self.inner.endpoint
     }
 
+    pub async fn add_peer(&self, node_addr: NodeAddr) -> Result<()> {
+        self.inner.engine.add_peer(node_addr).await
+    }
+
     pub async fn known_peers(&self) -> Result<Vec<NodeAddr>> {
         self.inner.engine.known_peers().await
     }
@@ -475,12 +482,16 @@ impl Network {
 }
 
 #[derive(Clone, Debug)]
+/// An event to be broadcast to the gossip-overlay.
 pub enum InEvent {
     Message { bytes: Vec<u8> },
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
+/// An event received from the gossip-overlay.
+// @TODO: Maybe consider renaming these two enums...
+// Could be switched to OutboundEvent and InboundEvent (in relation to the gossip-overlay).
 pub enum OutEvent {
     Ready,
     Message {

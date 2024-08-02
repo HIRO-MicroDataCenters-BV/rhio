@@ -24,8 +24,10 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let mut network_config = NetworkConfig::default();
-        network_config.relay = Some(DEFAULT_RELAY_URL.parse().expect("valid url"));
+        let network_config = NetworkConfig {
+            relay: Some(DEFAULT_RELAY_URL.parse().expect("valid url")),
+            ..NetworkConfig::default()
+        };
 
         Self {
             blobs_path: DEFAULT_BLOBS_PATH.into(),
