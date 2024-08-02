@@ -1,8 +1,9 @@
 import os
 
-from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType
-import asyncio
 import argparse
+import asyncio
+from loguru import logger
+from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType
 from watchfiles import awatch, Change
 
 class Callback(GossipMessageCallback):
@@ -25,14 +26,16 @@ class Watcher():
     async def handle_change(self, change_type, path):
         # we only handle "added" events
         if change_type == 1:
-            print(change_type, path)
+            logger.info("file added: {}", path)
 
             # import the blob and get it's hash
             hash = await self.node.import_blob(path)
+            logger.info("blob imported: {}", hash)
 
             # send a file system event to announce a new file was created
             path = self.relative_path(path)
-            await self.sender.send(Message.file_system(path, hash))
+            msg = Message.file_system(path, hash)
+            await self.sender.send(msg)
 
     async def watch(self):
         async for changes in awatch(self.blobs_dir_path):
@@ -45,27 +48,29 @@ class FileSystemSync():
         self.node = node
         self.blobs_dir_path = blobs_dir_path
 
-    async def handle_event(self, event, meta):
-        (event, meta) = await cb.chan.get()
-
-        if (event.type() == MessageType.FILE_SYSTEM):
-            create_event = event.as_file_system_create()
+    async def handle_event(self, message, meta):
+        if (message.type() == MessageType.FILE_SYSTEM):
+            create_event = message.as_file_system_create()
+            path = create_event.path
+            hash = create_event.hash
 
             # download the blob from the network
-            await node.download_blob(fs_create_event.hash)
+            await self.node.download_blob(hash)
+            logger.info("downloaded blob: {}", hash)
 
             # get path relative to blobs directory
-            blob_file_path = os.path.join(blobs_dir_path, fs_create_event.path)
+            path = os.path.join(blobs_dir_path, path)
 
             # export blob to filesystem
-            await node.export_blob(fs_create_event.hash, blob_file_path)
+            await self.node.export_blob(hash, path)
+            logger.info("exported blob to file-system: {}", path)
         else:
-            print("received unsupported event type: ", event.type())
+            print("received unsupported event type: {}", event.type())
 
     async def run(self):
         while (True):
-            (msg, meta) = await cb.chan.get()
-            await self.handle_event(msg, meta)
+            (message, meta) = await self.cb.chan.get()
+            await self.handle_event(message, meta)
 
 async def main():
     # setup event loop, to ensure async callbacks work
@@ -92,29 +97,29 @@ async def main():
 
     # spawn the rhio node
     node = await Node.spawn(config)
-    print("Node ID: ", node.id())
+    logger.info("Node ID: {}", node.id())
 
     # subscribe to a topic, providing a callback method which will be run on each 
     # topic event we receive
     topic = "rhio/file_system_sync"
     cb = Callback("file_system_sync_handler")
 
-    print("subscribing to gossip topic")
+    logger.info("subscribing to gossip topic: {}", topic)
     sender = await node.subscribe(topic, cb)
 
-    print("gossip topic ready")
+    logger.info("gossip topic ready")
 
     if config.blobs_path:
         watch_task = asyncio.create_task(
             Watcher(sender, node, config.blobs_path).watch()
         )
 
-        event_handler_task = asyncio.create_task(
+        sync_task = asyncio.create_task(
             FileSystemSync(cb, node, config.blobs_path).run()
         )
 
         await watch_task
-        await event_handler_task
+        await sync_task
 
 if __name__ == "__main__":
     asyncio.run(main())
