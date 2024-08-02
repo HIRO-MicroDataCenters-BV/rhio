@@ -1,3 +1,5 @@
+#![feature(assert_matches)]
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -11,6 +13,7 @@ use rhio::logging::setup_tracing;
 use rhio::messages::{FileSystemEvent, Message};
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
+use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::FILE_SYSTEM_EVENT_TOPIC;
 use tokio::sync::mpsc;
@@ -22,17 +25,28 @@ async fn main() -> Result<()> {
 
     // Load config file and private key
     let config = load_config()?;
+    let relay = config.network_config.relay.clone();
+
     let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
+    let node: Node<()> = Node::spawn(config.network_config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
-        let values: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
-        println!("‣ direct addresses: {}|{}", node.id(), values.join("|"));
+        match &relay {
+            Some(url) => {
+                println!("‣ relay url: {}", url);
+            }
+            None => {
+                println!("! you haven't specified a relay address for your node");
+                println!("other peers might not be able to connect to you without it.");
+            }
+        }
+        let ticket = Ticket::new(node.id(), addresses, relay);
+        println!("‣ connection ticket: {}", ticket);
     } else {
         println!("‣ node public key: {}", node.id());
     }

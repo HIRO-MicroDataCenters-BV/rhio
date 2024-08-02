@@ -98,7 +98,7 @@ where
     ) -> Result<Option<Operation<E>>, StoreError> {
         let latest = match self.logs.get(&(public_key, log_id)) {
             Some(log) => match log.last() {
-                Some((_, _, hash)) => self.operations.get(&hash),
+                Some((_, _, hash)) => self.operations.get(hash),
                 None => None,
             },
             None => None,

@@ -1,20 +1,21 @@
-use std::net::{AddrParseError, SocketAddr};
-use std::path::{absolute, Path, PathBuf};
+use std::path::{absolute, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use p2panda_core::PublicKey;
-use p2panda_net::config::{Config as NetworkConfig, NodeAddr};
+use p2panda_net::{Config as NetworkConfig, NodeAddress, RelayUrl};
 use serde::{Deserialize, Serialize};
-use url::Url;
 
+use crate::ticket::Ticket;
 use crate::topic_id::TopicId;
 use crate::{BLOB_ANNOUNCE_TOPIC, FILE_SYSTEM_EVENT_TOPIC};
 
-const DEFAULT_BLOBS_PATH: &str = "./blobs";
+const DEFAULT_BLOBS_PATH: &str = "blobs";
+
+// Use iroh's staging relay node for testing
+const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -26,17 +27,23 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let path = Path::new(DEFAULT_BLOBS_PATH);
+        let network_config = NetworkConfig {
+            relay: Some(DEFAULT_RELAY_URL.parse().expect("valid url")),
+            ..NetworkConfig::default()
+        };
+
         let topics = vec![
             TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC),
             TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC),
         ];
 
+        let path = PathBuf::from(DEFAULT_BLOBS_PATH);
         let absolute_path = absolute(path).expect("to establish absolute path");
+
         Self {
             blobs_path: absolute_path,
             topics,
-            network_config: NetworkConfig::default(),
+            network_config,
         }
     }
 }
@@ -53,9 +60,9 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
-    #[arg(short = 'n', long, value_name = "\"NODE_ID|IP_ADDR|...\"", num_args = 0.., value_parser = parse_node_addr)]
+    #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    direct_node_addresses: Option<Vec<NodeAddr>>,
+    direct_node_addresses: Option<Vec<NodeAddress>>,
 
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,28 +72,18 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_path: Option<PathBuf>,
 
-    #[arg(short = 'r', long, value_name = "URL", num_args = 0.., value_parser = parse_url)]
+    #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    relay_addresses: Option<Vec<Url>>,
+    relay: Option<RelayUrl>,
 }
 
-fn parse_node_addr(value: &str) -> Result<NodeAddr> {
-    let parts: Vec<&str> = value.split('|').collect();
-    if parts.len() < 2 {
-        bail!("node address needs to contain node id and at least one IP v4 or v6 address, separated with a pipe |");
-    }
-
-    let public_key = PublicKey::from_str(parts[0])?;
-    let socket_addrs: Result<Vec<SocketAddr>, AddrParseError> = parts[1..]
-        .iter()
-        .map(|addr| SocketAddr::from_str(addr))
-        .collect();
-
-    Ok((public_key, socket_addrs?))
+fn parse_ticket(value: &str) -> Result<NodeAddress> {
+    let ticket = Ticket::from_str(value)?;
+    Ok(ticket.into())
 }
 
-fn parse_url(value: &str) -> Result<Url> {
-    Ok(value.parse()?)
+fn parse_url(value: &str) -> Result<RelayUrl> {
+    value.parse()
 }
 
 pub fn load_config() -> Result<Config> {

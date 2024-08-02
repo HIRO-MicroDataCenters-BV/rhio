@@ -3,7 +3,7 @@ use p2panda_net::TopicId as InnerTopicId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct TopicId(InnerTopicId);
+pub struct TopicId(pub InnerTopicId);
 
 impl TopicId {
     pub fn new_from_str(str: &str) -> Self {

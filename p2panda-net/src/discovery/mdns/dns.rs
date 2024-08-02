@@ -7,15 +7,14 @@ use std::str::FromStr;
 
 use hickory_proto::op::{Message, MessageType, Query};
 use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
-use iroh_net::dns::node_info::NodeInfo;
-use iroh_net::NodeId;
+use iroh_net::{NodeAddr, NodeId};
 use tracing::{debug, trace};
 
 use crate::discovery::mdns::ServiceName;
 
 pub enum MulticastDNSMessage {
     Query(ServiceName),
-    Response(ServiceName, Vec<NodeInfo>),
+    Response(ServiceName, Vec<NodeAddr>),
 }
 
 pub fn make_query(service_name: &ServiceName) -> Message {
@@ -29,12 +28,12 @@ pub fn make_query(service_name: &ServiceName) -> Message {
     msg
 }
 
-pub fn make_response(service_name: &ServiceName, node_info: &NodeInfo) -> Message {
+pub fn make_response(service_name: &ServiceName, node_addr: &NodeAddr) -> Message {
     let mut msg = Message::new();
     msg.set_message_type(MessageType::Response);
     msg.set_authoritative(true);
 
-    let node_id_str = node_info.node_id.to_string();
+    let node_id_str = node_addr.node_id.to_string();
 
     let my_srv_name = Name::from_str(&node_id_str)
         .expect("node id was checked already")
@@ -42,7 +41,7 @@ pub fn make_response(service_name: &ServiceName, node_info: &NodeInfo) -> Messag
         .expect("was checked already");
 
     let mut srv_map = BTreeMap::new();
-    for addr in &node_info.direct_addresses {
+    for addr in node_addr.direct_addresses() {
         srv_map
             .entry(addr.port())
             .or_insert_with(Vec::new)
@@ -226,7 +225,7 @@ fn parse_response(message: &Message) -> Option<MulticastDNSMessage> {
             .map(|(ip, port)| SocketAddr::new(*ip, *port))
             .collect();
 
-        ret.push(NodeInfo::new(peer_id, None, direct_addresses));
+        ret.push(NodeAddr::new(peer_id).with_direct_addresses(direct_addresses));
     }
 
     match service_name {
