@@ -3874,6 +3874,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "p2panda-core",
  "rhio",
  "thiserror",
  "tokio",

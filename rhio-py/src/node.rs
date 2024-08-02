@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use p2panda_core::Hash; 
 use rhio::config::{parse_node_addr, parse_url, Config as RhioConfig, NodeAddr};
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::topic_id::TopicId;
@@ -75,6 +76,19 @@ impl Node {
         self.inner.id().to_hex()
     }
 
+    pub async fn import_blob(&self, path: String) -> Result<(), RhioError> {
+        let path = PathBuf::from(&path);
+        self.inner.import_blob(path).await?;
+        Ok(())
+    }
+
+    pub async fn export_blob(&self, hash: String, path: String) -> Result<(), RhioError> {
+        let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
+        let path = PathBuf::from(&path);
+        self.inner.export_blob(hash, path).await?;
+        Ok(())
+    }
+
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
         &self,
@@ -101,7 +115,6 @@ impl Node {
         Ok(Sender(topic_tx))
     }
 }
-
 
 // @TODO: need to form a connection between the test nodes
 //
