@@ -6,6 +6,8 @@ from loguru import logger
 from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType
 from watchfiles import awatch, Change
 
+EXPORTED_BLOBS = {}
+
 class Callback(GossipMessageCallback):
     def __init__(self, name):
         self.name = name
@@ -26,15 +28,22 @@ class Watcher():
     async def handle_change(self, change_type, path):
         # we only handle "added" events
         if change_type == 1:
-            logger.info("file added: {}", path)
+            # calculate path of blob relative to blobs dir
+            rel_path = self.relative_path(path)
+
+            # we don't want to import blobs we just exported, so catch this case here
+            if rel_path in EXPORTED_BLOBS:
+                EXPORTED_BLOBS.pop(rel_path)
+                return
+
+            logger.info("new file added: {}", path)
 
             # import the blob and get it's hash
             hash = await self.node.import_blob(path)
             logger.info("blob imported: {}", hash)
 
             # send a file system event to announce a new file was created
-            path = self.relative_path(path)
-            msg = Message.file_system(path, hash)
+            msg = Message.file_system(rel_path, hash)
             await self.sender.send(msg)
 
     async def watch(self):
@@ -51,19 +60,22 @@ class FileSystemSync():
     async def handle_event(self, message, meta):
         if (message.type() == MessageType.FILE_SYSTEM):
             create_event = message.as_file_system_create()
-            path = create_event.path
+            rel_path = create_event.path
             hash = create_event.hash
 
             # download the blob from the network
             await self.node.download_blob(hash)
             logger.info("downloaded blob: {}", hash)
 
-            # get path relative to blobs directory
-            path = os.path.join(blobs_dir_path, path)
+            # join the blobs dir and relative file path
+            path = os.path.join(self.blobs_dir_path, rel_path)
 
             # export blob to filesystem
             await self.node.export_blob(hash, path)
             logger.info("exported blob to file-system: {}", path)
+
+            # record that we just exported a blob to this path
+            EXPORTED_BLOBS[rel_path] = hash
         else:
             print("received unsupported event type: {}", event.type())
 
