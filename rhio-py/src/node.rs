@@ -33,10 +33,10 @@ impl Node {
         self.inner.id().to_hex()
     }
 
-    pub async fn import_blob(&self, path: String) -> Result<(), RhioError> {
+    pub async fn import_blob(&self, path: String) -> Result<String, RhioError> {
         let path = PathBuf::from(&path);
-        self.inner.import_blob(path).await?;
-        Ok(())
+        let hash = self.inner.import_blob(path).await?;
+        Ok(hash.to_string())
     }
 
     pub async fn export_blob(&self, hash: String, path: String) -> Result<(), RhioError> {

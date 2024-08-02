@@ -9,8 +9,8 @@ class Callback(GossipMessageCallback):
         self.name = name
         self.chan = asyncio.Queue()
 
-    async def on_message(self, msg):
-        print("received message ", msg.content(), " from ", msg.delivered_from())
+    async def on_message(self, msg, meta):
+        print("received message ", msg.as_file_system(), " from ", meta.delivered_from())
         await self.chan.put(msg)
 
 async def main():
@@ -55,6 +55,7 @@ async def main():
                 # we only handle "added" events
                 if change_type == 1:
                     hash = await node.import_blob(path)
+                    await sender.send(Message.file_system(FileSystemEvent.CREATE(path, hash)))
 
 if __name__ == "__main__":
     asyncio.run(main())

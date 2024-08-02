@@ -9,7 +9,7 @@ use crate::error::{CallbackError, RhioError};
 type Hash = String;
 type Path = String;
 
-#[derive(Clone, Debug, uniffi::Object)]
+#[derive(Clone, Debug, uniffi::Enum)]
 pub enum FileSystemEvent {
     /// Announce that a file was created on the local file-system
     Create(Path, Hash),
@@ -43,6 +43,23 @@ impl Message {
             Message::BlobAnnouncement(_) => MessageType::BlobAnnouncement,
             Message::Application(_) => MessageType::Application,
         }
+    }
+
+    #[uniffi::constructor]
+    pub fn file_system(event: FileSystemEvent) -> Self {
+        Self::FileSystem(event)
+    }
+
+    #[uniffi::constructor]
+    pub fn blob_announcement(hash: String) -> Result<Self, RhioError> {
+        Ok(Self::BlobAnnouncement(
+            hash.parse().map_err(anyhow::Error::from)?,
+        ))
+    }
+
+    #[uniffi::constructor]
+    pub fn application(bytes: Vec<u8>) -> Self {
+        Self::Application(bytes)
     }
 
     pub fn as_file_system(&self) -> FileSystemEvent {
