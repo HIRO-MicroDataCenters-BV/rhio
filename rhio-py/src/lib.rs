@@ -1,5 +1,5 @@
 mod error;
-mod gossip;
+mod messages;
 mod node;
 
 uniffi::setup_scaffolding!();
