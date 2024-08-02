@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use p2panda_core::Hash; 
-use rhio::config::{Config as RhioConfig};
+use p2panda_core::Hash;
+use rhio::config::Config as RhioConfig;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::topic_id::TopicId;
 use rhio::Node as RhioNode;
@@ -43,6 +43,12 @@ impl Node {
         let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
         let path = PathBuf::from(&path);
         self.inner.export_blob(hash, path).await?;
+        Ok(())
+    }
+
+    pub async fn download_blob(&self, hash: String) -> Result<(), RhioError> {
+        let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
+        self.inner.download_blob(hash).await?;
         Ok(())
     }
 

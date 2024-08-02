@@ -9,17 +9,16 @@ use crate::error::{CallbackError, RhioError};
 type Hash = String;
 type Path = String;
 
-#[derive(Clone, Debug, uniffi::Enum)]
-pub enum FileSystemEvent {
-    /// Announce that a file was created on the local file-system
-    Create(Path, Hash),
-    // ... more as yet unsupported events
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct FileSystemCreateEvent {
+    path: Path,
+    hash: Hash,
 }
 
 #[derive(Clone, Debug, uniffi::Object)]
 pub enum Message {
     // Sync files in a directory
-    FileSystem(FileSystemEvent),
+    FileSystem(FileSystemCreateEvent),
 
     // Share arbitrary blobs
     BlobAnnouncement(Hash),
@@ -46,8 +45,8 @@ impl Message {
     }
 
     #[uniffi::constructor]
-    pub fn file_system(event: FileSystemEvent) -> Self {
-        Self::FileSystem(event)
+    pub fn file_system(path: Path, hash: Hash) -> Self {
+        Self::FileSystem(FileSystemCreateEvent { path, hash })
     }
 
     #[uniffi::constructor]
@@ -62,7 +61,7 @@ impl Message {
         Self::Application(bytes)
     }
 
-    pub fn as_file_system(&self) -> FileSystemEvent {
+    pub fn as_file_system_create(&self) -> FileSystemCreateEvent {
         if let Self::FileSystem(fs_event) = self {
             fs_event.clone()
         } else {
@@ -106,10 +105,10 @@ impl From<rhio::messages::Message<Vec<u8>>> for Message {
     fn from(value: rhio::messages::Message<Vec<u8>>) -> Self {
         match value {
             InnerMessage::FileSystem(rhio::messages::FileSystemEvent::Create(path, hash)) => {
-                Message::FileSystem(FileSystemEvent::Create(
-                    path.to_string_lossy().to_string(),
-                    hash.to_string(),
-                ))
+                Message::FileSystem(FileSystemCreateEvent {
+                    path: path.to_string_lossy().to_string(),
+                    hash: hash.to_string(),
+                })
             }
             InnerMessage::BlobAnnouncement(hash) => Message::BlobAnnouncement(hash.to_string()),
             InnerMessage::Application(bytes) => Message::Application(bytes),
@@ -123,7 +122,7 @@ impl TryFrom<Message> for rhio::messages::Message<Vec<u8>> {
 
     fn try_from(value: Message) -> Result<Self, Self::Error> {
         let value = match value {
-            Message::FileSystem(FileSystemEvent::Create(path, hash)) => {
+            Message::FileSystem(FileSystemCreateEvent { path, hash }) => {
                 rhio::messages::Message::FileSystem(rhio::messages::FileSystemEvent::Create(
                     PathBuf::from(path),
                     hash.parse()?,
