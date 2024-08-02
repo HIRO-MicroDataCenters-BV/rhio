@@ -127,9 +127,16 @@ mod tests {
         // Spawn the second node
         let mut node_2 = Node::spawn(network_config_2, private_key_2).await.unwrap();
 
+        // Retrieve the address of the second node
+        let node_2_addr = node_2.network.endpoint().node_addr().await.unwrap();
+
         // Add the address of the first node, resulting in an automatic connection attempt under
         // the hood
-        node_2.network.add_peer(node_1_addr).await.unwrap();
+        //
+        // Note that a connection attempt will still occur without this explicit call to
+        // `add_peer()` if the nodes are on the same local network and therefore discoverable via
+        // mDNS
+        node_2.network.add_peer(node_1_addr.clone()).await.unwrap();
 
         let _ = node_1.ready().await;
         let _ = node_2.ready().await;
@@ -145,6 +152,16 @@ mod tests {
         // Ensure the gossip-overlay has been joined for the given topic
         assert_matches!(rx_1_msg, OutEvent::Ready);
         assert_matches!(rx_2_msg, OutEvent::Ready);
+
+        // Return a list of peers known to the first node
+        let known_peers_1 = node_1.network.known_peers().await.unwrap();
+
+        // Ensure the first node knows the direct addresses of the second node.
+        // This information was not manually provided and has thus been learned via gossip.
+        assert_eq!(
+            known_peers_1[0].info.direct_addresses,
+            node_2_addr.info.direct_addresses
+        );
 
         node_1.shutdown().await.unwrap();
         node_2.shutdown().await.unwrap();
