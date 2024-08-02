@@ -2,6 +2,7 @@ from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message
 
 import asyncio
 import argparse
+from watchfiles import awatch
 
 class Callback(GossipMessageCallback):
     def __init__(self, name):
@@ -19,7 +20,7 @@ async def main():
 
     # parse arguments
     parser = argparse.ArgumentParser(description='Python Rhio Node')
-    parser.add_argument('-p', '--port', type=int, help='node bind port')
+    parser.add_argument('-p', '--port', type=int, default=2024, help='node bind port')
     parser.add_argument('-n', '--direct-node-addresses', type=str, action='append', default=[], help='direct node addresses NODE_ID|IP_ADDR')
     parser.add_argument('-k', '--private-key', type=str, help='path to private key')
     parser.add_argument('-b', '--blobs-path', type=str, help='path to blobs dir')
@@ -47,9 +48,10 @@ async def main():
 
     print("gossip topic ready")
 
-    while True:
-        await asyncio.sleep(1)
-        await sender.send(Message(bytearray("hello".encode("utf-8"))))
+    if config.blobs_path:        
+        async for changes in awatch(config.blobs_path):
+            print(changes)
+                
 
 if __name__ == "__main__":
     asyncio.run(main())
