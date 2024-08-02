@@ -275,8 +275,10 @@ impl EngineActor {
     /// Register the topic and public key of a peer who just joined the network.
     /// If the topic is of interest to our node, announce all topics.
     async fn on_peer_joined(&mut self, topic: TopicId, peer_id: PublicKey) -> Result<()> {
-        // @TODO: This could be the cause of the blanked-out address overwrite...
-        self.peers.add_peer(topic, NodeAddr::new(peer_id));
+        // Add the peer to our address book if they are not already known to us
+        if !self.peers.known_peers.contains_key(&peer_id) {
+            self.peers.add_peer(topic, NodeAddr::new(peer_id));
+        }
         if topic == self.network_id {
             self.announce_topics().await?;
         }
@@ -540,16 +542,27 @@ impl PeerMap {
 
     /// Update our peer address book.
     ///
-    /// If the peer is already known, their node addresses are updated. If not, the peer and their
-    /// addresses are added to the address book and the local topic updater is called.
+    /// If the peer is already known, their node addresses and relay URL are updated.
+    /// If not, the peer and their addresses are added to the address book and the local topic
+    /// updater is called.
     pub fn add_peer(&mut self, topic: TopicId, node_addr: NodeAddr) -> Option<NodeAddr> {
         let public_key = node_addr.node_id;
-        match self.known_peers.insert(public_key, node_addr) {
-            Some(addr) => Some(addr),
-            None => {
-                self.on_announcement(vec![topic], public_key);
-                None
+
+        // If the given peer is already known to us, only update the direct addresses and relay url
+        // if the supplied values are not empty. This avoids overwriting values with blanks.
+        if let Some(addr) = self.known_peers.get_mut(&public_key) {
+            if !node_addr.info.is_empty() {
+                addr.info
+                    .direct_addresses
+                    .clone_from(&node_addr.info.direct_addresses);
             }
+            if node_addr.relay_url().is_some() {
+                addr.info.relay_url = node_addr.info.relay_url;
+            }
+            Some(addr.clone())
+        } else {
+            self.on_announcement(vec![topic], public_key);
+            self.known_peers.insert(public_key, node_addr)
         }
     }
 
