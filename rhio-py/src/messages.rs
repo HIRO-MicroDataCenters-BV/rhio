@@ -1,5 +1,7 @@
+use std::future::Future;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
 use rhio::messages::{Message as InnerMessage, MessageMeta as InnerMessageMeta};
 use rhio::node::TopicSender;
@@ -148,13 +150,24 @@ pub trait GossipMessageCallback: Send + Sync + 'static {
 }
 
 #[derive(uniffi::Object)]
-pub struct Sender(pub(crate) TopicSender<Vec<u8>>);
+pub struct Sender{
+    pub(crate) inner: TopicSender<Vec<u8>>,
+    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output=()> + Send + 'static>>>>
+}
 
 #[uniffi::export]
 impl Sender {
     pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
         let message = rhio::messages::Message::<Vec<u8>>::try_from(message.clone())?;
-        let meta = self.0.send(message).await?;
+        let meta = self.inner.send(message).await?;
         Ok(MessageMeta(meta))
     }
+
+    pub async fn ready(&self) {
+        let fut = self.ready_fut.lock().unwrap().take();
+        match fut {
+            Some(fut) => fut.await,
+            None => (),
+        }
+    } 
 }

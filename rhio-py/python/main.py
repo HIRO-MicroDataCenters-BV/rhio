@@ -118,6 +118,7 @@ async def main():
 
     logger.info("subscribing to gossip topic: {}", topic)
     sender = await node.subscribe(topic, cb)
+    await sender.ready()
 
     logger.info("gossip topic ready")
 
