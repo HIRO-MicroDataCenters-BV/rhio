@@ -1,6 +1,6 @@
+use std::net::SocketAddr as InnerSocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::net::SocketAddr as InnerSocketAddr;
 
 use p2panda_core::{Hash as InnerHash, PublicKey as InnerPublicKey};
 
@@ -32,9 +32,9 @@ impl From<InnerHash> for Hash {
     }
 }
 
-impl Into<InnerHash> for Hash {
-    fn into(self) -> InnerHash {
-        self.inner
+impl From<Hash> for InnerHash {
+    fn from(value: Hash) -> Self {
+        value.inner
     }
 }
 
@@ -67,9 +67,9 @@ impl From<PathBuf> for Path {
     }
 }
 
-impl Into<PathBuf> for Path {
-    fn into(self) -> PathBuf {
-        self.inner
+impl From<Path> for PathBuf {
+    fn from(value: Path) -> Self {
+        value.inner
     }
 }
 
@@ -99,9 +99,9 @@ impl From<InnerPublicKey> for PublicKey {
     }
 }
 
-impl Into<InnerPublicKey> for PublicKey {
-    fn into(self) -> InnerPublicKey {
-        self.inner
+impl From<PublicKey> for InnerPublicKey {
+    fn from(value: PublicKey) -> Self {
+        value.inner
     }
 }
 
@@ -131,8 +131,8 @@ impl From<InnerSocketAddr> for SocketAddr {
     }
 }
 
-impl Into<InnerSocketAddr> for SocketAddr {
-    fn into(self) -> InnerSocketAddr {
-        self.inner
+impl From<SocketAddr> for InnerSocketAddr {
+    fn from(value: SocketAddr) -> Self {
+        value.inner
     }
 }

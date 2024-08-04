@@ -7,7 +7,6 @@ use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::Node as RhioNode;
 use tracing::warn;
-use uniffi;
 
 use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
@@ -28,7 +27,10 @@ impl Node {
     #[uniffi::constructor(async_runtime = "tokio")]
     pub async fn spawn(config: &Config) -> Self {
         let private_key = generate_ephemeral_private_key();
-        let config: RhioConfig = config.clone().try_into().expect("failed to parse node config");
+        let config: RhioConfig = config
+            .clone()
+            .try_into()
+            .expect("failed to parse node config");
         let rhio_node = RhioNode::spawn(config.network_config, private_key)
             .await
             .expect("failed to spawn node");
@@ -52,10 +54,10 @@ impl Node {
     /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
     /// usually only a subset of these will be applicable to a certain remote node.
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        match self.inner.direct_addresses().await {
-            Some(addrs) => Some(addrs.into_iter().map(SocketAddr::from).collect()),
-            None => None,
-        }
+        self.inner
+            .direct_addresses()
+            .await
+            .map(|addrs| addrs.into_iter().map(SocketAddr::from).collect())
     }
 
     /// Import a blob from the filesystem.
@@ -150,9 +152,8 @@ impl Sender {
     /// Wait for another peer to be subscribed to this topic.
     pub async fn ready(&self) {
         let fut = self.ready_fut.lock().unwrap().take();
-        match fut {
-            Some(fut) => fut.await,
-            None => (),
+        if let Some(fut) = fut {
+            fut.await
         }
     }
 }
@@ -192,7 +193,13 @@ mod tests {
         let config0 = Config::default();
         let n0 = Node::spawn(&config0).await;
         let n0_id: PublicKey = n0.id().into();
-        let n0_addresses = n0.direct_addresses().await.unwrap().into_iter().map(|addr|addr.into()).collect();
+        let n0_addresses = n0
+            .direct_addresses()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|addr| addr.into())
+            .collect();
         let ticket = Ticket::new(n0_id.into(), n0_addresses, None);
         let config1 = Config {
             bind_port: 2023,

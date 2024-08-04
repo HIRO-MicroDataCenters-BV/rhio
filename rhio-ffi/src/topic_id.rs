@@ -12,9 +12,9 @@ impl From<InnerTopicId> for TopicId {
     }
 }
 
-impl Into<InnerTopicId> for TopicId {
-    fn into(self) -> InnerTopicId {
-        self.inner
+impl From<TopicId> for InnerTopicId {
+    fn from(value: TopicId) -> Self {
+        value.inner
     }
 }
 
