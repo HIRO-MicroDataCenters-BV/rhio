@@ -92,10 +92,10 @@ impl Node {
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
         &self,
-        topic: TopicId,
+        topic: &TopicId,
         cb: Arc<dyn GossipMessageCallback>,
     ) -> Result<Sender, RhioError> {
-        let (topic_tx, mut topic_rx, ready) = self.inner.subscribe(topic.into()).await?;
+        let (topic_tx, mut topic_rx, ready) = self.inner.subscribe(topic.to_owned().into()).await?;
 
         let sender = Sender {
             inner: topic_tx,
@@ -210,8 +210,8 @@ mod tests {
         let (sender1, mut receiver1) = mpsc::channel(8);
         let cb1 = Cb { channel: sender1 };
 
-        let sender0 = n0.subscribe(topic, Arc::new(cb0)).await.unwrap();
-        let sender1 = n1.subscribe(topic, Arc::new(cb1)).await.unwrap();
+        let sender0 = n0.subscribe(&topic, Arc::new(cb0)).await.unwrap();
+        let sender1 = n1.subscribe(&topic, Arc::new(cb1)).await.unwrap();
 
         sender0.ready().await;
         sender1.ready().await;

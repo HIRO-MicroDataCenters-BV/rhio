@@ -1,6 +1,5 @@
 use rhio::messages::{FileSystemEvent, Message as InnerMessage, MessageMeta as InnerMessageMeta};
 
-use crate::error::RhioError;
 use crate::types::{Hash, Path};
 
 #[derive(Clone, Debug, uniffi::Record)]
