@@ -140,7 +140,7 @@ where
     }
 }
 
-pub struct TopicSender<T> {
+pub struct TopicSender<T=Vec<u8>> {
     topic_id: TopicId,
     tx: mpsc::Sender<ToRhioActor<T>>,
     _phantom: PhantomData<T>,

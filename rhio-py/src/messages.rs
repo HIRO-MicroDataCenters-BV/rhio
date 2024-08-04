@@ -1,14 +1,10 @@
-use std::future::Future;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
 
 use p2panda_core::Hash as InnerHash;
 use rhio::messages::{FileSystemEvent, Message as InnerMessage, MessageMeta as InnerMessageMeta};
-use rhio::node::TopicSender;
 
-use crate::error::{CallbackError, RhioError};
+use crate::error::RhioError;
 use crate::UniffiCustomTypeConverter;
 
 uniffi::custom_type!(Hash, String);
@@ -193,39 +189,6 @@ impl From<Message> for InnerMessage {
             }
             Message::BlobAnnouncement(hash) => InnerMessage::BlobAnnouncement(hash.into()),
             Message::Application(bytes) => InnerMessage::Application(bytes),
-        }
-    }
-}
-
-#[uniffi::export(with_foreign)]
-#[async_trait::async_trait]
-pub trait GossipMessageCallback: Send + Sync + 'static {
-    async fn on_message(
-        &self,
-        msg: Arc<Message>,
-        meta: Arc<MessageMeta>,
-    ) -> Result<(), CallbackError>;
-}
-
-#[derive(uniffi::Object)]
-pub struct Sender {
-    pub(crate) inner: TopicSender<Vec<u8>>,
-    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>>,
-}
-
-#[uniffi::export]
-impl Sender {
-    pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
-        let message = rhio::messages::Message::from(message.clone());
-        let meta = self.inner.send(message).await?;
-        Ok(MessageMeta(meta))
-    }
-
-    pub async fn ready(&self) {
-        let fut = self.ready_fut.lock().unwrap().take();
-        match fut {
-            Some(fut) => fut.await,
-            None => (),
         }
     }
 }

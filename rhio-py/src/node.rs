@@ -1,9 +1,12 @@
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
 use p2panda_core::Hash;
 use rhio::config::Config as RhioConfig;
+use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::topic_id::TopicId;
 use rhio::Node as RhioNode;
@@ -11,8 +14,8 @@ use tracing::warn;
 use uniffi;
 
 use crate::config::Config;
-use crate::error::RhioError;
-use crate::messages::{GossipMessageCallback, MessageMeta, Sender};
+use crate::error::{CallbackError, RhioError};
+use crate::messages::{Message, MessageMeta};
 
 #[derive(uniffi::Object)]
 pub struct Node {
@@ -86,6 +89,41 @@ impl Node {
         Ok(sender)
     }
 }
+
+
+#[uniffi::export(with_foreign)]
+#[async_trait::async_trait]
+pub trait GossipMessageCallback: Send + Sync + 'static {
+    async fn on_message(
+        &self,
+        msg: Arc<Message>,
+        meta: Arc<MessageMeta>,
+    ) -> Result<(), CallbackError>;
+}
+
+#[derive(uniffi::Object)]
+pub struct Sender {
+    pub(crate) inner: TopicSender,
+    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>>,
+}
+
+#[uniffi::export]
+impl Sender {
+    pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
+        let message = rhio::messages::Message::from(message.clone());
+        let meta = self.inner.send(message).await?;
+        Ok(MessageMeta(meta))
+    }
+
+    pub async fn ready(&self) {
+        let fut = self.ready_fut.lock().unwrap().take();
+        match fut {
+            Some(fut) => fut.await,
+            None => (),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
