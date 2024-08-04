@@ -8,8 +8,6 @@ use anyhow::{anyhow, Context, Result};
 use futures_lite::StreamExt;
 use iroh_gossip::net::{Gossip, GOSSIP_ALPN};
 use iroh_gossip::proto::Config as GossipConfig;
-use iroh_net::defaults::staging::EU_RELAY_HOSTNAME;
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::endpoint::TransportConfig;
 use iroh_net::key::SecretKey;
 use iroh_net::relay::{RelayMap, RelayNode};
@@ -20,14 +18,14 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, error_span, warn, Instrument};
-use url::Url;
 
+use crate::addrs::DEFAULT_STUN_PORT;
 use crate::config::{Config, DEFAULT_BIND_PORT};
 use crate::discovery::{Discovery, DiscoveryMap};
 use crate::engine::Engine;
 use crate::handshake::{Handshake, HANDSHAKE_ALPN};
 use crate::protocols::{ProtocolHandler, ProtocolMap};
-use crate::{NetworkId, TopicId};
+use crate::{NetworkId, RelayUrl, TopicId};
 
 /// Maximum number of streams accepted on a QUIC connection.
 const MAX_STREAMS: u32 = 1024;
@@ -41,7 +39,7 @@ const ENDPOINT_WAIT: Duration = Duration::from_secs(5);
 #[derive(Debug, PartialEq)]
 pub enum RelayMode {
     Disabled,
-    Custom(Vec<RelayNode>),
+    Custom(RelayNode),
 }
 
 // Creates an overlay network for peers grouped under the same "network id". All peers can
@@ -50,7 +48,7 @@ pub enum RelayMode {
 pub struct NetworkBuilder {
     bind_port: Option<u16>,
     direct_node_addresses: Vec<NodeAddr>,
-    discovery: Option<DiscoveryMap>,
+    discovery: DiscoveryMap,
     gossip_config: Option<GossipConfig>,
     network_id: NetworkId,
     protocols: ProtocolMap,
@@ -64,7 +62,7 @@ impl NetworkBuilder {
         Self {
             bind_port: None,
             direct_node_addresses: Vec::new(),
-            discovery: None,
+            discovery: DiscoveryMap::default(),
             gossip_config: None,
             network_id,
             protocols: Default::default(),
@@ -73,18 +71,16 @@ impl NetworkBuilder {
         }
     }
 
-    // Instantiate a network builder from a network configuration.
+    /// Instantiate a network builder from a configuration.
     pub fn from_config(config: Config) -> Self {
         let mut network_builder = Self::new(config.network_id).bind_port(config.bind_port);
 
-        for (public_key, addresses) in config.direct_node_addresses {
-            network_builder = network_builder.direct_address(public_key, addresses)
+        for (public_key, addresses, relay_addr) in config.direct_node_addresses {
+            network_builder = network_builder.direct_address(public_key, addresses, relay_addr)
         }
 
-        for url in config.relay_addresses {
-            // If a port is not given we fallback to 0 which signifies the default stun port
-            // should be used.
-            let port = url.port().unwrap_or(0);
+        if let Some(url) = config.relay {
+            let port = url.port().unwrap_or(DEFAULT_STUN_PORT);
             network_builder = network_builder.relay(url, false, port)
         }
 
@@ -103,36 +99,44 @@ impl NetworkBuilder {
         self
     }
 
-    // adds one or more relay nodes, if not set no relay will be used and only direct connections
-    // are possible (you need to provide socket addresses yourself).
-    //
-    // The relay will help us with STUN (and _not_ rendezvouz as in aquadoggo)
-    pub fn relay(mut self, url: Url, stun_only: bool, stun_port: u16) -> Self {
-        self.relay_mode = match self.relay_mode {
-            RelayMode::Disabled => RelayMode::Custom(vec![RelayNode {
-                url: url.into(),
-                stun_only,
-                stun_port,
-            }]),
-            RelayMode::Custom(mut list) => RelayMode::Custom({
-                list.push(RelayNode {
-                    url: url.into(),
-                    stun_only,
-                    stun_port,
-                });
-                list
-            }),
-        };
+    /// Sets the relay of our node. Other peers need to use it if they want to establish a direct
+    /// connection with us.
+    ///
+    /// Relay nodes are STUN servers to help establishing a peer-to-peer connection if either or
+    /// both of the peers are behind a NAT. If this connection attempt fails, the Relay node might
+    /// offer a "proxy" functionality on top, which will help to relay the data in that case.
+    pub fn relay(mut self, url: RelayUrl, stun_only: bool, stun_port: u16) -> Self {
+        self.relay_mode = RelayMode::Custom(RelayNode {
+            url: url.into(),
+            stun_only,
+            stun_port,
+        });
         self
     }
 
-    // Kinda like a "discovery" technique, but manually
-    // * Manual direct addresses (no relay required)
-    // * .. or only node id of at least one peer to get into gossip overlay (relay required)
-    pub fn direct_address(mut self, node_id: PublicKey, addresses: Vec<SocketAddr>) -> Self {
+    /// Adds a known address of another peer to our address book.
+    ///
+    /// Peers are identified with their public key (node id).
+    ///
+    /// If given a direct address, it should be reachable without the aid of a STUN / Relay Node.
+    /// If this connection attempt fails (for example because of a NAT or Firewall) the Relay Node
+    /// of that peer needs to be given, so we can re-attempt establishing a connection with it.
+    ///
+    /// If no relay address is given but required, we optimistically try to use our own relay node
+    /// instead (if specified). This might still fail, as we can't know if the peer is using the
+    /// same relay node.
+    pub fn direct_address(
+        mut self,
+        node_id: PublicKey,
+        addresses: Vec<SocketAddr>,
+        relay_addr: Option<RelayUrl>,
+    ) -> Self {
         let node_id = NodeId::from_bytes(node_id.as_bytes()).expect("invalid public key");
-        self.direct_node_addresses
-            .push(NodeAddr::new(node_id).with_direct_addresses(addresses));
+        let mut node_addr = NodeAddr::new(node_id).with_direct_addresses(addresses);
+        if let Some(url) = relay_addr {
+            node_addr = node_addr.with_relay_url(url.into());
+        }
+        self.direct_node_addresses.push(node_addr);
         self
     }
 
@@ -141,13 +145,7 @@ impl NetworkBuilder {
     // * Rendesvouz / Boostrap Node
     // * ...
     pub fn discovery(mut self, handler: impl Discovery + 'static) -> Self {
-        self.discovery = match self.discovery {
-            Some(mut list) => {
-                list.add(handler);
-                Some(list)
-            }
-            None => Some(DiscoveryMap::from_services(vec![Box::new(handler)])),
-        };
+        self.discovery.add(handler);
         self
     }
 
@@ -171,6 +169,11 @@ impl NetworkBuilder {
     pub async fn build(mut self) -> Result<Network> {
         let secret_key = self.secret_key.unwrap_or(SecretKey::generate());
 
+        let relay: Option<RelayNode> = match self.relay_mode {
+            RelayMode::Disabled => None,
+            RelayMode::Custom(ref node) => Some(node.clone()),
+        };
+
         // Build p2p endpoint and bind the QUIC socket
         let endpoint = {
             let mut transport_config = TransportConfig::default();
@@ -180,8 +183,9 @@ impl NetworkBuilder {
 
             let relay_mode = match self.relay_mode {
                 RelayMode::Disabled => iroh_net::relay::RelayMode::Disabled,
-                RelayMode::Custom(list) => iroh_net::relay::RelayMode::Custom(
-                    RelayMap::from_nodes(list).expect("relay list can not contain duplicates"),
+                RelayMode::Custom(node) => iroh_net::relay::RelayMode::Custom(
+                    RelayMap::from_nodes(vec![node])
+                        .expect("relay list can not contain duplicates"),
                 ),
             };
 
@@ -207,23 +211,27 @@ impl NetworkBuilder {
         let handshake = Handshake::new(gossip.clone());
 
         // Add direct addresses to address book
-        for direct_addr in &self.direct_node_addresses {
-            let url: Url = format!("https://{EU_RELAY_HOSTNAME}")
-                .parse()
-                .expect("default_url");
+        for mut direct_addr in self.direct_node_addresses {
+            if direct_addr.relay_url().is_none() {
+                // If given address does not hold any relay information we optimistically add ours
+                // (if we have one). It's not guaranteed that this address will have the same relay
+                // url as we have, but it's better than nothing!
+                if let Some(ref relay_node) = relay {
+                    direct_addr = direct_addr.with_relay_url(relay_node.url.clone());
+                }
+            }
 
-            engine
-                .add_peer(direct_addr.clone().with_relay_url(url.into()))
-                .await?;
+            engine.add_peer(direct_addr.clone()).await?;
         }
 
         let inner = Arc::new(NetworkInner {
             cancel_token: CancellationToken::new(),
+            relay,
             discovery: self.discovery,
             endpoint: endpoint.clone(),
+            engine,
             gossip: gossip.clone(),
             network_id: self.network_id,
-            engine,
             secret_key,
         });
 
@@ -282,11 +290,12 @@ pub struct Network {
 #[derive(Debug)]
 struct NetworkInner {
     cancel_token: CancellationToken,
-    discovery: Option<DiscoveryMap>,
+    relay: Option<RelayNode>,
+    discovery: DiscoveryMap,
     endpoint: Endpoint,
+    engine: Engine,
     gossip: Gossip,
     network_id: NetworkId,
-    engine: Engine,
     secret_key: SecretKey,
 }
 
@@ -305,36 +314,39 @@ impl NetworkInner {
         {
             let inner = self.clone();
             join_set.spawn(async move {
-                let mut stream = inner.endpoint.direct_addresses();
-                while let Some(eps) = stream.next().await {
-                    if let Err(err) = inner.gossip.update_direct_addresses(&eps) {
-                        warn!("Failed to update direct addresses for gossip: {err:?}");
-                    }
+                let mut addrs_stream = inner.endpoint.direct_addresses();
+                let mut my_node_addr = NodeAddr::new(inner.endpoint.node_id());
+                if let Some(node) = &inner.relay {
+                    my_node_addr = my_node_addr.with_relay_url(node.url.to_owned());
+                }
 
-                    if let Some(discovery) = &inner.discovery {
-                        let relay_url = inner.endpoint.home_relay();
-                        let direct_addresses = eps.iter().map(|a| a.addr).collect();
-                        let addr = NodeInfo {
-                            node_id: inner.endpoint.node_id(),
-                            relay_url: relay_url.map(|url| url.into()),
-                            direct_addresses,
-                        };
+                loop {
+                    tokio::select! {
+                        // Learn about our direct addresses and changes to them
+                        Some(eps) = addrs_stream.next() => {
+                            if let Err(err) = inner.gossip.update_direct_addresses(&eps) {
+                                warn!("Failed to update direct addresses for gossip: {err:?}");
+                            }
 
-                        if let Err(err) = discovery.update_local_address(&addr) {
-                            warn!("Failed to update direct addresses for discovery: {err:?}");
-                        }
+                            let direct_addresses = eps.iter().map(|a| a.addr).collect();
+                            my_node_addr.info.direct_addresses = direct_addresses;
+                            if let Err(err) = inner.discovery.update_local_address(&my_node_addr) {
+                                warn!("Failed to update direct addresses for discovery: {err:?}");
+                            }
+                        },
+                        else => break,
                     }
                 }
-                warn!("failed to retrieve local endpoints");
+
                 Ok(())
             });
         }
 
         // Subscribe to all discovery channels where we might find new peers
-        let mut discovery = match self.discovery.as_ref() {
-            Some(discovery) => discovery.subscribe(self.network_id),
-            None => None,
-        };
+        let mut discovery_stream = self
+            .discovery
+            .subscribe(self.network_id)
+            .expect("discovery map needs to be given");
 
         loop {
             tokio::select! {
@@ -353,10 +365,10 @@ impl NetworkInner {
                     });
                 },
                 // Handle discovered peers
-                Some(event) = discovery.as_mut().unwrap().next(), if discovery.is_some() => {
+                Some(event) = discovery_stream.next() => {
                     match event {
                         Ok(event) => {
-                            if let Err(err) = self.engine.add_peer(event.node_info.into()).await {
+                            if let Err(err) = self.engine.add_peer(event.node_addr).await {
                                 error!("Engine failed on add_peer: {err:?}");
                                 break;
                             }
@@ -421,11 +433,12 @@ impl Network {
     }
 
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        if let Some(addrs) = self.inner.endpoint.direct_addresses().next().await {
-            Some(addrs.into_iter().map(|direct| direct.addr).collect())
-        } else {
-            None
-        }
+        self.inner
+            .endpoint
+            .direct_addresses()
+            .next()
+            .await
+            .map(|addrs| addrs.into_iter().map(|direct| direct.addr).collect())
     }
 
     // Subscribes to a topic and establishes a bi-directional stream from which we can read and
@@ -448,6 +461,10 @@ impl Network {
         &self.inner.endpoint
     }
 
+    pub async fn add_peer(&self, node_addr: NodeAddr) -> Result<()> {
+        self.inner.engine.add_peer(node_addr).await
+    }
+
     pub async fn known_peers(&self) -> Result<Vec<NodeAddr>> {
         self.inner.engine.known_peers().await
     }
@@ -465,12 +482,16 @@ impl Network {
 }
 
 #[derive(Clone, Debug)]
+/// An event to be broadcast to the gossip-overlay.
 pub enum InEvent {
     Message { bytes: Vec<u8> },
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
+/// An event received from the gossip-overlay.
+// @TODO: Maybe consider renaming these two enums...
+// Could be switched to OutboundEvent and InboundEvent (in relation to the gossip-overlay).
 pub enum OutEvent {
     Ready,
     Message {
@@ -486,16 +507,16 @@ async fn handle_connection(
     let alpn = match connecting.alpn().await {
         Ok(alpn) => alpn,
         Err(err) => {
-            warn!("Ignoring connection: invalid handshake: {:?}", err);
+            warn!("ignoring connection: invalid handshake: {:?}", err);
             return;
         }
     };
     let Some(handler) = protocols.get(&alpn) else {
-        warn!("Ignoring connection: unsupported ALPN protocol");
+        warn!("ignoring connection: unsupported alpn protocol");
         return;
     };
     if let Err(err) = handler.accept(connecting).await {
-        warn!("Handling incoming connection ended with error: {err}");
+        warn!("handling incoming connection ended with error: {err}");
     }
 }
 
@@ -503,17 +524,17 @@ async fn handle_connection(
 mod tests {
     use std::path::PathBuf;
 
-    use iroh_net::relay::{RelayNode, RelayUrl};
+    use iroh_net::relay::{RelayNode, RelayUrl as IrohRelayUrl};
     use p2panda_core::PrivateKey;
-    use url::Url;
 
+    use crate::addrs::DEFAULT_STUN_PORT;
     use crate::config::Config;
-    use crate::{NetworkBuilder, RelayMode};
+    use crate::{NetworkBuilder, RelayMode, RelayUrl};
 
     #[tokio::test]
     async fn config() {
         let direct_node_public_key = PrivateKey::new().public_key();
-        let relay_address: Url = "https://example.net".parse().unwrap();
+        let relay_address: RelayUrl = "https://example.net".parse().unwrap();
 
         let config = Config {
             bind_port: 2024,
@@ -522,9 +543,10 @@ mod tests {
             direct_node_addresses: vec![(
                 direct_node_public_key,
                 vec!["0.0.0.0:2026".parse().unwrap()],
+                None,
             )
                 .into()],
-            relay_addresses: vec![relay_address.clone()],
+            relay: Some(relay_address.clone()),
         };
 
         let builder = NetworkBuilder::from_config(config);
@@ -534,10 +556,10 @@ mod tests {
         assert!(builder.secret_key.is_none());
         assert_eq!(builder.direct_node_addresses.len(), 1);
         let relay_node = RelayNode {
-            url: RelayUrl::from(relay_address),
+            url: IrohRelayUrl::from(relay_address),
             stun_only: false,
-            stun_port: 0,
+            stun_port: DEFAULT_STUN_PORT,
         };
-        assert_eq!(builder.relay_mode, RelayMode::Custom(vec![relay_node]));
+        assert_eq!(builder.relay_mode, RelayMode::Custom(relay_node));
     }
 }

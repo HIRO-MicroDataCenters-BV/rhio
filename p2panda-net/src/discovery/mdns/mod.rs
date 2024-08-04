@@ -12,8 +12,8 @@ use flume::Sender;
 use futures_lite::StreamExt;
 use hickory_proto::rr::Name;
 use iroh_base::base32;
-use iroh_net::dns::node_info::NodeInfo;
 use iroh_net::util::AbortingJoinHandle;
+use iroh_net::NodeAddr;
 
 use crate::discovery::mdns::dns::{make_query, make_response, parse_message, MulticastDNSMessage};
 use crate::discovery::mdns::socket::{send, socket_v4};
@@ -29,7 +29,7 @@ type SubscribeSender = Sender<Result<DiscoveryEvent>>;
 
 enum Message {
     Subscribe(ServiceName, SubscribeSender),
-    UpdateLocalAddress(NodeInfo),
+    UpdateLocalAddress(NodeAddr),
 }
 
 #[derive(Debug)]
@@ -46,7 +46,7 @@ impl LocalDiscovery {
         let socket = socket_v4()?;
 
         let mut subscribers: HashMap<ServiceName, Vec<SubscribeSender>> = HashMap::new();
-        let mut my_node_info: Option<NodeInfo> = None;
+        let mut my_node_addr: Option<NodeAddr> = None;
 
         let handle = tokio::task::spawn(async move {
             let mut interval = tokio::time::interval(MDNS_QUERY_INTERVAL);
@@ -62,17 +62,17 @@ impl LocalDiscovery {
 
                         match msg {
                             MulticastDNSMessage::Query(service_name) => {
-                                let Some(my_node_info) = &my_node_info else {
+                                let Some(my_node_addr) = &my_node_addr else {
                                     continue;
                                 };
 
                                 if subscribers.contains_key(&service_name) {
-                                    let response = make_response(&service_name, my_node_info);
+                                    let response = make_response(&service_name, my_node_addr);
                                     send(&socket, response).await;
                                 }
                             },
-                            MulticastDNSMessage::Response(service_name, node_infos) => {
-                                let Some(my_node_info) = &my_node_info else {
+                            MulticastDNSMessage::Response(service_name, node_addrs) => {
+                                let Some(my_node_addr) = &my_node_addr else {
                                     continue;
                                 };
 
@@ -81,15 +81,15 @@ impl LocalDiscovery {
                                 };
 
                                 for subscribe_tx in subscribers {
-                                    for node_info in &node_infos {
-                                        if node_info.node_id == my_node_info.node_id {
+                                    for node_addr in &node_addrs {
+                                        if node_addr.node_id == my_node_addr.node_id {
                                             continue;
                                         }
 
                                         subscribe_tx
                                             .send_async(Ok(DiscoveryEvent {
                                                 provenance: MDNS_PROVENANCE,
-                                                node_info: node_info.clone(),
+                                                node_addr: node_addr.clone(),
                                             }))
                                             .await
                                             .ok();
@@ -112,8 +112,8 @@ impl LocalDiscovery {
                                     subscribers.insert(service_name, vec![subscribe_tx]);
                                 }
                             }
-                            Message::UpdateLocalAddress(ref info) => {
-                                my_node_info = Some(info.clone());
+                            Message::UpdateLocalAddress(ref addr) => {
+                                my_node_addr = Some(addr.clone());
                             }
                         }
                     },
@@ -146,11 +146,11 @@ impl Discovery for LocalDiscovery {
         Some(subscribe_rx.into_stream().boxed())
     }
 
-    fn update_local_address(&self, info: &NodeInfo) -> Result<()> {
+    fn update_local_address(&self, addr: &NodeAddr) -> Result<()> {
         let tx = self.tx.clone();
-        let info = info.clone();
+        let addr = addr.clone();
         tokio::spawn(async move {
-            tx.send_async(Message::UpdateLocalAddress(info)).await.ok();
+            tx.send_async(Message::UpdateLocalAddress(addr)).await.ok();
         });
         Ok(())
     }

@@ -2950,7 +2950,6 @@ dependencies = [
  "hickory-proto",
  "iroh-base",
  "iroh-gossip",
- "iroh-io",
  "iroh-net",
  "p2panda-core",
  "rand 0.8.5",
@@ -2961,7 +2960,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
- "url",
 ]
 
 [[package]]
@@ -3893,7 +3891,6 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
- "url",
 ]
 
 [[package]]

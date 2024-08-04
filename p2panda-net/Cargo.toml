@@ -18,7 +18,6 @@ futures-util = "0.3.30"
 hickory-proto = { version = "0.24.1", optional = true }
 iroh-base = "0.20.0"
 iroh-gossip = "0.20.0"
-iroh-io = "0.6.0"
 iroh-net = "0.20.0"
 p2panda-core = { path = "../p2panda-core" }
 rand = "0.8.5"
@@ -28,7 +27,6 @@ tokio = { version = "1.38.0", features = ["full"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["codec", "io-util", "io"] }
 tracing = "0.1.40"
-url = "2.5.2"
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

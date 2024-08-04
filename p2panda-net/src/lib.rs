@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod addrs;
 pub mod config;
 pub mod discovery;
 mod engine;
@@ -8,6 +9,8 @@ pub mod network;
 mod protocols;
 mod message;
 
+pub use addrs::{NodeAddress, RelayUrl};
+pub use config::Config;
 #[cfg(feature = "mdns")]
 pub use discovery::mdns::LocalDiscovery;
 pub use network::{Network, NetworkBuilder, RelayMode};
