@@ -1,9 +1,7 @@
 use futures::future::BoxFuture;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
-use p2panda_core::Hash;
 use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
@@ -15,6 +13,7 @@ use uniffi;
 use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
+use crate::types::{Hash, Path, PublicKey, SocketAddr};
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -39,8 +38,8 @@ impl Node {
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
     #[uniffi::method]
-    pub fn id(&self) -> String {
-        self.inner.id().to_hex()
+    pub fn id(&self) -> PublicKey {
+        self.inner.id().into()
     }
 
     /// Returns the direct addresses of this Node.
@@ -50,9 +49,9 @@ impl Node {
     /// direct addresses contain both the locally-bound addresses and the Node's publicly
     /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
     /// usually only a subset of these will be applicable to a certain remote node.
-    pub async fn direct_addresses(&self) -> Option<Vec<String>> {
+    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         match self.inner.direct_addresses().await {
-            Some(addrs) => Some(addrs.iter().map(|addr| addr.to_string()).collect()),
+            Some(addrs) => Some(addrs.into_iter().map(SocketAddr::from).collect()),
             None => None,
         }
     }
@@ -61,28 +60,24 @@ impl Node {
     ///
     /// This method moves a blob into dedicated blob store and makes it available on the network
     /// identified by it's Blake3 hash.
-    pub async fn import_blob(&self, path: String) -> Result<String, RhioError> {
-        let path = PathBuf::from(&path);
-        let hash = self.inner.import_blob(path).await?;
-        Ok(hash.to_string())
+    pub async fn import_blob(&self, path: Path) -> Result<Hash, RhioError> {
+        let hash = self.inner.import_blob(path.into()).await?;
+        Ok(hash.into())
     }
 
     /// Export a blob to the filesystem.
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
-    pub async fn export_blob(&self, hash: String, path: String) -> Result<(), RhioError> {
-        let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
-        let path = PathBuf::from(&path);
-        self.inner.export_blob(hash, path).await?;
+    pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
+        self.inner.export_blob(hash.into(), path.into()).await?;
         Ok(())
     }
 
     /// Download a blob from the network.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
-    pub async fn download_blob(&self, hash: String) -> Result<(), RhioError> {
-        let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
-        self.inner.download_blob(hash).await?;
+    pub async fn download_blob(&self, hash: Hash) -> Result<(), RhioError> {
+        self.inner.download_blob(hash.into()).await?;
         Ok(())
     }
 
@@ -166,6 +161,7 @@ impl Sender {
 mod tests {
     use std::time::Duration;
 
+    use p2panda_core::PublicKey;
     use tokio::sync::mpsc;
 
     use crate::messages::Message;
@@ -194,7 +190,7 @@ mod tests {
     async fn test_gossip_basic() {
         let config0 = Config::default();
         let n0 = Node::spawn(&config0).await.unwrap();
-        let n0_id = n0.id();
+        let n0_id: PublicKey = n0.id().into();
 
         let n0_addr = format!("{}|127.0.0.1:2024", n0_id);
         let config1 = Config {
