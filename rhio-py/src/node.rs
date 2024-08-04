@@ -16,6 +16,8 @@ use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
 
+/// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
+/// over topics and syncing blob data using the BAO protocol. 
 #[derive(uniffi::Object)]
 pub struct Node {
     pub inner: RhioNode,
@@ -23,6 +25,7 @@ pub struct Node {
 
 #[uniffi::export]
 impl Node {
+    /// Configure and spawn a node.
     #[uniffi::constructor(async_runtime = "tokio")]
     pub async fn spawn(config: &Config) -> Result<Node, RhioError> {
         let private_key = generate_ephemeral_private_key();
@@ -31,12 +34,16 @@ impl Node {
         Ok(Node { inner: rhio_node })
     }
 
+    /// Get the peer id of this node.
     #[uniffi::method]
     pub fn id(&self) -> String {
         self.inner.id().to_hex()
     }
 
     /// Import a blob from the filesystem.
+    /// 
+    /// This method moves a blob into dedicated blob store and makes it available on the network
+    /// identified by it's Blake3 hash.
     pub async fn import_blob(&self, path: String) -> Result<String, RhioError> {
         let path = PathBuf::from(&path);
         let hash = self.inner.import_blob(path).await?;
@@ -44,6 +51,8 @@ impl Node {
     }
 
     /// Export a blob to the filesystem.
+    /// 
+    /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob(&self, hash: String, path: String) -> Result<(), RhioError> {
         let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
         let path = PathBuf::from(&path);
@@ -52,6 +61,8 @@ impl Node {
     }
 
     /// Download a blob from the network.
+    /// 
+    /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
     pub async fn download_blob(&self, hash: String) -> Result<(), RhioError> {
         let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
         self.inner.download_blob(hash).await?;
@@ -59,6 +70,11 @@ impl Node {
     }
 
     /// Subscribe to a gossip topic.
+    /// 
+    /// Accepts a callback method which should be used to handle messages arriving on this topic.
+    /// Returns a sender which can then be used to broadcast events to all peers also subscribed
+    /// to this topic. The sender can be awaited using it's `ready()` method which only resolves
+    /// when at least one other peers subscribes to the same topic. 
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
         &self,
@@ -89,6 +105,10 @@ impl Node {
     }
 }
 
+/// Callback used to handle all incomming messages on a particular topic.
+/// 
+/// As well as the message content itself, additional information about the message is passed into
+/// the callback in the meta parameter.
 #[uniffi::export(with_foreign)]
 #[async_trait::async_trait]
 pub trait GossipMessageCallback: Send + Sync + 'static {
@@ -99,6 +119,7 @@ pub trait GossipMessageCallback: Send + Sync + 'static {
     ) -> Result<(), CallbackError>;
 }
 
+/// Channel for broadcasting messages to all peers subscribed to a particular topic.
 #[derive(uniffi::Object)]
 pub struct Sender {
     pub(crate) inner: TopicSender,
@@ -107,12 +128,14 @@ pub struct Sender {
 
 #[uniffi::export]
 impl Sender {
+    /// Broadcast a message to all peers subscribing to the same topic.
     pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
         let message = rhio::messages::Message::from(message.clone());
         let meta = self.inner.send(message).await?;
         Ok(MessageMeta(meta))
     }
 
+    /// Wait for another peer to be subscribed to this topic.
     pub async fn ready(&self) {
         let fut = self.ready_fut.lock().unwrap().take();
         match fut {
