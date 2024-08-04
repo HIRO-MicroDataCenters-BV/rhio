@@ -51,12 +51,7 @@ async fn main() -> Result<()> {
         println!("‣ node public key: {}", node.id());
     }
 
-    let Some(blobs_path) = &config.blobs_path else {
-        println!("‣ missing blobs folder path");
-        node.shutdown().await?;
-        return Ok(());
-    };
-    println!("‣ watching folder: {}", blobs_path.display());
+    println!("‣ watching folder: {}", config.blobs_path.display());
     println!();
 
     // Join p2p gossip overlay and announce blobs from our directory there
@@ -96,24 +91,16 @@ async fn main() -> Result<()> {
     .unwrap();
     debouncer
         .watcher()
-        .watch(&blobs_path, RecursiveMode::NonRecursive)?;
+        .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
 
     let mut file_system = FileSystem::new();
     let mut exported_blobs = HashSet::new();
-
-    // @TODO: Currently this is required for main to be interesting, we should add logging of other network
-    // events maybe, or generally consider what the cli is for.
-    let Some(blobs_path) = &config.blobs_path else {
-        error!("no blobs path configured!");
-        node.shutdown().await?;
-        return Ok(());
-    };
 
     loop {
         tokio::select! {
             Some(paths) = files_rx.recv() => {
                 for path in paths {
-                    let relative_path = to_relative_path(&path, &blobs_path);
+                    let relative_path = to_relative_path(&path, &config.blobs_path);
                     if !exported_blobs.remove(&relative_path) {
                         info!("file added: {path:?}");
                         let hash = node.import_blob(path.clone()).await.expect("can import blob");
@@ -131,12 +118,12 @@ async fn main() -> Result<()> {
                             match action {
                                 FileSystemAction::DownloadAndExport { hash, path } => {
                                     if node.download_blob(hash).await.is_ok() {
-                                        node.export_blob(hash, blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                     }
                                 }
                                 FileSystemAction::Export { hash, path } => {
-                                        node.export_blob(hash, blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                 }
                             }

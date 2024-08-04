@@ -106,20 +106,20 @@ async def main():
     # parse argument
     parser = argparse.ArgumentParser(description='Python Rhio Node')
     parser.add_argument('-p', '--port', type=int, default=2024, help='node bind port')
-    parser.add_argument('-n', '--direct-node-addresses', type=str, action='append', default=[], help='direct node addresses NODE_ID|IP_ADDR')
+    parser.add_argument('-t', '--ticket', type=str, action='append', default=[], help='connection ticket string')
     parser.add_argument('-k', '--private-key', type=str, help='path to private key')
     parser.add_argument('-b', '--blobs-path', type=str, help='path to blobs dir')
-    parser.add_argument('-r', '--relay-addresses', type=str, action='append', default=[], help='relay addresses')
+    parser.add_argument('-r', '--relay', type=str, help='relay addresses')
 
     args = parser.parse_args()
 
     # construct node config
     config = Config()
     config.bind_port = args.port
-    config.direct_node_addresses = args.direct_node_addresses
+    config.ticket = args.ticket
     config.private_key = args.private_key
     config.blobs_path = args.blobs_path
-    config.relay_addresses = args.relay_addresses
+    config.relay = args.relay
 
     # spawn the rhio node
     node = await Node.spawn(config)

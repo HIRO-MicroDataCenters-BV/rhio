@@ -29,7 +29,7 @@ impl Node {
     pub async fn spawn(config: &Config) -> Self {
         let private_key = generate_ephemeral_private_key();
         let config: RhioConfig = config.clone().try_into().expect("failed to parse node config");
-        let rhio_node = RhioNode::spawn(config, private_key)
+        let rhio_node = RhioNode::spawn(config.network_config, private_key)
             .await
             .expect("failed to spawn node");
         Self { inner: rhio_node }
@@ -162,6 +162,7 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_core::PublicKey;
+    use rhio::ticket::Ticket;
     use tokio::sync::mpsc;
 
     use crate::messages::Message;
@@ -191,11 +192,11 @@ mod tests {
         let config0 = Config::default();
         let n0 = Node::spawn(&config0).await;
         let n0_id: PublicKey = n0.id().into();
-
-        let n0_addr = format!("{}|127.0.0.1:2024", n0_id);
+        let n0_addresses = n0.direct_addresses().await.unwrap().into_iter().map(|addr|addr.into()).collect();
+        let ticket = Ticket::new(n0_id.into(), n0_addresses, None);
         let config1 = Config {
             bind_port: 2023,
-            direct_node_addresses: vec![n0_addr],
+            ticket: vec![ticket.to_string()],
             ..Default::default()
         };
         let n1 = Node::spawn(&config1).await;

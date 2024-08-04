@@ -26,16 +26,20 @@ There are two example python scripts in the `python` directory.
 ### CLI
 
 ```bash
-usage: main.py [-h] [-p PORT] [-n DIRECT_NODE_ADDRESSES] [-k PRIVATE_KEY] [-b BLOBS_PATH] [-r RELAY_ADDRESSES]
+> python3 python/main.py --help                
+usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-b BLOBS_PATH] [-r RELAY]
 
 Python Rhio Node
 
 options:
-  -h, --help                                                  show this help message and exit
-  -p PORT, --port PORT                                        node bind port
-  -n DIRECT_NODE_ADDRESSES,                                   direct node addresses NODE_ID|IP_ADDR
-          --direct-node-addresses DIRECT_NODE_ADDRESSES 
-  -k PRIVATE_KEY, --private-key PRIVATE_KEY                   path to private key
-  -b BLOBS_PATH, --blobs-path BLOBS_PATH                      path to blobs dir
-  -r RELAY_ADDRESSES, --relay-addresses RELAY_ADDRESSES       relay addresses
+  -h, --help            show this help message and exit
+  -p PORT, --port PORT  node bind port
+  -t TICKET, --ticket TICKET
+                        connection ticket string
+  -k PRIVATE_KEY, --private-key PRIVATE_KEY
+                        path to private key
+  -b BLOBS_PATH, --blobs-path BLOBS_PATH
+                        path to blobs dir
+  -r RELAY, --relay RELAY
+                        relay addresses
 ```
