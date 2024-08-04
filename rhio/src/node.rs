@@ -73,13 +73,23 @@ where
         Ok(node)
     }
 
-    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        self.network.direct_addresses().await
-    }
-
-    /// Get the peer id of this node.
+    /// Returns the PublicKey of this node which is used as it's unique network id.
+    ///
+    /// This ID is the unique addressing information of this node and other peers must know it to
+    /// be able to connect to this node.
     pub fn id(&self) -> PublicKey {
         self.network.node_id()
+    }
+
+    /// Returns the direct addresses of this Node.
+    ///
+    /// The direct addresses of the Node are those that could be used by other nodes
+    /// to establish direct connectivity, depending on the network situation. The yielded lists of
+    /// direct addresses contain both the locally-bound addresses and the Node's publicly
+    /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
+    /// usually only a subset of these will be applicable to a certain remote node.
+    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
+        self.network.direct_addresses().await
     }
 
     /// Import a blob from the filesystem.
