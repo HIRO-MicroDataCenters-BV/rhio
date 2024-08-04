@@ -6,26 +6,10 @@ from loguru import logger
 from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType, TopicId
 from watchfiles import awatch, Change
 
-EXPORTED_BLOBS = {}
-
-class Callback(GossipMessageCallback):
-    def __init__(self, name):
-        self.name = name
-        self.chan = asyncio.Queue()
-
+class HelloWorld(GossipMessageCallback):
+    """A simple callback implementation which prints all events received on a gossip topic"""
     async def on_message(self, msg, meta):
-        await self.chan.put((msg, meta))
-
-async def say_hello(sender):
-    while True:
-        await asyncio.sleep(1)
-        msg = Message.application(bytearray("hello!", encoding='utf-8'))
-        await sender.send(msg)
-
-async def print_hello(cb):
-    while True:
-        (message, meta) = await cb.chan.get()
-        msg = message.as_application()
+        msg = msg.as_application()
         logger.info("received {} from {}", msg, meta.delivered_from())
 
 async def main():
@@ -58,24 +42,17 @@ async def main():
     # subscribe to a topic, providing a callback method which will be run on each 
     # topic event we receive
     topic = TopicId.new_from_str("rhio/hello_world")
-    cb = Callback("hello_world_handler")
 
     logger.info("subscribing to gossip topic: {}", topic)
-    sender = await node.subscribe(topic, cb)
+    sender = await node.subscribe(topic, HelloWorld())
     await sender.ready()
 
     logger.info("gossip topic ready")
 
-    send_task = asyncio.create_task(
-        say_hello(sender)
-    )
-
-    receive_task = asyncio.create_task(
-        print_hello(cb)
-    )
-
-    await send_task
-    await receive_task
+    while True:
+        await asyncio.sleep(1)
+        msg = Message.application(bytearray("hello!", encoding='utf-8'))
+        await sender.send(msg)
 
 if __name__ == "__main__":
     asyncio.run(main())
