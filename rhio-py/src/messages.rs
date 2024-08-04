@@ -1,15 +1,82 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-use rhio::messages::{Message as InnerMessage, MessageMeta as InnerMessageMeta};
+use p2panda_core::Hash as InnerHash;
+use rhio::messages::{FileSystemEvent, Message as InnerMessage, MessageMeta as InnerMessageMeta};
 use rhio::node::TopicSender;
 
 use crate::error::{CallbackError, RhioError};
+use crate::UniffiCustomTypeConverter;
 
-type Hash = String;
-type Path = String;
+uniffi::custom_type!(Hash, String);
+
+#[derive(Debug, Clone)]
+pub struct Hash {
+    pub inner: InnerHash,
+}
+
+impl UniffiCustomTypeConverter for Hash {
+    type Builtin = String;
+
+    fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+        let hash = InnerHash::from_str(&val)?;
+        Ok(Hash { inner: hash })
+    }
+
+    fn from_custom(obj: Self) -> Self::Builtin {
+        obj.inner.to_string()
+    }
+}
+
+impl From<InnerHash> for Hash {
+    fn from(value: InnerHash) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl Into<InnerHash> for Hash {
+    fn into(self) -> InnerHash {
+        self.inner
+    }
+}
+
+uniffi::custom_type!(Path, String);
+
+#[derive(Debug, Clone)]
+pub struct Path {
+    inner: PathBuf,
+}
+
+impl UniffiCustomTypeConverter for Path {
+    type Builtin = String;
+
+    fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+        let path = PathBuf::from_str(&val)?;
+        Ok(Self { inner: path })
+    }
+
+    fn from_custom(obj: Self) -> Self::Builtin {
+        obj.inner
+            .to_str()
+            .expect("is valid UTF-8 string")
+            .to_string()
+    }
+}
+
+impl From<PathBuf> for Path {
+    fn from(value: PathBuf) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl Into<PathBuf> for Path {
+    fn into(self) -> PathBuf {
+        self.inner
+    }
+}
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct FileSystemCreateEvent {
@@ -52,10 +119,8 @@ impl Message {
     }
 
     #[uniffi::constructor]
-    pub fn blob_announcement(hash: String) -> Result<Self, RhioError> {
-        Ok(Self::BlobAnnouncement(
-            hash.parse().map_err(anyhow::Error::from)?,
-        ))
+    pub fn blob_announcement(hash: Hash) -> Result<Self, RhioError> {
+        Ok(Self::BlobAnnouncement(hash))
     }
 
     #[uniffi::constructor]
@@ -71,7 +136,7 @@ impl Message {
         }
     }
 
-    pub fn as_blob_announcement(&self) -> String {
+    pub fn as_blob_announcement(&self) -> Hash {
         if let Self::BlobAnnouncement(s) = self {
             s.clone()
         } else {
@@ -98,44 +163,37 @@ impl MessageMeta {
         self.0.delivered_from.to_string()
     }
 
+    #[uniffi::method]
     pub fn operation_timestamp(&self) -> u64 {
         self.0.operation_timestamp
     }
 }
 
-impl From<rhio::messages::Message<Vec<u8>>> for Message {
-    fn from(value: rhio::messages::Message<Vec<u8>>) -> Self {
+impl From<InnerMessage> for Message {
+    fn from(value: InnerMessage) -> Self {
         match value {
-            InnerMessage::FileSystem(rhio::messages::FileSystemEvent::Create(path, hash)) => {
+            InnerMessage::FileSystem(FileSystemEvent::Create(path, hash)) => {
                 Message::FileSystem(FileSystemCreateEvent {
-                    path: path.to_string_lossy().to_string(),
-                    hash: hash.to_string(),
+                    path: path.into(),
+                    hash: hash.into(),
                 })
             }
-            InnerMessage::BlobAnnouncement(hash) => Message::BlobAnnouncement(hash.to_string()),
+            InnerMessage::BlobAnnouncement(hash) => Message::BlobAnnouncement(hash.into()),
             InnerMessage::Application(bytes) => Message::Application(bytes),
             _ => unimplemented!(),
         }
     }
 }
 
-impl TryFrom<Message> for rhio::messages::Message<Vec<u8>> {
-    type Error = anyhow::Error;
-
-    fn try_from(value: Message) -> Result<Self, Self::Error> {
-        let value = match value {
+impl From<Message> for InnerMessage {
+    fn from(value: Message) -> Self {
+        match value {
             Message::FileSystem(FileSystemCreateEvent { path, hash }) => {
-                rhio::messages::Message::FileSystem(rhio::messages::FileSystemEvent::Create(
-                    PathBuf::from(path),
-                    hash.parse()?,
-                ))
+                InnerMessage::FileSystem(FileSystemEvent::Create(path.into(), hash.into()))
             }
-            Message::BlobAnnouncement(hash) => {
-                rhio::messages::Message::BlobAnnouncement(hash.parse()?)
-            }
-            Message::Application(bytes) => rhio::messages::Message::Application(bytes),
-        };
-        Ok(value)
+            Message::BlobAnnouncement(hash) => InnerMessage::BlobAnnouncement(hash.into()),
+            Message::Application(bytes) => InnerMessage::Application(bytes),
+        }
     }
 }
 
@@ -150,15 +208,15 @@ pub trait GossipMessageCallback: Send + Sync + 'static {
 }
 
 #[derive(uniffi::Object)]
-pub struct Sender{
+pub struct Sender {
     pub(crate) inner: TopicSender<Vec<u8>>,
-    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output=()> + Send + 'static>>>>
+    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>>,
 }
 
 #[uniffi::export]
 impl Sender {
     pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
-        let message = rhio::messages::Message::<Vec<u8>>::try_from(message.clone())?;
+        let message = rhio::messages::Message::from(message.clone());
         let meta = self.inner.send(message).await?;
         Ok(MessageMeta(meta))
     }
@@ -169,5 +227,5 @@ impl Sender {
             Some(fut) => fut.await,
             None => (),
         }
-    } 
+    }
 }

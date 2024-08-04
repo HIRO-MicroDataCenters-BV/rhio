@@ -16,7 +16,7 @@ use crate::messages::{GossipMessageCallback, MessageMeta, Sender};
 
 #[derive(uniffi::Object)]
 pub struct Node {
-    pub inner: RhioNode<Vec<u8>>,
+    pub inner: RhioNode,
 }
 
 #[uniffi::export]
