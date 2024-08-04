@@ -1,4 +1,5 @@
 use futures::future::BoxFuture;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -17,7 +18,7 @@ use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
-/// over topics and syncing blob data using the BAO protocol. 
+/// over topics and syncing blob data using the BAO protocol.
 #[derive(uniffi::Object)]
 pub struct Node {
     pub inner: RhioNode,
@@ -34,14 +35,31 @@ impl Node {
         Ok(Node { inner: rhio_node })
     }
 
-    /// Get the peer id of this node.
+    /// Returns the PublicKey of this node which is used as it's unique network id.
+    ///
+    /// This ID is the unique addressing information of this node and other peers must know it to
+    /// be able to connect to this node.
     #[uniffi::method]
     pub fn id(&self) -> String {
         self.inner.id().to_hex()
     }
 
+    /// Returns the direct addresses of this Node.
+    ///
+    /// The direct addresses of the Node are those that could be used by other nodes
+    /// to establish direct connectivity, depending on the network situation. The yielded lists of
+    /// direct addresses contain both the locally-bound addresses and the Node's publicly
+    /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
+    /// usually only a subset of these will be applicable to a certain remote node.
+    pub async fn direct_addresses(&self) -> Option<Vec<String>> {
+        match self.inner.direct_addresses().await {
+            Some(addrs) => Some(addrs.iter().map(|addr| addr.to_string()).collect()),
+            None => None,
+        }
+    }
+
     /// Import a blob from the filesystem.
-    /// 
+    ///
     /// This method moves a blob into dedicated blob store and makes it available on the network
     /// identified by it's Blake3 hash.
     pub async fn import_blob(&self, path: String) -> Result<String, RhioError> {
@@ -51,7 +69,7 @@ impl Node {
     }
 
     /// Export a blob to the filesystem.
-    /// 
+    ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob(&self, hash: String, path: String) -> Result<(), RhioError> {
         let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
@@ -61,7 +79,7 @@ impl Node {
     }
 
     /// Download a blob from the network.
-    /// 
+    ///
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
     pub async fn download_blob(&self, hash: String) -> Result<(), RhioError> {
         let hash: Hash = hash.parse().map_err(anyhow::Error::from)?;
@@ -70,11 +88,11 @@ impl Node {
     }
 
     /// Subscribe to a gossip topic.
-    /// 
+    ///
     /// Accepts a callback method which should be used to handle messages arriving on this topic.
     /// Returns a sender which can then be used to broadcast events to all peers also subscribed
     /// to this topic. The sender can be awaited using it's `ready()` method which only resolves
-    /// when at least one other peers subscribes to the same topic. 
+    /// when at least one other peers subscribes to the same topic.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
         &self,
@@ -106,7 +124,7 @@ impl Node {
 }
 
 /// Callback used to handle all incomming messages on a particular topic.
-/// 
+///
 /// As well as the message content itself, additional information about the message is passed into
 /// the callback in the meta parameter.
 #[uniffi::export(with_foreign)]
