@@ -21,7 +21,7 @@ use crate::config::Config;
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
-pub struct Node<T = ()> {
+pub struct Node<T = Vec<u8>> {
     network: Network,
     rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: JoinHandle<()>,
