@@ -1,8 +1,8 @@
-# rhio-py
+# rhio-ffi
 
 Use `uniffi` and `maturin` to build ffi bindings for `rhio` and compile a `Python` package.
 
-## Development
+## `Python` development
 
 ```bash
 # Create and activate a virtual env
@@ -16,7 +16,7 @@ maturin develop
 python3 python/hello_world.py
 ```
 
-## Use
+## `Python` use
 
 There are two example python scripts in the `python` directory. 
 
