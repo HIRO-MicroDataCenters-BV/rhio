@@ -10,6 +10,6 @@ source ./bin/activate
 pip install uniffi-bindgen asyncio argparse watchfiles loguru
 # Build wheel
 maturin develop
-# Run the example
-python3 python/main.py --help
+# Run the example (run this in two terminals)
+python3 python/hello_world.py
 ```
