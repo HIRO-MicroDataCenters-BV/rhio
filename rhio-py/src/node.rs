@@ -5,7 +5,6 @@ use futures::FutureExt;
 use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
-use rhio::topic_id::TopicId;
 use rhio::Node as RhioNode;
 use tracing::warn;
 use uniffi;
@@ -14,6 +13,7 @@ use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
 use crate::types::{Hash, Path, PublicKey, SocketAddr};
+use crate::topic_id::TopicId;
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -90,12 +90,10 @@ impl Node {
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
         &self,
-        topic: &str,
+        topic: TopicId,
         cb: Arc<dyn GossipMessageCallback>,
     ) -> Result<Sender, RhioError> {
-        let topic_id = TopicId::new_from_str(topic);
-
-        let (topic_tx, mut topic_rx, ready) = self.inner.subscribe(topic_id).await?;
+        let (topic_tx, mut topic_rx, ready) = self.inner.subscribe(topic.into()).await?;
 
         let sender = Sender {
             inner: topic_tx,
@@ -202,7 +200,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let topic = "test";
+        let topic = TopicId::new_from_str("test");
 
         let (sender0, _receiver0) = mpsc::channel(8);
         let cb0 = Cb { channel: sender0 };

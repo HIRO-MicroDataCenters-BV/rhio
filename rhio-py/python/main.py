@@ -3,7 +3,7 @@ import os
 import argparse
 import asyncio
 from loguru import logger
-from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType
+from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType, TopicId
 from watchfiles import awatch, Change
 
 EXPORTED_BLOBS = {}
@@ -113,7 +113,7 @@ async def main():
 
     # subscribe to a topic, providing a callback method which will be run on each 
     # topic event we receive
-    topic = "rhio/file_system_sync"
+    topic = TopicId.new_from_str("rhio/file_system_sync")
     cb = Callback("file_system_sync_handler")
 
     logger.info("subscribing to gossip topic: {}", topic)
