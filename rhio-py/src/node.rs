@@ -1,6 +1,5 @@
-use std::future::Future;
+use futures::future::BoxFuture;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
@@ -90,7 +89,6 @@ impl Node {
     }
 }
 
-
 #[uniffi::export(with_foreign)]
 #[async_trait::async_trait]
 pub trait GossipMessageCallback: Send + Sync + 'static {
@@ -104,7 +102,7 @@ pub trait GossipMessageCallback: Send + Sync + 'static {
 #[derive(uniffi::Object)]
 pub struct Sender {
     pub(crate) inner: TopicSender,
-    pub ready_fut: Mutex<Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>>,
+    pub ready_fut: Mutex<Option<BoxFuture<'static, ()>>>,
 }
 
 #[uniffi::export]
@@ -123,7 +121,6 @@ impl Sender {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
