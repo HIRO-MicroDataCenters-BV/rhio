@@ -18,7 +18,7 @@ impl UniffiCustomTypeConverter for Hash {
 
     fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
         let hash = InnerHash::from_str(&val)?;
-        Ok(Hash { inner: hash })
+        Ok(Self { inner: hash })
     }
 
     fn from_custom(obj: Self) -> Self::Builtin {
@@ -85,7 +85,7 @@ impl UniffiCustomTypeConverter for PublicKey {
 
     fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
         let public_key = InnerPublicKey::from_str(&val)?;
-        Ok(PublicKey { inner: public_key })
+        Ok(Self { inner: public_key })
     }
 
     fn from_custom(obj: Self) -> Self::Builtin {
@@ -117,7 +117,7 @@ impl UniffiCustomTypeConverter for SocketAddr {
 
     fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
         let addr = InnerSocketAddr::from_str(&val)?;
-        Ok(SocketAddr { inner: addr })
+        Ok(Self { inner: addr })
     }
 
     fn from_custom(obj: Self) -> Self::Builtin {

@@ -44,8 +44,8 @@ impl Message {
     }
 
     #[uniffi::constructor]
-    pub fn blob_announcement(hash: Hash) -> Result<Self, RhioError> {
-        Ok(Self::BlobAnnouncement(hash))
+    pub fn blob_announcement(hash: Hash) -> Self {
+        Self::BlobAnnouncement(hash)
     }
 
     #[uniffi::constructor]

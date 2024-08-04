@@ -12,8 +12,8 @@ use uniffi;
 use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
-use crate::types::{Hash, Path, PublicKey, SocketAddr};
 use crate::topic_id::TopicId;
+use crate::types::{Hash, Path, PublicKey, SocketAddr};
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -26,11 +26,13 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     #[uniffi::constructor(async_runtime = "tokio")]
-    pub async fn spawn(config: &Config) -> Result<Node, RhioError> {
+    pub async fn spawn(config: &Config) -> Self {
         let private_key = generate_ephemeral_private_key();
-        let config: RhioConfig = config.clone().try_into()?;
-        let rhio_node = RhioNode::spawn(config, private_key).await?;
-        Ok(Node { inner: rhio_node })
+        let config: RhioConfig = config.clone().try_into().expect("failed to parse node config");
+        let rhio_node = RhioNode::spawn(config, private_key)
+            .await
+            .expect("failed to spawn node");
+        Self { inner: rhio_node }
     }
 
     /// Returns the PublicKey of this node which is used as it's unique network id.
@@ -187,7 +189,7 @@ mod tests {
     #[tokio::test]
     async fn test_gossip_basic() {
         let config0 = Config::default();
-        let n0 = Node::spawn(&config0).await.unwrap();
+        let n0 = Node::spawn(&config0).await;
         let n0_id: PublicKey = n0.id().into();
 
         let n0_addr = format!("{}|127.0.0.1:2024", n0_id);
@@ -196,7 +198,7 @@ mod tests {
             direct_node_addresses: vec![n0_addr],
             ..Default::default()
         };
-        let n1 = Node::spawn(&config1).await.unwrap();
+        let n1 = Node::spawn(&config1).await;
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 

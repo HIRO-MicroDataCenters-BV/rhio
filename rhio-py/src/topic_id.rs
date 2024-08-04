@@ -2,7 +2,6 @@ use p2panda_core::Hash;
 use rhio::{messages::ToBytes, topic_id::TopicId as InnerTopicId};
 
 use crate::UniffiCustomTypeConverter;
-use crate::error::RhioError;
 
 uniffi::custom_type!(TopicId, Vec<u8>);
 
@@ -15,8 +14,16 @@ impl UniffiCustomTypeConverter for TopicId {
     type Builtin = Vec<u8>;
 
     fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-        let topic = TopicId::new(val)?;
-        Ok(topic)
+        let bytes: [u8; 32] = match TryFrom::try_from(val) {
+            Ok(bytes) => Ok(bytes),
+            Err(_) => Err(anyhow::anyhow!(
+                "Failed converting topic bytes with incorrect length"
+            )),
+        }?;
+
+        Ok(TopicId {
+            inner: InnerTopicId::new(bytes),
+        })
     }
 
     fn from_custom(obj: Self) -> Self::Builtin {
@@ -39,17 +46,11 @@ impl Into<InnerTopicId> for TopicId {
 #[uniffi::export]
 impl TopicId {
     #[uniffi::constructor]
-    pub fn new(bytes: Vec<u8>) -> Result<Self, RhioError> {
-        let bytes: [u8; 32] = match TryFrom::try_from(bytes) {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => Err(anyhow::anyhow!(
-                "Failed converting topic bytes with incorrect length"
-            )),
-        }?;
-
-        Ok(TopicId {
+    pub fn new(bytes: &Vec<u8>) -> Self {
+        let bytes: [u8; 32] = TryFrom::try_from(bytes.to_owned()).expect("incorrect topic bytes length");
+        Self {
             inner: InnerTopicId::new(bytes),
-        })
+        }
     }
 
     #[uniffi::constructor]
