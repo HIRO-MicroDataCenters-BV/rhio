@@ -25,16 +25,11 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     #[uniffi::constructor(async_runtime = "tokio")]
-    pub async fn spawn(config: &Config) -> Self {
+    pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
         let private_key = generate_ephemeral_private_key();
-        let config: RhioConfig = config
-            .clone()
-            .try_into()
-            .expect("failed to parse node config");
-        let rhio_node = RhioNode::spawn(config.network_config, private_key)
-            .await
-            .expect("failed to spawn node");
-        Self { inner: rhio_node }
+        let config: RhioConfig = config.clone().try_into()?;
+        let rhio_node = RhioNode::spawn(config.network_config, private_key).await?;
+        Ok(Self { inner: rhio_node })
     }
 
     /// Returns the PublicKey of this node which is used as it's unique network id.
@@ -191,14 +186,14 @@ mod tests {
     #[tokio::test]
     async fn test_gossip_basic() {
         let config0 = Config::default();
-        let n0 = Node::spawn(&config0).await;
+        let n0 = Node::spawn(&config0).await.unwrap();
         let n0_id: PublicKey = n0.id().into();
         let n0_addresses = n0
             .direct_addresses()
             .await
             .unwrap()
             .into_iter()
-            .map(|addr| addr.into())
+            .map(std::net::SocketAddr::from)
             .collect();
         let ticket = Ticket::new(n0_id.into(), n0_addresses, None);
         let config1 = Config {
@@ -206,7 +201,7 @@ mod tests {
             ticket: vec![ticket.to_string()],
             ..Default::default()
         };
-        let n1 = Node::spawn(&config1).await;
+        let n1 = Node::spawn(&config1).await.unwrap();
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
