@@ -103,7 +103,7 @@ async def main():
     loop = asyncio.get_running_loop()
     rhio_ffi.uniffi_set_event_loop(loop)
 
-    # parse argument
+    # parse arguments
     parser = argparse.ArgumentParser(description='Python Rhio Node')
     parser.add_argument('-p', '--port', type=int, default=2024, help='node bind port')
     parser.add_argument('-t', '--ticket', type=str, action='append', default=[], help='connection ticket string')
