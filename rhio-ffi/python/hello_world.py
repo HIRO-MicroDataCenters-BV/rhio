@@ -1,7 +1,5 @@
-import os
+import os, argparse, asyncio
 
-import argparse
-import asyncio
 from loguru import logger
 from rhio import (
     rhio_ffi,
