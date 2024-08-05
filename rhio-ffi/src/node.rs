@@ -114,7 +114,7 @@ impl Node {
     }
 }
 
-/// Callback used to handle all incomming messages on a particular topic.
+/// Callback used to handle all incoming messages on a particular topic.
 ///
 /// As well as the message content itself, additional information about the message is passed into
 /// the callback in the meta parameter.
