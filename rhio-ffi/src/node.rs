@@ -84,7 +84,7 @@ impl Node {
     ///
     /// Accepts a callback method which should be used to handle messages arriving on this topic.
     /// Returns a sender which can then be used to broadcast events to all peers also subscribed
-    /// to this topic. The sender can be awaited using it's `ready()` method which only resolves
+    /// to this topic. The sender can be awaited using its `ready()` method which only resolves
     /// when at least one other peers subscribes to the same topic.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn subscribe(
