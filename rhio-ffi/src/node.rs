@@ -177,7 +177,10 @@ mod tests {
             message: Arc<Message>,
             meta: Arc<MessageMeta>,
         ) -> Result<(), CallbackError> {
-            self.channel.send((message, meta)).await.expect("could not send on callback channel");
+            self.channel
+                .send((message, meta))
+                .await
+                .expect("could not send on callback channel");
             Ok(())
         }
     }

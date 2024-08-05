@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
-use p2panda_core::{PrivateKey, PublicKey, Hash};
+use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;

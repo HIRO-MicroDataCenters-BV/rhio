@@ -5,17 +5,17 @@ pub mod config;
 pub mod discovery;
 mod engine;
 mod handshake;
+mod message;
 pub mod network;
 mod protocols;
-mod message;
 
 pub use addrs::{NodeAddress, RelayUrl};
 pub use config::Config;
 #[cfg(feature = "mdns")]
 pub use discovery::mdns::LocalDiscovery;
+pub use message::{FromBytes, ToBytes};
 pub use network::{Network, NetworkBuilder, RelayMode};
 pub use protocols::ProtocolHandler;
-pub use message::{ToBytes, FromBytes};
 
 pub type NetworkId = [u8; 32];
 
