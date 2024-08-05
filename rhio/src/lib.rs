@@ -1,5 +1,3 @@
-#![feature(assert_matches)]
-
 pub mod actor;
 pub mod aggregate;
 pub mod config;

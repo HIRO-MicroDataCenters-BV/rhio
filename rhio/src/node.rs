@@ -167,7 +167,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches::assert_matches;
     use std::time::Duration;
 
     use p2panda_net::{network::OutEvent, Config};
@@ -221,8 +220,8 @@ mod tests {
         let rx_1_msg = rx_1.recv().await.unwrap();
 
         // Ensure the gossip-overlay has been joined for the given topic
-        assert_matches!(rx_1_msg, OutEvent::Ready);
-        assert_matches!(rx_2_msg, OutEvent::Ready);
+        assert!(matches!(rx_1_msg, OutEvent::Ready));
+        assert!(matches!(rx_2_msg, OutEvent::Ready));
 
         // Return a list of peers known to the first node
         let known_peers_1 = node_1.network.known_peers().await.unwrap();
