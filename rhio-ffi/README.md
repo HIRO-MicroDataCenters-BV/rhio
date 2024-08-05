@@ -9,7 +9,7 @@ Use `uniffi` and `maturin` to build ffi bindings for `rhio` and compile a `Pytho
 virtualenv .
 source ./bin/activate
 # Install dependencies
-pip install uniffi-bindgen asyncio argparse watchfiles loguru
+pip install -r requirements.txt
 # Build wheel
 maturin develop
 # Run the example (run this in two terminals)
