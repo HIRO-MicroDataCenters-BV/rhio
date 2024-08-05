@@ -64,7 +64,7 @@ impl Message {
         if let Self::BlobAnnouncement(s) = self {
             s.clone()
         } else {
-            panic!("not a NeighborDown message");
+            panic!("not a BlobAnnouncement message");
         }
     }
 

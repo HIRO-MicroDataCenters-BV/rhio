@@ -1,4 +1,3 @@
-/// An Error.
 #[derive(Debug, thiserror::Error, uniffi::Object)]
 #[error("{e:?}")]
 #[uniffi::export(Debug)]

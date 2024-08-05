@@ -1,6 +1,6 @@
-use futures::future::BoxFuture;
 use std::sync::{Arc, Mutex};
 
+use futures::future::BoxFuture;
 use futures::FutureExt;
 use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
@@ -177,8 +177,7 @@ mod tests {
             message: Arc<Message>,
             meta: Arc<MessageMeta>,
         ) -> Result<(), CallbackError> {
-            println!("<< {:?}", message);
-            self.channel.send((message, meta)).await.unwrap();
+            self.channel.send((message, meta)).await.expect("could not send on callback channel");
             Ok(())
         }
     }
@@ -220,7 +219,6 @@ mod tests {
         sender1.ready().await;
 
         // Send message on n0
-        println!("sending message");
         let msg_content = b"hello";
         sender0
             .send(&Message::Application(msg_content.to_vec()))

@@ -1,7 +1,5 @@
-import os
+import os, argparse, asyncio
 
-import argparse
-import asyncio
 from loguru import logger
 from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType, TopicId
 from watchfiles import awatch, Change
