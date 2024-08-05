@@ -1,12 +1,22 @@
 import os, argparse, asyncio
 
 from loguru import logger
-from rhio import rhio_ffi, Node, GossipMessageCallback, Config, Message, MessageType, TopicId
+from rhio import (
+    rhio_ffi,
+    Node,
+    GossipMessageCallback,
+    Config,
+    Message,
+    MessageType,
+    TopicId,
+)
 from watchfiles import awatch, Change
 
-class Watcher():
+
+class Watcher:
     """A watcher which monitors a directory on the file-system and broadcasts `FileSystem` gossip
     events whenever it is notified that a file has been added"""
+
     def __init__(self, sender, node, file_system, blobs_dir_path):
         self.sender = sender
         self.node = node
@@ -46,13 +56,15 @@ class Watcher():
     async def watch(self):
         """Run the watcher"""
         async for changes in awatch(self.blobs_dir_path):
-            for (change_type, path) in changes:
+            for change_type, path in changes:
                 await self.handle_change(change_type, path)
+
 
 class FileSystemSync(GossipMessageCallback):
     """Aggregator class which uses last-write-wins logic to maintain a deterministic mapping of
     paths to blob hashes. Consumes FileSystem events and uses the Node api to download blobs from
     the network and export them to the file-system"""
+
     def __init__(self, node, blobs_dir_path):
         self.node = node
         self.blobs_dir_path = blobs_dir_path
@@ -62,7 +74,7 @@ class FileSystemSync(GossipMessageCallback):
 
     async def on_message(self, message, meta):
         """Process FileSystem events"""
-        if (message.type() == MessageType.FILE_SYSTEM):
+        if message.type() == MessageType.FILE_SYSTEM:
             create_event = message.as_file_system_create()
             rel_path = create_event.path
             hash = create_event.hash
@@ -71,8 +83,15 @@ class FileSystemSync(GossipMessageCallback):
             # against the incoming events timestamp and only proceed if it is more recent (we
             # fall-back to comparing hashes if the timestamp is equal)
             timestamp_and_hash = self.paths.get(rel_path)
-            if timestamp_and_hash is not None and (meta.operation_timestamp(), hash) < timestamp_and_hash:
-                logger.info("ignoring file addition at existing path which contains a lower timestamp: {} {}", meta.operation_timestamp(), hash)
+            if (
+                timestamp_and_hash is not None
+                and (meta.operation_timestamp(), hash) < timestamp_and_hash
+            ):
+                logger.info(
+                    "ignoring file addition at existing path which contains a lower timestamp: {} {}",
+                    meta.operation_timestamp(),
+                    hash,
+                )
                 return
 
             # download the blob from the network, unless we already have done
@@ -96,18 +115,26 @@ class FileSystemSync(GossipMessageCallback):
         else:
             print("received unsupported event type: {}", event.type())
 
+
 async def main():
     # setup event loop, to ensure async callbacks work
     loop = asyncio.get_running_loop()
     rhio_ffi.uniffi_set_event_loop(loop)
 
     # parse arguments
-    parser = argparse.ArgumentParser(description='Python Rhio Node')
-    parser.add_argument('-p', '--port', type=int, default=2024, help='node bind port')
-    parser.add_argument('-t', '--ticket', type=str, action='append', default=[], help='connection ticket string')
-    parser.add_argument('-k', '--private-key', type=str, help='path to private key')
-    parser.add_argument('-b', '--blobs-path', type=str, help='path to blobs dir')
-    parser.add_argument('-r', '--relay', type=str, help='relay addresses')
+    parser = argparse.ArgumentParser(description="Python Rhio Node")
+    parser.add_argument("-p", "--port", type=int, default=2024, help="node bind port")
+    parser.add_argument(
+        "-t",
+        "--ticket",
+        type=str,
+        action="append",
+        default=[],
+        help="connection ticket string",
+    )
+    parser.add_argument("-k", "--private-key", type=str, help="path to private key")
+    parser.add_argument("-b", "--blobs-path", type=str, help="path to blobs dir")
+    parser.add_argument("-r", "--relay", type=str, help="relay addresses")
 
     args = parser.parse_args()
 
@@ -123,7 +150,7 @@ async def main():
     node = await Node.spawn(config)
     logger.info("Node ID: {}", node.id())
 
-    # subscribe to a topic, providing a callback method which will be run on each 
+    # subscribe to a topic, providing a callback method which will be run on each
     # topic event we receive
     topic = TopicId.new_from_str("rhio/file_system_sync")
     file_system_aggregate = FileSystemSync(node, config.blobs_path)
@@ -134,6 +161,7 @@ async def main():
 
     logger.info("gossip topic ready")
     await Watcher(sender, node, file_system_aggregate, config.blobs_path).watch()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
