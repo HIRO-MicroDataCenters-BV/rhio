@@ -15,7 +15,7 @@ use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private
 use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::{BLOB_ANNOUNCE_TOPIC, BUCKET_NAME, MINIO_ADDRESS};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -59,11 +59,13 @@ async fn main() -> Result<()> {
 
     info!("Trying to connect to MinIO at: `{:?}`", base_url);
 
-    let static_provider = StaticProvider::new(
-        "pgsNnhhJjjnk1RxQxQgS",
-        "iBvISpTMLgqlMQ0LnPvUw1nSnMefN8JOYgoc7spg",
-        None,
-    );
+    let Some(credentials) = config.minio_credentials else {
+        error!("minio access credentials required but not provided");
+        return Ok(());
+    };
+
+    let static_provider =
+        StaticProvider::new(&credentials.access_key, &credentials.secret_key, None);
 
     let client = ClientBuilder::new(base_url.clone())
         .provider(Some(Box::new(static_provider)))
@@ -84,7 +86,7 @@ async fn main() -> Result<()> {
     }
 
     let Some(import_path) = config.import_path else {
-        println!("no import path provided, nothing to do here....");
+        error!("no import path provided, nothing to do here....");
         return Ok(());
     };
 

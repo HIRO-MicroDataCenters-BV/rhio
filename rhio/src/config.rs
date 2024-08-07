@@ -15,6 +15,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    pub minio_credentials: Option<MinioCredentials>,
     pub import_path: Option<PathBuf>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
@@ -29,6 +30,7 @@ impl Default for Config {
         };
 
         Self {
+            minio_credentials: None,
             import_path: None,
             sync_dir: None,
             network_config,
@@ -64,6 +66,10 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     import_path: Option<PathBuf>,
 
+    #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_minio_credentials)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    minio_credentials: Option<MinioCredentials>,
+
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<RelayUrl>,
@@ -76,6 +82,24 @@ pub fn parse_ticket(value: &str) -> Result<NodeAddress> {
 
 pub fn parse_url(value: &str) -> Result<RelayUrl> {
     value.parse()
+}
+
+pub fn parse_minio_credentials(value: &str) -> Result<MinioCredentials> {
+    let mut value_iter = value.split(":");
+    let access_key = value_iter
+        .next()
+        .ok_or(anyhow::anyhow!("no access key provided"))?
+        .to_string();
+
+    let secret_key = value_iter
+        .next()
+        .ok_or(anyhow::anyhow!("no secret key provided"))?
+        .to_string();
+
+    Ok(MinioCredentials {
+        access_key,
+        secret_key,
+    })
 }
 
 pub fn load_config() -> Result<Config> {
@@ -92,4 +116,10 @@ pub fn load_config() -> Result<Config> {
     config.sync_dir = absolute_path;
 
     Ok(config)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MinioCredentials {
+    pub access_key: String,
+    pub secret_key: String,
 }
