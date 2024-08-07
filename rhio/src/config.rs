@@ -15,6 +15,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    pub import_path: Option<PathBuf>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
@@ -28,6 +29,7 @@ impl Default for Config {
         };
 
         Self {
+            import_path: None,
             sync_dir: None,
             network_config,
         }
@@ -57,6 +59,10 @@ struct Cli {
     #[arg(short = 'd', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_dir: Option<PathBuf>,
+
+    #[arg(short = 'f', long, value_name = "PATH")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    import_path: Option<PathBuf>,
 
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -15,11 +15,12 @@ figment = { version = "0.10.19", features = ["env"] }
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
 hex = "0.4.3"
+minio = { git = "https://github.com/minio/minio-rs" }
 notify-debouncer-full = "0.3.1"
-p2panda-blobs = {path = "../p2panda-blobs"}
-p2panda-core = {path = "../p2panda-core"}
-p2panda-net = {path = "../p2panda-net"}
-p2panda-store = {path = "../p2panda-store"}
+p2panda-blobs = { path = "../p2panda-blobs" }
+p2panda-core = { path = "../p2panda-core" }
+p2panda-net = { path = "../p2panda-net" }
+p2panda-store = { path = "../p2panda-store" }
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-stream = "0.1.15"
