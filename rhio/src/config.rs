@@ -10,8 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
 
-const DEFAULT_BLOBS_PATH: &str = "blobs";
-
 // Use iroh's staging relay node for testing
 const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
