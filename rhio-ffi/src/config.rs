@@ -7,7 +7,7 @@ use crate::error::RhioError;
 #[derive(Default, Clone, uniffi::Record)]
 pub struct Config {
     #[uniffi(default = None)]
-    pub blobs_path: Option<String>,
+    pub sync_dir: Option<String>,
     #[uniffi(default = 2024)]
     pub bind_port: u16,
     #[uniffi(default = None)]
@@ -23,8 +23,8 @@ impl TryInto<RhioConfig> for Config {
 
     fn try_into(self) -> Result<RhioConfig, Self::Error> {
         let mut config = RhioConfig::default();
-        if let Some(path) = self.blobs_path {
-            config.blobs_path = PathBuf::from(&path);
+        if let Some(path) = self.sync_dir {
+            config.sync_dir = Some(PathBuf::from(&path));
         };
 
         config.network_config.bind_port = self.bind_port;

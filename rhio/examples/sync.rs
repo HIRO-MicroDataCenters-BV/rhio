@@ -51,7 +51,12 @@ async fn main() -> Result<()> {
         println!("‣ node public key: {}", node.id());
     }
 
-    println!("‣ watching folder: {}", config.blobs_path.display());
+    let Some(sync_dir) = config.sync_dir else {
+        error!("sync example requires sync_dir path to be configured");
+        return Ok(())
+    };
+
+    println!("‣ watching folder: {}", sync_dir.display());
     println!();
 
     // Join p2p gossip overlay and announce blobs from our directory there
@@ -91,7 +96,7 @@ async fn main() -> Result<()> {
     .unwrap();
     debouncer
         .watcher()
-        .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
+        .watch(&sync_dir, RecursiveMode::NonRecursive)?;
 
     let mut file_system = FileSystem::new();
     let mut exported_blobs = HashSet::new();
@@ -100,7 +105,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             Some(paths) = files_rx.recv() => {
                 for path in paths {
-                    let relative_path = to_relative_path(&path, &config.blobs_path);
+                    let relative_path = to_relative_path(&path, &sync_dir);
                     if !exported_blobs.remove(&relative_path) {
                         info!("file added: {path:?}");
                         let hash = node.import_blob(path.clone()).await.expect("can import blob");
@@ -118,12 +123,12 @@ async fn main() -> Result<()> {
                             match action {
                                 FileSystemAction::DownloadAndExport { hash, path } => {
                                     if node.download_blob(hash).await.is_ok() {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, sync_dir.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                     }
                                 }
                                 FileSystemAction::Export { hash, path } => {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob(hash, sync_dir.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                 }
                             }

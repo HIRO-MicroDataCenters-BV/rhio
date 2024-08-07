@@ -17,15 +17,15 @@ class Watcher:
     """A watcher which monitors a directory on the file-system and broadcasts `FileSystem` gossip
     events whenever it is notified that a file has been added"""
 
-    def __init__(self, sender, node, file_system, blobs_dir_path):
+    def __init__(self, sender, node, file_system, sync_dir):
         self.sender = sender
         self.node = node
-        self.blobs_dir_path = blobs_dir_path
+        self.sync_dir = sync_dir
         self.file_system = file_system
 
     def relative_path(self, path):
         """Get the relative path to a file added to the base directory"""
-        return os.path.relpath(path, self.blobs_dir_path)
+        return os.path.relpath(path, self.sync_dir)
 
     async def handle_change(self, change_type, path):
         """handle a change event"""
@@ -55,7 +55,7 @@ class Watcher:
 
     async def watch(self):
         """Run the watcher"""
-        async for changes in awatch(self.blobs_dir_path):
+        async for changes in awatch(self.sync_dir):
             for change_type, path in changes:
                 await self.handle_change(change_type, path)
 
@@ -65,9 +65,9 @@ class FileSystemSync(GossipMessageCallback):
     paths to blob hashes. Consumes FileSystem events and uses the Node api to download blobs from
     the network and export them to the file-system"""
 
-    def __init__(self, node, blobs_dir_path):
+    def __init__(self, node, sync_dir):
         self.node = node
-        self.blobs_dir_path = blobs_dir_path
+        self.sync_dir = sync_dir
         self.paths = dict()
         self.blobs = set()
         self.exported_blobs = dict()
@@ -101,7 +101,7 @@ class FileSystemSync(GossipMessageCallback):
                 logger.info("downloaded blob: {}", hash)
 
             # join the blobs dir and relative file path
-            path = os.path.join(self.blobs_dir_path, rel_path)
+            path = os.path.join(self.sync_dir, rel_path)
 
             # export blob to filesystem
             await self.node.export_blob(hash, path)
@@ -143,7 +143,7 @@ async def main():
     config.bind_port = args.port
     config.ticket = args.ticket
     config.private_key = args.private_key
-    config.blobs_path = args.blobs_path
+    config.sync_dir = args.sync_dir
     config.relay = args.relay
 
     # spawn the rhio node
@@ -153,14 +153,14 @@ async def main():
     # subscribe to a topic, providing a callback method which will be run on each
     # topic event we receive
     topic = TopicId.new_from_str("rhio/file_system_sync")
-    file_system_aggregate = FileSystemSync(node, config.blobs_path)
+    file_system_aggregate = FileSystemSync(node, config.sync_dir)
 
     logger.info("subscribing to gossip topic: {}", topic)
     sender = await node.subscribe(topic, file_system_aggregate)
     await sender.ready()
 
     logger.info("gossip topic ready")
-    await Watcher(sender, node, file_system_aggregate, config.blobs_path).watch()
+    await Watcher(sender, node, file_system_aggregate, config.sync_dir).watch()
 
 
 if __name__ == "__main__":
