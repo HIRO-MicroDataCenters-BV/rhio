@@ -4123,6 +4123,7 @@ dependencies = [
  "async-stream",
  "ciborium",
  "clap",
+ "derive_more",
  "figment",
  "futures-lite 2.3.0",
  "futures-util",

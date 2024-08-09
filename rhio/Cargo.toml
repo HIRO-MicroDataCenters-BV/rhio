@@ -11,6 +11,8 @@ anyhow = "1.0.86"
 async-stream = "0.3.5"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
+# @TODO: remove after https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/40 fixed 
+derive_more = { version = "=1.0.0-beta.6", features = ["debug", "display", "deref", "deref_mut", "from", "try_into", "into"] }
 figment = { version = "0.10.19", features = ["env"] }
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
