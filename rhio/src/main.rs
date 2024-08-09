@@ -1,7 +1,3 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-
 use anyhow::{Context, Result};
 use minio::s3::args::{BucketExistsArgs, MakeBucketArgs};
 use minio::s3::builders::ObjectContent;
