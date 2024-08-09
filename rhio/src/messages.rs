@@ -14,7 +14,7 @@ pub struct MessageMeta {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Message<T> {
+pub enum Message<T = Vec<u8>> {
     // Sync files in a directory
     FileSystem(FileSystemEvent),
 

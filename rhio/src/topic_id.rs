@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct TopicId(pub InnerTopicId);
 
 impl TopicId {
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
     pub fn new_from_str(str: &str) -> Self {
         let hash = Hash::new(str);
         Self(*hash.as_bytes())

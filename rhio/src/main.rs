@@ -48,6 +48,7 @@ async fn main() -> Result<()> {
     } else {
         println!("‣ node public key: {}", node.id());
     }
+
     println!("‣ watching folder: {}", config.blobs_path.display());
     println!();
 

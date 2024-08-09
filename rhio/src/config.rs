@@ -68,12 +68,12 @@ struct Cli {
     relay: Option<RelayUrl>,
 }
 
-fn parse_ticket(value: &str) -> Result<NodeAddress> {
+pub fn parse_ticket(value: &str) -> Result<NodeAddress> {
     let ticket = Ticket::from_str(value)?;
     Ok(ticket.into())
 }
 
-fn parse_url(value: &str) -> Result<RelayUrl> {
+pub fn parse_url(value: &str) -> Result<RelayUrl> {
     value.parse()
 }
 
@@ -85,7 +85,7 @@ pub fn load_config() -> Result<Config> {
         .extract()?;
 
     // Make blobs path absolute.
-    let absolute_path = absolute(&config.blobs_path).expect("to establish absolute path");
+    let absolute_path = absolute(config.blobs_path).expect("to establish absolute path");
     config.blobs_path = absolute_path;
 
     Ok(config)

@@ -107,7 +107,7 @@ where
                     self
                         .on_gossip_event(topic_id, msg)
                         .await;
-                },
+                }
             }
         }
     }

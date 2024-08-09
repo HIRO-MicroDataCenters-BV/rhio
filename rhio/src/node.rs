@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
-use p2panda_core::{PrivateKey, PublicKey, Hash};
+use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
@@ -20,7 +20,9 @@ use crate::actor::{RhioActor, ToRhioActor};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
-pub struct Node<T = ()> {
+/// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
+/// over topics and syncing blob data using the BAO protocol.
+pub struct Node<T = Vec<u8>> {
     network: Network,
     rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: JoinHandle<()>,
@@ -30,6 +32,7 @@ impl<T> Node<T>
 where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
 {
+    /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
         let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
@@ -64,15 +67,29 @@ where
         Ok(node)
     }
 
-    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        self.network.direct_addresses().await
-    }
-
+    /// Returns the PublicKey of this node which is used as it's unique network id.
+    ///
+    /// This ID is the unique addressing information of this node and other peers must know it to
+    /// be able to connect to this node.
     pub fn id(&self) -> PublicKey {
         self.network.node_id()
     }
 
+    /// Returns the direct addresses of this Node.
+    ///
+    /// The direct addresses of the Node are those that could be used by other nodes
+    /// to establish direct connectivity, depending on the network situation. The yielded lists of
+    /// direct addresses contain both the locally-bound addresses and the Node's publicly
+    /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
+    /// usually only a subset of these will be applicable to a certain remote node.
+    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
+        self.network.direct_addresses().await
+    }
+
     /// Import a blob from the filesystem.
+    ///
+    /// This method moves a blob into dedicated blob store and makes it available on the network
+    /// identified by it's Blake3 hash.
     pub async fn import_blob(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -82,6 +99,8 @@ where
     }
 
     /// Export a blob to the filesystem.
+    ///
+    /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob(&self, hash: Hash, path: PathBuf) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -91,6 +110,8 @@ where
     }
 
     /// Download a blob from the network.
+    ///
+    /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
     pub async fn download_blob(&self, hash: Hash) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
@@ -101,7 +122,9 @@ where
 
     /// Subscribe to a gossip topic.
     ///
-    /// Returns a sender, receiver and future which resolves once the gossip overlay is ready.
+    /// Returns a sender for broadcasting messages to all peers subscribed to this topic, a
+    /// receiver where messages can be awaited, and future which resolves once the gossip overlay
+    /// is ready.
     pub async fn subscribe(
         &self,
         topic: TopicId,
@@ -125,6 +148,7 @@ where
         result.map(|(rx, ready)| (tx, rx, ready))
     }
 
+    /// Shutdown the node.
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
         self.rhio_actor_tx.send(ToRhioActor::Shutdown).await?;
@@ -134,7 +158,7 @@ where
     }
 }
 
-pub struct TopicSender<T> {
+pub struct TopicSender<T = Vec<u8>> {
     topic_id: TopicId,
     tx: mpsc::Sender<ToRhioActor<T>>,
     _phantom: PhantomData<T>,

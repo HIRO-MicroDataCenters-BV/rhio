@@ -7,7 +7,7 @@ members = [
   "p2panda-store",
   "p2panda-sync",
   "rhio",
+  "rhio-ffi"
 ]
-exclude = ["rhio-py"]
 
 [workspace.lints.rust]
