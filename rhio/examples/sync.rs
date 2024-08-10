@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.network_config.clone(), private_key.clone()).await?;
+    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {
@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
 
     let Some(sync_dir) = config.sync_dir else {
         error!("sync example requires sync_dir path to be configured");
-        return Ok(())
+        return Ok(());
     };
 
     println!("‣ watching folder: {}", sync_dir.display());
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
                     let relative_path = to_relative_path(&path, &sync_dir);
                     if !exported_blobs.remove(&relative_path) {
                         info!("file added: {path:?}");
-                        let hash = node.import_blob(path.clone()).await.expect("can import blob");
+                        let hash = node.import_blob_filesystem(path.clone()).await.expect("can import blob");
                         let fs_event = FileSystemEvent::Create(relative_path, hash);
                         let context = fs_topic_tx.send(Message::FileSystem(fs_event.clone())).await.expect("can send topic event");
                         let _ = file_system.process(fs_event, context.operation_timestamp);
@@ -123,12 +123,12 @@ async fn main() -> Result<()> {
                             match action {
                                 FileSystemAction::DownloadAndExport { hash, path } => {
                                     if node.download_blob(hash).await.is_ok() {
-                                        node.export_blob(hash, sync_dir.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob_filesystem(hash, sync_dir.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                     }
                                 }
                                 FileSystemAction::Export { hash, path } => {
-                                        node.export_blob(hash, sync_dir.join(&path)).await.expect("failed to export blob");
+                                        node.export_blob_filesystem(hash, sync_dir.join(&path)).await.expect("failed to export blob");
                                         exported_blobs.insert(path);
                                 }
                             }

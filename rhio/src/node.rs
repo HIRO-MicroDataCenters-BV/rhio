@@ -7,9 +7,9 @@ use std::pin::Pin;
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::config::Config;
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
+use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -17,12 +17,14 @@ use tokio::task::JoinHandle;
 use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
+use crate::config::Config;
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
 pub struct Node<T = Vec<u8>> {
+    config: Config,
     network: Network,
     rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: JoinHandle<()>,
@@ -39,8 +41,8 @@ where
         let blob_store = BlobMemoryStore::new();
         let log_store = LogMemoryStore::default();
 
-        let mut network_builder =
-            NetworkBuilder::from_config(config.clone()).private_key(private_key.clone());
+        let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
+            .private_key(private_key.clone());
 
         match LocalDiscovery::new() {
             Ok(local) => network_builder = network_builder.discovery(local),
@@ -49,16 +51,22 @@ where
 
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
 
-        let mut rhio_actor =
-            RhioActor::new(blobs.clone(), private_key.clone(), log_store, rhio_actor_rx);
+        let mut rhio_actor = RhioActor::new(
+            config.clone(),
+            private_key.clone(),
+            blobs,
+            log_store,
+            rhio_actor_rx,
+        );
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = rhio_actor.run().await {
-                panic!("operations actor failed: {err:?}");
+                panic!("rhio actor failed: {err:?}");
             }
         });
 
         let node = Node {
+            config,
             network,
             rhio_actor_tx,
             actor_handle,
@@ -90,10 +98,13 @@ where
     ///
     /// This method moves a blob into dedicated blob store and makes it available on the network
     /// identified by it's Blake3 hash.
-    pub async fn import_blob(&self, path: PathBuf) -> Result<Hash> {
+    pub async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::ImportBlob { path, reply })
+            .send(ToRhioActor::ImportFile {
+                path: path.clone(),
+                reply,
+            })
             .await?;
         reply_rx.await?
     }
@@ -101,10 +112,28 @@ where
     /// Export a blob to the filesystem.
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
-    pub async fn export_blob(&self, hash: Hash, path: PathBuf) -> Result<()> {
+    pub async fn export_blob_filesystem(&self, hash: Hash, path: PathBuf) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::ExportBlob { hash, path, reply })
+            .send(ToRhioActor::ExportBlobFilesystem { hash, path, reply })
+            .await?;
+        reply_rx.await?
+    }
+
+    pub async fn export_blob_minio(
+        &self,
+        hash: Hash,
+        region: Region,
+        bucket_name: String,
+    ) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::ExportBlobMinio {
+                hash,
+                region,
+                bucket_name,
+                reply,
+            })
             .await?;
         reply_rx.await?
     }
@@ -193,8 +222,9 @@ where
 mod tests {
     use std::time::Duration;
 
-    use p2panda_net::{network::OutEvent, Config};
+    use p2panda_net::network::OutEvent;
 
+    use crate::config::Config;
     use crate::logging::setup_tracing;
     use crate::private_key::generate_ephemeral_private_key;
 
@@ -207,20 +237,18 @@ mod tests {
         let private_key_1 = generate_ephemeral_private_key();
         let private_key_2 = generate_ephemeral_private_key();
 
-        let network_config_1 = Config::default();
-        let network_config_2 = Config {
-            bind_port: 2023,
-            ..Default::default()
-        };
+        let config_1 = Config::default();
+        let mut config_2 = Config::default();
+        config_2.network_config.bind_port = 2023;
 
         // Spawn the first node
-        let node_1: Node<()> = Node::spawn(network_config_1, private_key_1).await.unwrap();
+        let node_1: Node<()> = Node::spawn(config_1, private_key_1).await.unwrap();
 
         // Retrieve the address of the first node
         let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
 
         // Spawn the second node
-        let node_2: Node<()> = Node::spawn(network_config_2, private_key_2).await.unwrap();
+        let node_2: Node<()> = Node::spawn(config_2, private_key_2).await.unwrap();
 
         // Retrieve the address of the second node
         let node_2_addr = node_2.network.endpoint().node_addr().await.unwrap();

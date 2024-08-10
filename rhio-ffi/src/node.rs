@@ -28,7 +28,7 @@ impl Node {
     pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
         let private_key = generate_ephemeral_private_key();
         let config: RhioConfig = config.clone().try_into()?;
-        let rhio_node = RhioNode::spawn(config.network_config, private_key).await?;
+        let rhio_node = RhioNode::spawn(config, private_key).await?;
         Ok(Self { inner: rhio_node })
     }
 
@@ -60,7 +60,7 @@ impl Node {
     /// This method moves a blob into dedicated blob store and makes it available on the network
     /// identified by it's Blake3 hash.
     pub async fn import_blob(&self, path: Path) -> Result<Hash, RhioError> {
-        let hash = self.inner.import_blob(path.into()).await?;
+        let hash = self.inner.import_blob_filesystem(path.into()).await?;
         Ok(hash.into())
     }
 
@@ -68,7 +68,7 @@ impl Node {
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
-        self.inner.export_blob(hash.into(), path.into()).await?;
+        self.inner.export_blob_filesystem(hash.into(), path.into()).await?;
         Ok(())
     }
 

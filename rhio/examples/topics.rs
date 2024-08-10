@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
 
     // Spawn the node
     let node: Node<ChatMessage> =
-        Node::spawn(config.network_config.clone(), private_key.clone()).await?;
+        Node::spawn(config.clone(), private_key.clone()).await?;
 
     println!("Peer Id: {}", private_key.public_key().to_hex());
 

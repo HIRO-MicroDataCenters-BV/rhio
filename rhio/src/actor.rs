@@ -6,16 +6,19 @@ use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
+use iroh_blobs::store::{Map, MapEntry};
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
+use s3::{Bucket, BucketConfiguration, Region};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, info};
 
+use crate::config::Config;
 use crate::extensions::RhioExtensions;
 use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::{create, ingest};
@@ -27,13 +30,19 @@ pub type SubscribeResult<T> = Result<(
 )>;
 
 pub enum ToRhioActor<T> {
-    ImportBlob {
+    ImportFile {
         path: PathBuf,
         reply: oneshot::Sender<Result<Hash>>,
     },
-    ExportBlob {
+    ExportBlobFilesystem {
         hash: Hash,
         path: PathBuf,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    ExportBlobMinio {
+        hash: Hash,
+        region: Region,
+        bucket_name: String,
         reply: oneshot::Sender<Result<()>>,
     },
     DownloadBlob {
@@ -55,6 +64,7 @@ pub enum ToRhioActor<T> {
 }
 
 pub struct RhioActor<T> {
+    config: Config,
     blobs: Blobs<BlobMemoryStore>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
@@ -71,15 +81,17 @@ where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
 {
     pub fn new(
-        blobs: Blobs<BlobMemoryStore>,
+        config: Config,
         private_key: PrivateKey,
+        blobs: Blobs<BlobMemoryStore>,
         store: LogsMemoryStore<RhioExtensions>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
     ) -> Self {
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
         Self {
-            blobs,
+            config,
             private_key,
+            blobs,
             store,
             topic_gossip_tx: HashMap::default(),
             topic_topic_rx: StreamMap::default(),
@@ -135,13 +147,13 @@ where
 
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
-            ToRhioActor::ImportBlob { path, reply } => {
+            ToRhioActor::ImportFile { path, reply } => {
                 let hash = self.on_import_blob(&path).await?;
                 info!("imported blob: {hash} {path:?}");
                 reply.send(Ok(hash)).ok();
             }
-            ToRhioActor::ExportBlob { path, reply, hash } => {
-                let result = self.on_export_blob(hash, &path).await;
+            ToRhioActor::ExportBlobFilesystem { path, reply, hash } => {
+                let result = self.on_export_blob_filesystem(hash, &path).await;
                 if result.is_ok() {
                     info!("exported blob: {hash} {path:?}");
                 }
@@ -172,6 +184,15 @@ where
                 reply,
             } => {
                 let result = self.on_subscribe(topic, topic_tx, topic_rx).await;
+                reply.send(result).ok();
+            }
+            ToRhioActor::ExportBlobMinio {
+                hash,
+                region,
+                bucket_name,
+                reply,
+            } => {
+                let result = self.on_export_blob_minio(hash, region, bucket_name).await;
                 reply.send(result).ok();
             }
         }
@@ -276,14 +297,18 @@ where
 
     async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
         let mut stream = self.blobs.import_blob(path.to_path_buf()).await;
+
         let event = stream
             .next()
             .await
             .expect("no event arrived on blob import stream");
-        match event {
+
+        let hash = match event {
             ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
             ImportBlobEvent::Done(hash) => Ok(hash),
-        }
+        }?;
+
+        Ok(hash)
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
@@ -359,7 +384,62 @@ where
         Ok(())
     }
 
-    async fn on_export_blob(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
+    async fn on_export_blob_filesystem(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
         self.blobs.export_blob(hash, path).await
+    }
+
+    async fn on_export_blob_minio(
+        &mut self,
+        hash: Hash,
+        region: Region,
+        bucket_name: String,
+    ) -> Result<()> {
+        let mut bucket = Bucket::new(
+            &bucket_name,
+            region.clone(),
+            self.config.minio_credentials.clone(),
+        )?
+        .with_path_style();
+
+        if !bucket.exists().await? {
+            bucket = Bucket::create_with_path_style(
+                &bucket_name,
+                region,
+                self.config.minio_credentials.clone(),
+                BucketConfiguration::default(),
+            )
+            .await?
+            .bucket;
+        };
+
+        let mpu = bucket
+            .initiate_multipart_upload(&hash.to_hex(), "application/octet-stream")
+            .await?;
+
+        let entry: <BlobMemoryStore as Map>::Entry =
+            self.blobs.get(hash).await?.expect("entry exists");
+        let mut reader = entry.data_reader().await?;
+        // @TODO: the futures on Entry are not Send, as we're awaiting them here, we can no longer
+        // spawn the actor in it's own task.
+        // let size = reader.size().await?;
+        // for (index, offset) in (0..size).step_by(1024 * 1024).enumerate() {
+        //     let bytes = reader.read_at(offset, 1024 * 1024).boxed_local().await?;
+        //     bucket
+        //         .put_multipart_chunk(
+        //             bytes.to_vec(),
+        //             &hash.to_string(),
+        //             index as u32,
+        //             &mpu.upload_id,
+        //             "",
+        //         )
+        //         .await?;
+        // }
+
+        info!(
+            "successfully uploaded blob `{}` as object to bucket `{}`.",
+            hash, bucket_name
+        );
+
+        Ok(())
     }
 }
