@@ -5,13 +5,11 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
-use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
-use iroh_blobs::store::MapEntry;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use s3::{Bucket, BucketConfiguration, Region};
+use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -40,7 +38,11 @@ where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
 {
     /// Configure and spawn a node.
-    pub async fn spawn(config: Config, private_key: PrivateKey, rt: LocalPoolHandle) -> Result<Self> {
+    pub async fn spawn(
+        config: Config,
+        private_key: PrivateKey,
+        rt: LocalPoolHandle,
+    ) -> Result<Self> {
         let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
         let blob_store = BlobMemoryStore::new();
@@ -129,63 +131,16 @@ where
         // Get the blobs entry from the blob store
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::GetEntry { hash, reply })
+            .send(ToRhioActor::ExportBlobMinio {
+                hash,
+                bucket_name,
+                region,
+                credentials: self.config.minio_credentials.clone(),
+                reply,
+            })
             .await?;
         let result = reply_rx.await?;
-        let entry = result?;
-
-        // Initiate the minio bucket
-        let mut bucket = Bucket::new(
-            &bucket_name,
-            region.clone(),
-            self.config.minio_credentials.clone(),
-        )?
-        .with_path_style();
-
-        if !bucket.exists().await? {
-            bucket = Bucket::create_with_path_style(
-                &bucket_name,
-                region,
-                self.config.minio_credentials.clone(),
-                BucketConfiguration::default(),
-            )
-            .await?
-            .bucket;
-        };
-
-        // Start a multi-part upload
-        let mut parts = Vec::new();
-        let mpu = bucket
-            .initiate_multipart_upload(&hash.to_string(), "application/octet-stream")
-            .await?;
-
-        // Access the actual blob data and iterate over it's bytes in chunks
-        let mut reader = entry.data_reader().await?;
-        let size = reader.size().await?;
-        for (index, offset) in (0..size).step_by(1024 * 1024).enumerate() {
-            // Upload this chunk to the minio bucket
-            let bytes = reader.read_at(offset, 1024 * 1024).await?;
-            let part = bucket
-                .put_multipart_chunk(
-                    bytes.to_vec(),
-                    &hash.to_string(),
-                    {index + 1} as u32,
-                    &mpu.upload_id,
-                    "application/octet-stream",
-                )
-                .await?;
-            parts.push(part);
-        }
-
-        let response = bucket
-            .complete_multipart_upload(&hash.to_string(), &mpu.upload_id, parts)
-            .await?;
-
-        if response.status_code() != 200 {
-            error!("{response}");
-        }
-
-        Ok(())
+        result
     }
 
     /// Download a blob from the network.
@@ -294,13 +249,17 @@ mod tests {
         config_2.network_config.bind_port = 2023;
 
         // Spawn the first node
-        let node_1: Node<()> = Node::spawn(config_1, private_key_1, pool_handle.clone()).await.unwrap();
+        let node_1: Node<()> = Node::spawn(config_1, private_key_1, pool_handle.clone())
+            .await
+            .unwrap();
 
         // Retrieve the address of the first node
         let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
 
         // Spawn the second node
-        let node_2: Node<()> = Node::spawn(config_2, private_key_2, pool_handle).await.unwrap();
+        let node_2: Node<()> = Node::spawn(config_2, private_key_2, pool_handle)
+            .await
+            .unwrap();
 
         // Retrieve the address of the second node
         let node_2_addr = node_2.network.endpoint().node_addr().await.unwrap();
