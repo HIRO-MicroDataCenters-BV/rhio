@@ -5,11 +5,13 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
+use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
+use iroh_blobs::store::MapEntry;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
-use s3::Region;
+use s3::{Bucket, BucketConfiguration, Region};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -51,13 +53,7 @@ where
 
         let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
 
-        let mut rhio_actor = RhioActor::new(
-            config.clone(),
-            private_key.clone(),
-            blobs,
-            log_store,
-            rhio_actor_rx,
-        );
+        let mut rhio_actor = RhioActor::new(private_key.clone(), blobs, log_store, rhio_actor_rx);
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = rhio_actor.run().await {
@@ -126,16 +122,67 @@ where
         region: Region,
         bucket_name: String,
     ) -> Result<()> {
+        // Get the blobs entry from the blob store
         let (reply, reply_rx) = oneshot::channel();
         self.rhio_actor_tx
-            .send(ToRhioActor::ExportBlobMinio {
-                hash,
-                region,
-                bucket_name,
-                reply,
-            })
+            .send(ToRhioActor::GetEntry { hash, reply })
             .await?;
-        reply_rx.await?
+        let result = reply_rx.await?;
+        let entry = result?;
+
+        // Initiate the minio bucket
+        let mut bucket = Bucket::new(
+            &bucket_name,
+            region.clone(),
+            self.config.minio_credentials.clone(),
+        )?
+        .with_path_style();
+
+        if !bucket.exists().await? {
+            bucket = Bucket::create_with_path_style(
+                &bucket_name,
+                region,
+                self.config.minio_credentials.clone(),
+                BucketConfiguration::default(),
+            )
+            .await?
+            .bucket;
+        };
+
+        // Start a multi-part upload
+        let mut parts = Vec::new();
+        let mpu = bucket
+            .initiate_multipart_upload(&hash.to_string(), "application/octet-stream")
+            .await?;
+
+        // Access the actual blob data and iterate over it's bytes in chunks
+        let mut reader = entry.data_reader().await?;
+        let size = reader.size().await?;
+        for (index, offset) in (0..size).step_by(1024 * 1024).enumerate() {
+            // Upload this chunk to the minio bucket
+            let bytes = reader.read_at(offset, 1024 * 1024).await?;
+            let part = bucket
+                .put_multipart_chunk(
+                    bytes.to_vec(),
+                    &hash.to_string(),
+                    {index + 1} as u32,
+                    &mpu.upload_id,
+                    "application/octet-stream",
+                )
+                .await?;
+            parts.push(part);
+        }
+
+        let response = bucket
+            .complete_multipart_upload(&hash.to_string(), &mpu.upload_id, parts)
+            .await?;
+
+        if response.status_code() != 200 {
+            error!("{response}");
+            
+        }
+
+        Ok(())
     }
 
     /// Download a blob from the network.
