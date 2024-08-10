@@ -6,19 +6,22 @@ use rhio::config::Config;
 use rhio::messages::{Message, MessageMeta};
 use rhio::node::Node;
 use rhio::topic_id::TopicId;
+use tokio_util::task::LocalPoolHandle;
 
 /// The only message type in our chat app
 type ChatMessage = String;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let pool_handle = LocalPoolHandle::new(num_cpus::get());
+
     let chat_topic_id = TopicId::new_from_str("my_chat");
     let private_key = PrivateKey::new();
     let config = Config::default();
 
     // Spawn the node
     let node: Node<ChatMessage> =
-        Node::spawn(config.clone(), private_key.clone()).await?;
+        Node::spawn(config.clone(), private_key.clone(), pool_handle).await?;
 
     println!("Peer Id: {}", private_key.public_key().to_hex());
 

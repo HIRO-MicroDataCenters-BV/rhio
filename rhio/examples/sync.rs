@@ -17,10 +17,12 @@ use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::FILE_SYSTEM_EVENT_TOPIC;
 use tokio::sync::mpsc;
+use tokio_util::task::LocalPoolHandle;
 use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let pool_handle = LocalPoolHandle::new(num_cpus::get());
     setup_tracing();
 
     // Load config file and private key
@@ -33,7 +35,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
+    let node: Node<()> = Node::spawn(config.clone(), private_key.clone(), pool_handle).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {

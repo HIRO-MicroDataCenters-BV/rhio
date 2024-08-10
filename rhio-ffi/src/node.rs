@@ -6,6 +6,7 @@ use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::Node as RhioNode;
+use tokio_util::task::LocalPoolHandle;
 use tracing::warn;
 
 use crate::config::Config;
@@ -26,9 +27,10 @@ impl Node {
     /// Configure and spawn a node.
     #[uniffi::constructor(async_runtime = "tokio")]
     pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
+        let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let private_key = generate_ephemeral_private_key();
         let config: RhioConfig = config.clone().try_into()?;
-        let rhio_node = RhioNode::spawn(config, private_key).await?;
+        let rhio_node = RhioNode::spawn(config, private_key, pool_handle).await?;
         Ok(Self { inner: rhio_node })
     }
 

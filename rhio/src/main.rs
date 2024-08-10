@@ -7,10 +7,12 @@ use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::{BLOB_ANNOUNCE_TOPIC, BUCKET_NAME, MINIO_ENDPOINT, MINIO_REGION};
 use s3::Region;
+use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
+    let pool_handle = LocalPoolHandle::new(num_cpus::get());
     setup_tracing();
 
     // Load config file and private key
@@ -23,7 +25,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
+    let node: Node<()> = Node::spawn(config.clone(), private_key.clone(), pool_handle).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {

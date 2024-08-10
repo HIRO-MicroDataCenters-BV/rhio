@@ -16,6 +16,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
@@ -29,6 +30,8 @@ pub struct Node<T = Vec<u8>> {
     config: Config,
     network: Network,
     rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
+    #[allow(dead_code)]
+    rt: LocalPoolHandle,
     actor_handle: JoinHandle<()>,
 }
 
@@ -37,7 +40,7 @@ where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
 {
     /// Configure and spawn a node.
-    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
+    pub async fn spawn(config: Config, private_key: PrivateKey, rt: LocalPoolHandle) -> Result<Self> {
         let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
         let blob_store = BlobMemoryStore::new();
@@ -55,7 +58,7 @@ where
 
         let mut rhio_actor = RhioActor::new(private_key.clone(), blobs, log_store, rhio_actor_rx);
 
-        let actor_handle = tokio::task::spawn(async move {
+        let actor_handle = rt.spawn_pinned(|| async move {
             if let Err(err) = rhio_actor.run().await {
                 panic!("rhio actor failed: {err:?}");
             }
@@ -65,6 +68,7 @@ where
             config,
             network,
             rhio_actor_tx,
+            rt,
             actor_handle,
         };
 
@@ -179,7 +183,6 @@ where
 
         if response.status_code() != 200 {
             error!("{response}");
-            
         }
 
         Ok(())
@@ -270,6 +273,7 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_net::network::OutEvent;
+    use tokio_util::task::LocalPoolHandle;
 
     use crate::config::Config;
     use crate::logging::setup_tracing;
@@ -279,6 +283,7 @@ mod tests {
 
     #[tokio::test]
     async fn join_gossip_overlay() {
+        let pool_handle = LocalPoolHandle::new(5);
         setup_tracing();
 
         let private_key_1 = generate_ephemeral_private_key();
@@ -289,13 +294,13 @@ mod tests {
         config_2.network_config.bind_port = 2023;
 
         // Spawn the first node
-        let node_1: Node<()> = Node::spawn(config_1, private_key_1).await.unwrap();
+        let node_1: Node<()> = Node::spawn(config_1, private_key_1, pool_handle.clone()).await.unwrap();
 
         // Retrieve the address of the first node
         let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
 
         // Spawn the second node
-        let node_2: Node<()> = Node::spawn(config_2, private_key_2).await.unwrap();
+        let node_2: Node<()> = Node::spawn(config_2, private_key_2, pool_handle).await.unwrap();
 
         // Retrieve the address of the second node
         let node_2_addr = node_2.network.endpoint().node_addr().await.unwrap();

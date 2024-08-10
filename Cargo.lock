@@ -4096,6 +4096,7 @@ dependencies = [
  "hex",
  "iroh-blobs",
  "notify-debouncer-full",
+ "num_cpus",
  "p2panda-blobs",
  "p2panda-core",
  "p2panda-net",
@@ -4105,6 +4106,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
@@ -4116,10 +4118,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "num_cpus",
  "p2panda-core",
  "rhio",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "uniffi",
 ]

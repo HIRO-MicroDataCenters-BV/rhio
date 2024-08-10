@@ -6,7 +6,7 @@ use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
-use iroh_blobs::store::Map;
+use iroh_blobs::store::{Map, MapEntry};
 use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
