@@ -6,6 +6,7 @@ use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
 use p2panda_net::{Config as NetworkConfig, NodeAddress, RelayUrl};
+use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
@@ -15,8 +16,8 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub minio_credentials: Option<MinioCredentials>,
-    pub import_path: Option<PathBuf>,
+    pub minio_credentials: Credentials,
+    pub import_path: Option<ImportPath>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
@@ -29,8 +30,10 @@ impl Default for Config {
             ..NetworkConfig::default()
         };
 
+        let credentials = Credentials::default()
+            .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
-            minio_credentials: None,
+            minio_credentials: credentials,
             import_path: None,
             sync_dir: None,
             network_config,
@@ -62,13 +65,13 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_dir: Option<PathBuf>,
 
-    #[arg(short = 'f', long, value_name = "PATH")]
+    #[arg(short = 'f', long, value_name = "PATH", value_parser=import_path_parser)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    import_path: Option<PathBuf>,
+    import_path: Option<ImportPath>,
 
-    #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_minio_credentials)]
+    #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    minio_credentials: Option<MinioCredentials>,
+    minio_credentials: Option<Credentials>,
 
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,22 +87,27 @@ pub fn parse_url(value: &str) -> Result<RelayUrl> {
     value.parse()
 }
 
-pub fn parse_minio_credentials(value: &str) -> Result<MinioCredentials> {
+pub fn import_path_parser(value: &str) -> Result<ImportPath> {
+    if value.starts_with("http:") || value.starts_with("https:") {
+        Ok(ImportPath::Url(value.to_string()))
+    } else {
+        let absolute_path = absolute(PathBuf::from(value))?;
+        Ok(ImportPath::File(absolute_path))
+    }
+}
+
+pub fn parse_s3_credentials(value: &str) -> Result<Credentials> {
     let mut value_iter = value.split(":");
     let access_key = value_iter
         .next()
-        .ok_or(anyhow::anyhow!("no access key provided"))?
-        .to_string();
+        .ok_or(anyhow::anyhow!("no access key provided"))?;
 
     let secret_key = value_iter
         .next()
-        .ok_or(anyhow::anyhow!("no secret key provided"))?
-        .to_string();
+        .ok_or(anyhow::anyhow!("no secret key provided"))?;
 
-    Ok(MinioCredentials {
-        access_key,
-        secret_key,
-    })
+    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)?;
+    Ok(credentials)
 }
 
 pub fn load_config() -> Result<Config> {
@@ -122,4 +130,12 @@ pub fn load_config() -> Result<Config> {
 pub struct MinioCredentials {
     pub access_key: String,
     pub secret_key: String,
+}
+
+type Url = String;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ImportPath {
+    File(PathBuf),
+    Url(Url),
 }
