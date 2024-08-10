@@ -32,6 +32,7 @@ p2panda-blobs = { path = "../p2panda-blobs" }
 p2panda-core = { path = "../p2panda-core" }
 p2panda-net = { path = "../p2panda-net" }
 p2panda-store = { path = "../p2panda-store" }
+reqwest = { version = "0.12.5", features = ["stream"] }
 rust-s3 = "0.34.0"
 serde = { version = "1.0.203", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["full"] }

@@ -111,6 +111,17 @@ where
         reply_rx.await?
     }
 
+    pub async fn import_blob_url(&self, url: String) -> Result<Hash> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.rhio_actor_tx
+            .send(ToRhioActor::ImportUrl {
+                url,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
+    }
+
     /// Export a blob to the filesystem.
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.

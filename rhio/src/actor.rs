@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::{self, SystemTime};
@@ -33,6 +34,10 @@ pub type SubscribeResult<T> = Result<(
 pub enum ToRhioActor<T> {
     ImportFile {
         path: PathBuf,
+        reply: oneshot::Sender<Result<Hash>>,
+    },
+    ImportUrl {
+        url: String,
         reply: oneshot::Sender<Result<Hash>>,
     },
     ExportBlobFilesystem {
@@ -146,6 +151,11 @@ where
 
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
+            ToRhioActor::ImportUrl { url, reply } => {
+                let hash = self.on_import_url(&url).await?;
+                info!("imported blob: {hash} {url:?}");
+                reply.send(Ok(hash)).ok();
+            }
             ToRhioActor::ImportFile { path, reply } => {
                 let hash = self.on_import_blob(&path).await?;
                 info!("imported blob: {hash} {path:?}");
@@ -313,6 +323,26 @@ where
         Ok(hash)
     }
 
+    async fn on_import_url(&mut self, url: &String) -> Result<Hash> {
+        let stream = reqwest::get(url)
+            .await?
+            .bytes_stream()
+            .map(|result| result.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
+        let mut stream = self.blobs.import_blob_from_stream(stream).await;
+
+        let event = stream
+            .next()
+            .await
+            .expect("no event arrived on blob import stream");
+
+        let hash = match event {
+            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
+            ImportBlobEvent::Done(hash) => Ok(hash),
+        }?;
+
+        Ok(hash)
+    }
+
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
         match event {
             OutEvent::Ready => {
@@ -423,9 +453,9 @@ where
         // Access the actual blob data and iterate over it's bytes in chunks
         let mut reader = entry.data_reader().await?;
         let size = reader.size().await?;
-        for (index, offset) in (0..size).step_by(1024 * 1024).enumerate() {
+        for (index, offset) in (0..size).step_by(5 * 1024 * 1024).enumerate() {
             // Upload this chunk to the minio bucket
-            let bytes = reader.read_at(offset, 1024 * 1024).await?;
+            let bytes = reader.read_at(offset, 5 * 1024 * 1024).await?;
             let part = bucket
                 .put_multipart_chunk(
                     bytes.to_vec(),

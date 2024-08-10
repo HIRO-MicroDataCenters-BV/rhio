@@ -51,13 +51,23 @@ async fn main() -> Result<()> {
 
     // @TODO: await blob announcement events
 
-    let Some(ImportPath::File(path)) = config.import_path else {
-        error!("no import path provided, nothing to do here....");
-        return Ok(());
+    let hash = match &config.import_path {
+        Some(location) => match location {
+            ImportPath::File(path) => {
+                println!("import file {path:?}");
+                node.import_blob_filesystem(path.clone()).await
+            }
+            ImportPath::Url(url) => {
+                println!("import file {url}");
+                node.import_blob_url(url.clone()).await
+            }
+        }?,
+        None => {
+            error!("no import path provided, nothing to do here....");
+            return Ok(());
+        }
     };
 
-    println!("import blob ..");
-    let hash = node.import_blob_filesystem(path.clone()).await?;
     println!("export blob ..");
     node.export_blob_minio(
         hash,
