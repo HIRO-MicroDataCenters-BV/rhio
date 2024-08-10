@@ -4,8 +4,9 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use futures_util::Stream;
+use iroh_base::hash::Hash as IrohHash;
 use iroh_blobs::downloader::Downloader;
-use iroh_blobs::store::Store;
+use iroh_blobs::store::{Map, Store};
 use p2panda_core::Hash;
 use p2panda_net::{Network, NetworkBuilder};
 use tokio_util::task::LocalPoolHandle;
@@ -29,7 +30,7 @@ where
 
 impl<S> Blobs<S>
 where
-    S: Store,
+    S: Store + Clone + Send + Sync + 'static,
 {
     pub async fn from_builder(
         network_builder: NetworkBuilder,
@@ -59,6 +60,12 @@ where
         };
 
         Ok((network, blobs))
+    }
+
+    pub async fn get(&self, hash: Hash) -> anyhow::Result<Option<<S as Map>::Entry>> {
+        let hash = IrohHash::from_bytes(*hash.as_bytes());
+        let entry = self.store.get(&hash.into()).await?;
+        Ok(entry)
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
