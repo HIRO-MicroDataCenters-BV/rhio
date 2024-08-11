@@ -8,7 +8,6 @@ use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private
 use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::{BLOB_ANNOUNCE_TOPIC, BUCKET_NAME, MINIO_ENDPOINT, MINIO_REGION};
-use s3::Region;
 use tokio_util::task::LocalPoolHandle;
 use tracing::info;
 
