@@ -7,13 +7,12 @@ use std::pin::Pin;
 use anyhow::Result;
 use p2panda_blobs::{Blobs, MemoryStore as BlobMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio::task::JoinHandle;
 use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
@@ -24,13 +23,14 @@ use crate::topic_id::TopicId;
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
+#[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
     config: Config,
     network: Network,
-    rhio_actor_tx: mpsc::Sender<ToRhioActor<T>>,
+    actor_tx: mpsc::Sender<ToRhioActor<T>>,
     #[allow(dead_code)]
     rt: LocalPoolHandle,
-    actor_handle: JoinHandle<()>,
+    task: SharedAbortingJoinHandle<()>,
 }
 
 impl<T> Node<T>
@@ -43,7 +43,7 @@ where
         private_key: PrivateKey,
         rt: LocalPoolHandle,
     ) -> Result<Self> {
-        let (rhio_actor_tx, rhio_actor_rx) = mpsc::channel(256);
+        let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
         let blob_store = BlobMemoryStore::new();
         let log_store = LogMemoryStore::default();
@@ -60,7 +60,7 @@ where
 
         let mut rhio_actor = RhioActor::new(private_key.clone(), blobs, log_store, rhio_actor_rx);
 
-        let actor_handle = rt.spawn_pinned(|| async move {
+        let task = rt.spawn_pinned(|| async move {
             if let Err(err) = rhio_actor.run().await {
                 panic!("rhio actor failed: {err:?}");
             }
@@ -69,9 +69,9 @@ where
         let node = Node {
             config,
             network,
-            rhio_actor_tx,
+            actor_tx,
             rt,
-            actor_handle,
+            task: task.into(),
         };
 
         Ok(node)
@@ -102,7 +102,7 @@ where
     /// identified by it's Blake3 hash.
     pub async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
+        self.actor_tx
             .send(ToRhioActor::ImportFile {
                 path: path.clone(),
                 reply,
@@ -113,11 +113,8 @@ where
 
     pub async fn import_blob_url(&self, url: String) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
-            .send(ToRhioActor::ImportUrl {
-                url,
-                reply,
-            })
+        self.actor_tx
+            .send(ToRhioActor::ImportUrl { url, reply })
             .await?;
         reply_rx.await?
     }
@@ -127,7 +124,7 @@ where
     /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob_filesystem(&self, hash: Hash, path: PathBuf) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
+        self.actor_tx
             .send(ToRhioActor::ExportBlobFilesystem { hash, path, reply })
             .await?;
         reply_rx.await?
@@ -141,7 +138,7 @@ where
     ) -> Result<()> {
         // Get the blobs entry from the blob store
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
+        self.actor_tx
             .send(ToRhioActor::ExportBlobMinio {
                 hash,
                 bucket_name,
@@ -159,7 +156,7 @@ where
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
     pub async fn download_blob(&self, hash: Hash) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
+        self.actor_tx
             .send(ToRhioActor::DownloadBlob { hash, reply })
             .await?;
         reply_rx.await?
@@ -180,7 +177,7 @@ where
     )> {
         let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
         let (reply, reply_rx) = oneshot::channel();
-        self.rhio_actor_tx
+        self.actor_tx
             .send(ToRhioActor::Subscribe {
                 topic,
                 topic_tx,
@@ -189,16 +186,16 @@ where
             })
             .await?;
         let result = reply_rx.await?;
-        let tx = TopicSender::new(topic, self.rhio_actor_tx.clone());
+        let tx = TopicSender::new(topic, self.actor_tx.clone());
         result.map(|(rx, ready)| (tx, rx, ready))
     }
 
     /// Shutdown the node.
     pub async fn shutdown(self) -> Result<()> {
         // Trigger shutdown of the main run task by activating the cancel token
-        self.rhio_actor_tx.send(ToRhioActor::Shutdown).await?;
+        self.actor_tx.send(ToRhioActor::Shutdown).await?;
         self.network.shutdown().await?;
-        self.actor_handle.await?;
+        self.task.await.map_err(|err| anyhow::anyhow!("{err}"))?;
         Ok(())
     }
 }

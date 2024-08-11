@@ -20,3 +20,5 @@ pub use protocols::ProtocolHandler;
 pub type NetworkId = [u8; 32];
 
 pub type TopicId = [u8; 32];
+
+pub type SharedAbortingJoinHandle<T> = iroh_net::util::SharedAbortingJoinHandle<T>;
