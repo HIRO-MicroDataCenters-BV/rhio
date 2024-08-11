@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
+use futures_util::FutureExt;
 use rhio::config::{load_config, ImportPath};
 use rhio::logging::setup_tracing;
+use rhio::messages::Message;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use rhio::ticket::Ticket;
@@ -8,7 +10,7 @@ use rhio::topic_id::TopicId;
 use rhio::{BLOB_ANNOUNCE_TOPIC, BUCKET_NAME, MINIO_ENDPOINT, MINIO_REGION};
 use s3::Region;
 use tokio_util::task::LocalPoolHandle;
-use tracing::error;
+use tracing::info;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -25,7 +27,8 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.clone(), private_key.clone(), pool_handle).await?;
+    let node: Node<()> =
+        Node::spawn(config.clone(), private_key.clone(), pool_handle.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {
@@ -43,42 +46,92 @@ async fn main() -> Result<()> {
         println!("‣ node public key: {}", node.id());
     }
 
-    // Join p2p gossip overlay and announce blobs from our directory there
-    println!("joining gossip overlay ..");
-
+    // Join gossip overlay for `BLOB_ANNOUNCE_TOPIC` topic
+    info!("joining gossip overlay ..");
     let topic = TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC);
-    let (topic_tx, mut topic_rx, ready) = node.subscribe(topic).await?;
+    let (topic_tx, mut topic_rx, topic_ready) = node.subscribe(topic).await?;
+    let topic_ready = topic_ready.shared();
 
-    // @TODO: await blob announcement events
+    // Spawn a separate task to import a file, export it to minio and then announce it on the network.
+    let topic_ready_clone = topic_ready.clone();
+    let node_clone = node.clone();
 
-    let hash = match &config.import_path {
-        Some(location) => match location {
-            ImportPath::File(path) => {
-                println!("import file {path:?}");
-                node.import_blob_filesystem(path.clone()).await
+    pool_handle.spawn_pinned(|| async move {
+        let hash = match &config.import_path {
+            Some(location) => match location {
+                // Import a file from the local filesystem
+                ImportPath::File(path) => {
+                    info!("import {path:?}");
+                    let hash = node_clone
+                        .import_blob_filesystem(path.clone())
+                        .await
+                        .expect("import blob from filesystem failed");
+                    hash
+                }
+                // Import a file from the given url
+                ImportPath::Url(url) => {
+                    info!("import {url}");
+                    let hash = node_clone
+                        .import_blob_url(url.clone())
+                        .await
+                        .expect("import blob from url failed");
+                    hash
+                }
+            },
+            None => return,
+        };
+
+        // Export the blob data from the blob store to a minio bucket
+        info!("export to minio {hash}");
+        node_clone
+            .export_blob_minio(
+                hash,
+                Region::Custom {
+                    region: MINIO_REGION.to_string(),
+                    endpoint: MINIO_ENDPOINT.to_string(),
+                },
+                BUCKET_NAME.to_string(),
+            )
+            .await
+            .expect("export blob failed");
+
+        // Wait in this task for the gossip topic to be ready
+        topic_ready_clone.await;
+
+        // Announce the new blob on the gossip topic so other peers can then download it
+        info!("announce blob {hash}");
+        topic_tx
+            .send(Message::BlobAnnouncement(hash))
+            .await
+            .expect("failed to send message on topic");
+    });
+
+    // Wait for the gossip topic to be ready
+    topic_ready.await;
+    info!("gossip overlay joined");
+
+    // For all blob announcements we receive on the gossip topic, download the blob from the
+    // network and export it to our own minio store
+    while let Ok((message, _)) = topic_rx.recv().await {
+        match message {
+            Message::BlobAnnouncement(hash) => {
+                info!("download {hash}");
+                node.download_blob(hash).await?;
+                info!("export to minio {hash}");
+                node.export_blob_minio(
+                    hash,
+                    Region::Custom {
+                        region: MINIO_REGION.to_string(),
+                        endpoint: MINIO_ENDPOINT.to_string(),
+                    },
+                    BUCKET_NAME.to_string(),
+                )
+                .await?;
             }
-            ImportPath::Url(url) => {
-                println!("import file {url}");
-                node.import_blob_url(url.clone()).await
-            }
-        }?,
-        None => {
-            error!("no import path provided, nothing to do here....");
-            return Ok(());
+            _ => (),
         }
-    };
+    }
 
-    println!("export blob ..");
-    node.export_blob_minio(
-        hash,
-        Region::Custom {
-            region: MINIO_REGION.to_string(),
-            endpoint: MINIO_ENDPOINT.to_string(),
-        },
-        BUCKET_NAME.to_string(),
-    )
-    .await?;
-    println!("FINISH");
     node.shutdown().await?;
 
     Ok(())

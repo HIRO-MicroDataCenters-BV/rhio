@@ -164,7 +164,7 @@ where
             ToRhioActor::ExportBlobFilesystem { path, reply, hash } => {
                 let result = self.on_export_blob_filesystem(hash, &path).await;
                 if result.is_ok() {
-                    info!("exported blob: {hash} {path:?}");
+                    info!("exported blob to filesystem: {hash} {path:?}");
                 }
                 reply.send(result).ok();
             }
@@ -183,8 +183,11 @@ where
                 reply,
             } => {
                 let result = self
-                    .on_export_blob_minio(hash, bucket_name, region, credentials)
+                    .on_export_blob_minio(hash, bucket_name.clone(), region, credentials)
                     .await;
+                if result.is_ok() {
+                    info!("exported blob to minio: {hash} {bucket_name}");
+                }
                 reply.send(result).ok();
             }
             ToRhioActor::PublishEvent {
@@ -474,6 +477,7 @@ where
 
         if response.status_code() != 200 {
             error!("{response}");
+            return Err(anyhow::anyhow!(response))
         }
         Ok(())
     }
