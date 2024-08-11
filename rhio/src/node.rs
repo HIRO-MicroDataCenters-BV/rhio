@@ -133,7 +133,8 @@ where
     pub async fn export_blob_minio(
         &self,
         hash: Hash,
-        region: Region,
+        region: String,
+        endpoint: String,
         bucket_name: String,
     ) -> Result<()> {
         // Get the blobs entry from the blob store
@@ -142,7 +143,7 @@ where
             .send(ToRhioActor::ExportBlobMinio {
                 hash,
                 bucket_name,
-                region,
+                region: Region::Custom { region, endpoint },
                 credentials: self.config.minio_credentials.clone(),
                 reply,
             })

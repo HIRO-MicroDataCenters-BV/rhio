@@ -86,10 +86,8 @@ async fn main() -> Result<()> {
         node_clone
             .export_blob_minio(
                 hash,
-                Region::Custom {
-                    region: MINIO_REGION.to_string(),
-                    endpoint: MINIO_ENDPOINT.to_string(),
-                },
+                MINIO_REGION.to_string(),
+                MINIO_ENDPOINT.to_string(),
                 BUCKET_NAME.to_string(),
             )
             .await
@@ -120,10 +118,8 @@ async fn main() -> Result<()> {
                 info!("export to minio {hash}");
                 node.export_blob_minio(
                     hash,
-                    Region::Custom {
-                        region: MINIO_REGION.to_string(),
-                        endpoint: MINIO_ENDPOINT.to_string(),
-                    },
+                    MINIO_REGION.to_string(),
+                    MINIO_ENDPOINT.to_string(),
                     BUCKET_NAME.to_string(),
                 )
                 .await?;
