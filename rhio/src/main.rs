@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
         // Announce the new blob on the gossip topic so other peers can then download it
         info!("announce blob {hash}");
         topic_tx
-            .send(Message::BlobAnnouncement(hash))
+            .announce_blob(hash)
             .await
             .expect("failed to send message on topic");
     });

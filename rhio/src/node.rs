@@ -229,6 +229,18 @@ where
             .await?;
         reply_rx.await?
     }
+
+    pub async fn announce_blob(&self, hash: Hash) -> Result<MessageMeta> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ToRhioActor::PublishEvent {
+                topic: self.topic_id,
+                message: Message::BlobAnnouncement(hash),
+                reply,
+            })
+            .await?;
+        reply_rx.await?
+    }
 }
 
 #[cfg(test)]
