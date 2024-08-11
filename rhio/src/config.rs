@@ -65,7 +65,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_dir: Option<PathBuf>,
 
-    #[arg(short = 'f', long, value_name = "PATH", value_parser=import_path_parser)]
+    #[arg(short = 'i', long, value_name = "PATH | URL", value_parser=import_path_parser)]
     #[serde(skip_serializing_if = "Option::is_none")]
     import_path: Option<ImportPath>,
 
