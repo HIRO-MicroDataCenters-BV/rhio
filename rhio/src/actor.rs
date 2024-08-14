@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use futures_lite::FutureExt;
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::MapEntry;
-use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use p2panda_blobs::{Blobs, DownloadBlobEvent, FilesystemStore, ImportBlobEvent};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
@@ -71,7 +71,7 @@ pub enum ToRhioActor<T> {
 }
 
 pub struct RhioActor<T> {
-    blobs: Blobs<BlobMemoryStore>,
+    blobs: Blobs<FilesystemStore>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
@@ -88,7 +88,7 @@ where
 {
     pub fn new(
         private_key: PrivateKey,
-        blobs: Blobs<BlobMemoryStore>,
+        blobs: Blobs<FilesystemStore>,
         store: LogsMemoryStore<RhioExtensions>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
     ) -> Self {
@@ -454,7 +454,7 @@ where
             .await?;
 
         // Access the actual blob data and iterate over it's bytes in chunks
-        let mut reader = entry.data_reader().await?;
+        let mut reader = entry.data_reader();
         let size = reader.size().await?;
         for (index, offset) in (0..size).step_by(5 * 1024 * 1024).enumerate() {
             // Upload this chunk to the minio bucket
@@ -477,7 +477,7 @@ where
 
         if response.status_code() != 200 {
             error!("{response}");
-            return Err(anyhow::anyhow!(response))
+            return Err(anyhow::anyhow!(response));
         }
         Ok(())
     }
