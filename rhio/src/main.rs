@@ -51,8 +51,11 @@ async fn main() -> Result<()> {
     let (topic_tx, mut topic_rx, topic_ready) = node.subscribe(topic).await?;
     let topic_ready = topic_ready.shared();
 
+    // Wait for the gossip topic to be ready
+    topic_ready.clone().await;
+    info!("gossip overlay joined");
+
     // Spawn a separate task to import a file, export it to minio and then announce it on the network.
-    let topic_ready_clone = topic_ready.clone();
     let node_clone = node.clone();
 
     pool_handle.spawn_pinned(|| async move {
@@ -92,9 +95,6 @@ async fn main() -> Result<()> {
             .await
             .expect("export blob failed");
 
-        // Wait in this task for the gossip topic to be ready
-        topic_ready_clone.await;
-
         // Announce the new blob on the gossip topic so other peers can then download it
         info!("announce blob {hash}");
         topic_tx
@@ -102,10 +102,6 @@ async fn main() -> Result<()> {
             .await
             .expect("failed to send message on topic");
     });
-
-    // Wait for the gossip topic to be ready
-    topic_ready.await;
-    info!("gossip overlay joined");
 
     // For all blob announcements we receive on the gossip topic, download the blob from the
     // network and export it to our own minio store
