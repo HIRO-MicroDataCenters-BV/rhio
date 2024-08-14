@@ -10,6 +10,7 @@ use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
+use crate::BLOB_STORE_DIR;
 
 // Use iroh's staging relay node for testing
 const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
@@ -17,6 +18,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub minio_credentials: Credentials,
+    pub blobs_dir: PathBuf,
     pub import_path: Option<ImportPath>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
@@ -33,6 +35,7 @@ impl Default for Config {
         let credentials = Credentials::default()
             .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
+            blobs_dir: PathBuf::from(BLOB_STORE_DIR),
             minio_credentials: credentials,
             import_path: None,
             sync_dir: None,
@@ -61,9 +64,13 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
 
-    #[arg(short = 'd', long, value_name = "PATH")]
+    #[arg(short = 's', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_dir: Option<PathBuf>,
+
+    #[arg(short = 'b', long, value_name = "PATH")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blobs_dir: Option<PathBuf>,
 
     #[arg(short = 'i', long, value_name = "PATH | URL", value_parser=import_path_parser)]
     #[serde(skip_serializing_if = "Option::is_none")]

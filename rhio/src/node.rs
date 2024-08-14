@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
-use iroh_blobs::store::fs::Options;
 use p2panda_blobs::{Blobs, FilesystemStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -21,7 +20,6 @@ use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::Config;
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
-use crate::BLOB_STORE_DIR;
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -47,7 +45,7 @@ where
     ) -> Result<Self> {
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
-        let blob_store = FilesystemStore::load(PathBuf::from(BLOB_STORE_DIR)).await?;
+        let blob_store = FilesystemStore::load(&config.blobs_dir).await?;
         let log_store = LogMemoryStore::default();
 
         let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
