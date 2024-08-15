@@ -98,8 +98,8 @@ where
 
     /// Import a blob from the filesystem.
     ///
-    /// This method moves a blob into dedicated blob store and makes it available on the network
-    /// identified by it's Blake3 hash.
+    /// Move a blob from the a location on the local filesystem into dedicated blob store and
+    /// make it available on the network identified by it's Blake3 hash.
     pub async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -111,6 +111,10 @@ where
         reply_rx.await?
     }
 
+    /// Import a blob from a url.
+    ///
+    /// Download a blob from a url, move it into the dedicated blob store and make it available on
+    /// the network identified by it's Blake3 hash.
     pub async fn import_blob_url(&self, url: String) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -130,6 +134,9 @@ where
         reply_rx.await?
     }
 
+    /// Export a blob to a minio bucket.
+    ///
+    /// Copies an existing blob from the blob store to the provided minio bucket.
     pub async fn export_blob_minio(
         &self,
         hash: Hash,
@@ -219,6 +226,7 @@ where
         }
     }
 
+    /// Broadcast a message to all peers subscribing to the same topic.
     pub async fn send(&self, message: Message<T>) -> Result<MessageMeta> {
         let (reply, reply_rx) = oneshot::channel();
         self.tx
@@ -231,6 +239,7 @@ where
         reply_rx.await?
     }
 
+    /// Broadcast a blob announcement message to all peers subscribing to the same topic.
     pub async fn announce_blob(&self, hash: Hash) -> Result<MessageMeta> {
         let (reply, reply_rx) = oneshot::channel();
         self.tx

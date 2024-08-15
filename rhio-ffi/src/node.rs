@@ -59,9 +59,18 @@ impl Node {
 
     /// Import a blob from the filesystem.
     ///
-    /// This method moves a blob into dedicated blob store and makes it available on the network
-    /// identified by it's Blake3 hash.
-    pub async fn import_blob(&self, path: Path) -> Result<Hash, RhioError> {
+    /// Move a blob from the a location on the local filesystem into dedicated blob store and
+    /// make it available on the network identified by it's Blake3 hash.
+    pub async fn import_blob_filesystem(&self, path: Path) -> Result<Hash, RhioError> {
+        let hash = self.inner.import_blob_filesystem(path.into()).await?;
+        Ok(hash.into())
+    }
+
+    /// Import a blob from a url.
+    ///
+    /// Download a blob from a url, move it into the dedicated blob store and make it available on
+    /// the network identified by it's Blake3 hash.
+    pub async fn import_blob_url(&self, path: Path) -> Result<Hash, RhioError> {
         let hash = self.inner.import_blob_filesystem(path.into()).await?;
         Ok(hash.into())
     }
@@ -70,7 +79,25 @@ impl Node {
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
     pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
-        self.inner.export_blob_filesystem(hash.into(), path.into()).await?;
+        self.inner
+            .export_blob_filesystem(hash.into(), path.into())
+            .await?;
+        Ok(())
+    }
+
+    /// Export a blob to a minio bucket.
+    ///
+    /// Copies an existing blob from the blob store to the provided minio bucket.
+    pub async fn export_blob_minio(
+        &self,
+        hash: Hash,
+        region: String,
+        endpoint: String,
+        bucket_name: String,
+    ) -> Result<(), RhioError> {
+        self.inner
+            .export_blob_minio(hash.into(), region, endpoint, bucket_name)
+            .await?;
         Ok(())
     }
 
@@ -143,6 +170,12 @@ impl Sender {
     pub async fn send(&self, message: &Message) -> Result<MessageMeta, RhioError> {
         let message = rhio::messages::Message::from(message.clone());
         let meta = self.inner.send(message).await?;
+        Ok(MessageMeta(meta))
+    }
+
+    /// Broadcast a blob announcement message to all peers subscribing to the same topic.
+    pub async fn announce_blob(&self, hash: Hash) -> Result<MessageMeta, RhioError> {
+        let meta = self.inner.announce_blob(hash.into()).await?;
         Ok(MessageMeta(meta))
     }
 
