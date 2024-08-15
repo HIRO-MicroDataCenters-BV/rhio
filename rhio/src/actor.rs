@@ -8,8 +8,8 @@ use std::time::{self, SystemTime};
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
-use iroh_blobs::store::MapEntry;
-use p2panda_blobs::{Blobs, DownloadBlobEvent, FilesystemStore, ImportBlobEvent};
+use iroh_blobs::store::{MapEntry, Store};
+use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
@@ -18,7 +18,9 @@ use s3::{Bucket, BucketConfiguration, Region};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamExt, StreamMap};
+use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, info};
 
 use crate::extensions::RhioExtensions;
@@ -70,8 +72,12 @@ pub enum ToRhioActor<T> {
     Shutdown,
 }
 
-pub struct RhioActor<T> {
-    blobs: Blobs<FilesystemStore>,
+pub struct RhioActor<T, S>
+where
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
+    S: Store + Clone + Send + Sync + 'static,
+{
+    blobs: Blobs<S>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
@@ -82,18 +88,20 @@ pub struct RhioActor<T> {
     inbox: mpsc::Receiver<ToRhioActor<T>>,
 }
 
-impl<T> RhioActor<T>
+impl<T, S> RhioActor<T, S>
 where
-    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
+    S: Store + Clone + Send + Sync + 'static,
 {
-    pub fn new(
+    pub fn spawn(
         private_key: PrivateKey,
-        blobs: Blobs<FilesystemStore>,
+        blobs: Blobs<S>,
         store: LogsMemoryStore<RhioExtensions>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
-    ) -> Self {
+        rt: LocalPoolHandle,
+    ) -> JoinHandle<()> {
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
-        Self {
+        let mut actor = Self {
             private_key,
             blobs,
             store,
@@ -103,7 +111,13 @@ where
             broadcast_join,
             joined_topics: HashSet::new(),
             inbox,
-        }
+        };
+        let task = rt.spawn_pinned(|| async move {
+            if let Err(err) = actor.run().await {
+                panic!("rhio actor failed: {err:?}");
+            }
+        });
+        task
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -454,7 +468,7 @@ where
             .await?;
 
         // Access the actual blob data and iterate over it's bytes in chunks
-        let mut reader = entry.data_reader();
+        let mut reader = entry.data_reader().await?;
         let size = reader.size().await?;
         for (index, offset) in (0..size).step_by(5 * 1024 * 1024).enumerate() {
             // Upload this chunk to the minio bucket

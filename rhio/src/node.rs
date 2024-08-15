@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::Result;
-use p2panda_blobs::{Blobs, FilesystemStore};
+use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore as LogMemoryStore;
@@ -45,7 +45,6 @@ where
     ) -> Result<Self> {
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
-        let blob_store = FilesystemStore::load(&config.blobs_dir).await?;
         let log_store = LogMemoryStore::default();
 
         let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
@@ -56,15 +55,19 @@ where
             Err(err) => error!("Failed to initiate local discovery: {err}"),
         }
 
-        let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-
-        let mut rhio_actor = RhioActor::new(private_key.clone(), blobs, log_store, rhio_actor_rx);
-
-        let task = rt.spawn_pinned(|| async move {
-            if let Err(err) = rhio_actor.run().await {
-                panic!("rhio actor failed: {err:?}");
-            }
-        });
+        let (network, task) = if let Some(blobs_dir) = &config.blobs_dir {
+            // Spawn a rhio actor backed by a filesystem blob store
+            let blob_store = FilesystemStore::load(blobs_dir).await?;
+            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let task = RhioActor::spawn(private_key.clone(), blobs, log_store, rhio_actor_rx, rt.clone());
+            (network, task)
+        } else {
+            // Spawn a rhio actor backed by an in memory blob store
+            let blob_store = BlobsMemoryStore::new();
+            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let task = RhioActor::spawn(private_key.clone(), blobs, log_store, rhio_actor_rx, rt.clone());
+            (network, task)
+        };
 
         let node = Node {
             config,

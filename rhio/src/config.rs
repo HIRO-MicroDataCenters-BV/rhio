@@ -10,7 +10,6 @@ use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
-use crate::BLOB_STORE_DIR;
 
 // Use iroh's staging relay node for testing
 const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
@@ -18,7 +17,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub minio_credentials: Credentials,
-    pub blobs_dir: PathBuf,
+    pub blobs_dir: Option<PathBuf>,
     pub import_path: Option<ImportPath>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
@@ -35,7 +34,7 @@ impl Default for Config {
         let credentials = Credentials::default()
             .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
-            blobs_dir: PathBuf::from(BLOB_STORE_DIR),
+            blobs_dir: None,
             minio_credentials: credentials,
             import_path: None,
             sync_dir: None,
@@ -72,7 +71,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
 
-    #[arg(short = 'i', long, value_name = "PATH | URL", value_parser=import_path_parser)]
+    #[arg(short = 'i', long, value_name = "PATH | URL", value_parser=parse_import_path)]
     #[serde(skip_serializing_if = "Option::is_none")]
     import_path: Option<ImportPath>,
 
@@ -94,7 +93,7 @@ pub fn parse_url(value: &str) -> Result<RelayUrl> {
     value.parse()
 }
 
-pub fn import_path_parser(value: &str) -> Result<ImportPath> {
+pub fn parse_import_path(value: &str) -> Result<ImportPath> {
     if value.starts_with("http:") || value.starts_with("https:") {
         Ok(ImportPath::Url(value.to_string()))
     } else {
