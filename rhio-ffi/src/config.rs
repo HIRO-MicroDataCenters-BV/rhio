@@ -1,19 +1,30 @@
 use std::path::PathBuf;
 
-use rhio::config::{parse_ticket, parse_url, Config as RhioConfig};
+use rhio::{
+    config::{
+        parse_import_path, parse_s3_credentials, parse_ticket, parse_url, Config as RhioConfig,
+    },
+    Credentials,
+};
 
 use crate::error::RhioError;
 
 #[derive(Default, Clone, uniffi::Record)]
 pub struct Config {
-    #[uniffi(default = None)]
-    pub sync_dir: Option<String>,
     #[uniffi(default = 2024)]
     pub bind_port: u16,
     #[uniffi(default = None)]
     pub private_key: Option<String>,
     #[uniffi(default = [])]
     pub ticket: Vec<String>,
+    #[uniffi(default = None)]
+    pub sync_dir: Option<String>,
+    #[uniffi(default = None)]
+    pub blobs_dir: Option<String>,
+    #[uniffi(default = None)]
+    pub import_path: Option<String>,
+    #[uniffi(default = None)]
+    pub minio_credentials: Option<String>,
     #[uniffi(default = None)]
     pub relay: Option<String>,
 }
@@ -23,21 +34,30 @@ impl TryInto<RhioConfig> for Config {
 
     fn try_into(self) -> Result<RhioConfig, Self::Error> {
         let mut config = RhioConfig::default();
-        if let Some(path) = self.sync_dir {
-            config.sync_dir = Some(PathBuf::from(&path));
-        };
 
         config.network_config.bind_port = self.bind_port;
 
-        if let Some(path) = self.private_key {
-            config.network_config.private_key = Some(PathBuf::from(path));
-        }
+        config.network_config.private_key = self.private_key.map(PathBuf::from);
 
         config.network_config.direct_node_addresses = self
             .ticket
             .iter()
             .map(|addr| parse_ticket(addr))
             .collect::<Result<Vec<_>, _>>()?;
+
+        config.sync_dir = self.sync_dir.map(PathBuf::from);
+
+        config.blobs_dir = self.blobs_dir.map(PathBuf::from);
+
+        config.import_path = self
+            .import_path
+            .map(|path_str| parse_import_path(&path_str).expect("invalid import path"));
+
+        config.minio_credentials = if let Some(credentials_str) = self.minio_credentials {
+            parse_s3_credentials(&credentials_str).expect("invalid import path")
+        } else {
+            Credentials::anonymous().expect("error constructing anonymous credentials")
+        };
 
         config.network_config.relay = self
             .relay

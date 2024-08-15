@@ -17,3 +17,5 @@ pub const MINIO_REGION: &str = "eu-west-2";
 pub const BUCKET_NAME: &str = "rhio";
 
 pub use node::Node;
+
+pub type Credentials = s3::creds::Credentials;
