@@ -5,7 +5,7 @@ use anyhow::Result;
 use clap::Parser;
 use figment::providers::{Env, Serialized};
 use figment::Figment;
-use p2panda_net::{Config as NetworkConfig, NodeAddress, RelayUrl};
+use p2panda_net::{Config as NetworkConfig, RelayUrl};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub minio_credentials: Credentials,
+    pub credentials: Credentials,
     pub blobs_dir: Option<PathBuf>,
     pub import_path: Option<ImportPath>,
     pub sync_dir: Option<PathBuf>,
@@ -35,7 +35,7 @@ impl Default for Config {
             .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
             blobs_dir: None,
-            minio_credentials: credentials,
+            credentials: credentials,
             import_path: None,
             sync_dir: None,
             network_config,
@@ -57,7 +57,7 @@ struct Cli {
 
     #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    direct_node_addresses: Option<Vec<NodeAddress>>,
+    ticket: Option<Vec<Ticket>>,
 
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,16 +77,16 @@ struct Cli {
 
     #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    minio_credentials: Option<Credentials>,
+    credentials: Option<Credentials>,
 
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<RelayUrl>,
 }
 
-pub fn parse_ticket(value: &str) -> Result<NodeAddress> {
+pub fn parse_ticket(value: &str) -> Result<Ticket> {
     let ticket = Ticket::from_str(value)?;
-    Ok(ticket.into())
+    Ok(ticket)
 }
 
 pub fn parse_url(value: &str) -> Result<RelayUrl> {

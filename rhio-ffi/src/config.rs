@@ -24,7 +24,7 @@ pub struct Config {
     #[uniffi(default = None)]
     pub import_path: Option<String>,
     #[uniffi(default = None)]
-    pub minio_credentials: Option<String>,
+    pub credentials: Option<String>,
     #[uniffi(default = None)]
     pub relay: Option<String>,
 }
@@ -42,7 +42,7 @@ impl TryInto<RhioConfig> for Config {
         config.network_config.direct_node_addresses = self
             .ticket
             .iter()
-            .map(|addr| parse_ticket(addr))
+            .map(|addr| parse_ticket(addr).map(Into::into))
             .collect::<Result<Vec<_>, _>>()?;
 
         config.sync_dir = self.sync_dir.map(PathBuf::from);
@@ -53,7 +53,7 @@ impl TryInto<RhioConfig> for Config {
             .import_path
             .map(|path_str| parse_import_path(&path_str).expect("invalid import path"));
 
-        config.minio_credentials = if let Some(credentials_str) = self.minio_credentials {
+        config.credentials = if let Some(credentials_str) = self.credentials {
             parse_s3_credentials(&credentials_str).expect("invalid import path")
         } else {
             Credentials::anonymous().expect("error constructing anonymous credentials")

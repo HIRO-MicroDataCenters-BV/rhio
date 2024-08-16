@@ -1,11 +1,11 @@
-import os, argparse, asyncio
+import os, asyncio
 
+from config import parse_config
 from loguru import logger
 from rhio import (
     rhio_ffi,
     Node,
     GossipMessageCallback,
-    Config,
     Message,
     MessageType,
     TopicId,
@@ -26,28 +26,8 @@ async def main():
     loop = asyncio.get_running_loop()
     rhio_ffi.uniffi_set_event_loop(loop)
 
-    # parse arguments
-    parser = argparse.ArgumentParser(description="Python Rhio Node")
-    parser.add_argument("-p", "--port", type=int, default=2024, help="node bind port")
-    parser.add_argument(
-        "-t",
-        "--ticket",
-        type=str,
-        action="append",
-        default=[],
-        help="connection ticket string",
-    )
-    parser.add_argument("-k", "--private-key", type=str, help="path to private key")
-    parser.add_argument("-r", "--relay", type=str, help="relay addresses")
-
-    args = parser.parse_args()
-
-    # construct node config
-    config = Config()
-    config.bind_port = args.port
-    config.ticket = args.ticket
-    config.private_key = args.private_key
-    config.relay = args.relay
+    # parse config
+    config = parse_config()
 
     # spawn the rhio node
     node = await Node.spawn(config)
