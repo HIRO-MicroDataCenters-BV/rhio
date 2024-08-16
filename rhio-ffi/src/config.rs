@@ -1,20 +1,17 @@
 use std::path::PathBuf;
 
-use rhio::{
-    config::{
-        parse_import_path, parse_s3_credentials, parse_ticket, parse_url, Config as RhioConfig,
-    },
-    Credentials,
-};
+use rhio::config::{parse_s3_credentials, parse_ticket, parse_url, Config as RhioConfig};
+use rhio::Credentials;
 
 use crate::error::RhioError;
+use crate::types::{ImportPath, Path};
 
 #[derive(Default, Clone, uniffi::Record)]
 pub struct Config {
     #[uniffi(default = 2024)]
     pub bind_port: u16,
     #[uniffi(default = None)]
-    pub private_key: Option<String>,
+    pub private_key: Option<Path>,
     #[uniffi(default = [])]
     pub ticket: Vec<String>,
     #[uniffi(default = None)]
@@ -22,7 +19,7 @@ pub struct Config {
     #[uniffi(default = None)]
     pub blobs_dir: Option<String>,
     #[uniffi(default = None)]
-    pub import_path: Option<String>,
+    pub import_path: Option<ImportPath>,
     #[uniffi(default = None)]
     pub credentials: Option<String>,
     #[uniffi(default = None)]
@@ -49,9 +46,7 @@ impl TryInto<RhioConfig> for Config {
 
         config.blobs_dir = self.blobs_dir.map(PathBuf::from);
 
-        config.import_path = self
-            .import_path
-            .map(|path_str| parse_import_path(&path_str).expect("invalid import path"));
+        config.import_path = self.import_path.map(Into::into);
 
         config.credentials = if let Some(credentials_str) = self.credentials {
             parse_s3_credentials(&credentials_str).expect("invalid import path")

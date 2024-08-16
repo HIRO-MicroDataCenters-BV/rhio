@@ -13,7 +13,7 @@ use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
-use crate::types::{Hash, Path, PublicKey, SocketAddr};
+use crate::types::{Hash, ImportPath, Path, PublicKey, SocketAddr};
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -50,6 +50,7 @@ impl Node {
     /// direct addresses contain both the locally-bound addresses and the Node's publicly
     /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
     /// usually only a subset of these will be applicable to a certain remote node.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.inner
             .direct_addresses()
@@ -61,6 +62,7 @@ impl Node {
     ///
     /// Move a blob from the a location on the local filesystem into dedicated blob store and
     /// make it available on the network identified by it's Blake3 hash.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn import_blob_filesystem(&self, path: Path) -> Result<Hash, RhioError> {
         let hash = self.inner.import_blob_filesystem(path.into()).await?;
         Ok(hash.into())
@@ -70,14 +72,25 @@ impl Node {
     ///
     /// Download a blob from a url, move it into the dedicated blob store and make it available on
     /// the network identified by it's Blake3 hash.
-    pub async fn import_blob_url(&self, path: Path) -> Result<Hash, RhioError> {
-        let hash = self.inner.import_blob_filesystem(path.into()).await?;
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn import_blob_url(&self, url: String) -> Result<Hash, RhioError> {
+        let hash = self.inner.import_blob_url(url).await?;
         Ok(hash.into())
+    }
+
+    /// Import a blob from either a path or a URL.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash, RhioError> {
+        match import_path.inner {
+            rhio::config::ImportPath::File(path) => self.import_blob_filesystem(path.into()).await,
+            rhio::config::ImportPath::Url(url) => self.import_blob_url(url).await,
+        }
     }
 
     /// Export a blob to the filesystem.
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
         self.inner
             .export_blob_filesystem(hash.into(), path.into())
@@ -88,6 +101,7 @@ impl Node {
     /// Export a blob to a minio bucket.
     ///
     /// Copies an existing blob from the blob store to the provided minio bucket.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn export_blob_minio(
         &self,
         hash: Hash,
@@ -104,6 +118,7 @@ impl Node {
     /// Download a blob from the network.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn download_blob(&self, hash: Hash) -> Result<(), RhioError> {
         self.inner.download_blob(hash.into()).await?;
         Ok(())

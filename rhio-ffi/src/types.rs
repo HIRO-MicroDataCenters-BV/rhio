@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use p2panda_core::{Hash as InnerHash, PublicKey as InnerPublicKey};
+use rhio::config::{parse_import_path, ImportPath as InnerImportPath};
 
 use crate::UniffiCustomTypeConverter;
 
@@ -133,6 +134,38 @@ impl From<InnerSocketAddr> for SocketAddr {
 
 impl From<SocketAddr> for InnerSocketAddr {
     fn from(value: SocketAddr) -> Self {
+        value.inner
+    }
+}
+
+uniffi::custom_type!(ImportPath, String);
+
+#[derive(Debug, Clone)]
+pub struct ImportPath {
+    pub inner: InnerImportPath,
+}
+
+impl UniffiCustomTypeConverter for ImportPath {
+    type Builtin = String;
+
+    fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+        let addr = parse_import_path(&val)?;
+        Ok(Self { inner: addr })
+    }
+
+    fn from_custom(obj: Self) -> Self::Builtin {
+        obj.inner.to_string()
+    }
+}
+
+impl From<InnerImportPath> for ImportPath {
+    fn from(value: InnerImportPath) -> Self {
+        Self { inner: value }
+    }
+}
+
+impl From<ImportPath> for InnerImportPath {
+    fn from(value: ImportPath) -> Self {
         value.inner
     }
 }

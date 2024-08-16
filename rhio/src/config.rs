@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::path::{absolute, PathBuf};
 use std::str::FromStr;
 
@@ -144,4 +145,13 @@ type Url = String;
 pub enum ImportPath {
     File(PathBuf),
     Url(Url),
+}
+
+impl Display for ImportPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImportPath::File(path) => write!(f, "{}", path.to_string_lossy()),
+            ImportPath::Url(url) => write!(f, "{url}"),
+        }
+    }
 }
