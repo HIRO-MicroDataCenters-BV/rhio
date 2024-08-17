@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::Node as RhioNode;
@@ -29,8 +28,7 @@ impl Node {
     pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
         let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let private_key = generate_ephemeral_private_key();
-        let config: RhioConfig = config.clone().try_into()?;
-        let rhio_node = RhioNode::spawn(config, private_key, pool_handle).await?;
+        let rhio_node = RhioNode::spawn(config.clone().into(), private_key, pool_handle).await?;
         Ok(Self { inner: rhio_node })
     }
 
@@ -211,8 +209,9 @@ mod tests {
     use rhio::ticket::Ticket;
     use tokio::sync::mpsc;
 
+    use crate::config::Config;
+    use crate::error::CallbackError;
     use crate::messages::Message;
-    use crate::{error::CallbackError, node::Config};
 
     use super::*;
 
@@ -243,16 +242,15 @@ mod tests {
         let n0_addresses = n0
             .direct_addresses()
             .await
-            .unwrap()
+            .expect("has direct addresses")
             .into_iter()
-            .map(std::net::SocketAddr::from)
+            .map(Into::into)
             .collect();
-        let ticket = Ticket::new(n0_id.into(), n0_addresses, None);
-        let config1 = Config {
-            bind_port: 2023,
-            ticket: vec![ticket.to_string()],
-            ..Default::default()
-        };
+        
+        let mut config1 = Config::default();
+        config1.inner.network_config.bind_port = 2023;
+        config1.inner.network_config.direct_node_addresses = vec![(n0_id, n0_addresses, None)];
+
         let n1 = Node::spawn(&config1).await.unwrap();
 
         tokio::time::sleep(Duration::from_secs(2)).await;

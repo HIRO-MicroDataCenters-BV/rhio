@@ -61,7 +61,8 @@ async def main():
     logger.info("gossip topic ready")
 
     # import file
-    await import_file(node, sender, config)
+    # @TODO: take import path from stdin
+    # await import_file(node, sender, config)
 
     while True:
         await asyncio.sleep(1)

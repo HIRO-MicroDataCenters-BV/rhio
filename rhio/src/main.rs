@@ -88,9 +88,9 @@ async fn main() -> Result<()> {
         node_clone
             .export_blob_minio(
                 hash,
-                MINIO_REGION.to_string(),
-                MINIO_ENDPOINT.to_string(),
-                BUCKET_NAME.to_string(),
+                config.bucket_address.region,
+                config.bucket_address.endpoint,
+                config.bucket_name,
             )
             .await
             .expect("export blob failed");

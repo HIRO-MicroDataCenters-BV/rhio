@@ -1,6 +1,6 @@
 import argparse
 
-from rhio import Config
+from rhio import Cli, Config
 
 def parse_config():
     # parse arguments
@@ -18,19 +18,22 @@ def parse_config():
     parser.add_argument("-s", "--sync-dir", type=str, help="path to sync directory")
     parser.add_argument("-b", "--blobs-dir", type=str, help="path to blob store and database")
     parser.add_argument("-i", "--import-path", type=str, help="path or URL to file which should be imported to the blob store")
+    parser.add_argument("-n", "--bucket-name", type=str, help="bucket name")
+    parser.add_argument("-a", "--bucket-address", type=str, help="bucket address in the format <ENDPOINT>:<REGION>")
     parser.add_argument("-c", "--credentials", type=str, help="minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>")
     parser.add_argument("-r", "--relay", type=str, help="relay addresses")
 
     args = parser.parse_args()
 
-    # construct node config
-    config = Config()
-    config.bind_port = args.port
-    config.ticket = args.ticket
-    config.private_key = args.private_key
-    config.sync_dir = args.sync_dir
-    config.blobs_dir = args.blobs_dir
-    config.import_path = args.import_path
-    config.credentials = args.credentials
-    config.relay = args.relay
-    return config
+    cli = Cli()
+    cli.bind_port = args.port
+    cli.ticket = args.ticket
+    cli.private_key = args.private_key
+    cli.sync_dir = args.sync_dir
+    cli.blobs_dir = args.blobs_dir
+    cli.bucket_name = args.bucket_name
+    cli.bucket_address = args.bucket_address
+    cli.import_path = args.import_path
+    cli.credentials = args.credentials
+    cli.relay = args.relay
+    return Config.from_cli(cli)

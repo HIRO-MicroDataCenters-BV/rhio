@@ -11,12 +11,15 @@ use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 use crate::ticket::Ticket;
+use crate::{BUCKET_NAME, MINIO_ENDPOINT, MINIO_REGION};
 
 // Use iroh's staging relay node for testing
 const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    pub bucket_name: String,
+    pub bucket_address: BucketAddress,
     pub credentials: Credentials,
     pub blobs_dir: Option<PathBuf>,
     pub import_path: Option<ImportPath>,
@@ -35,10 +38,12 @@ impl Default for Config {
         let credentials = Credentials::default()
             .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
-            blobs_dir: None,
+            bucket_name: BUCKET_NAME.to_string(),
+            bucket_address: BucketAddress::default(),
             credentials: credentials,
-            import_path: None,
+            blobs_dir: None,
             sync_dir: None,
+            import_path: None,
             network_config,
         }
     }
@@ -80,6 +85,14 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     credentials: Option<Credentials>,
 
+    #[arg(short = 'a', long, value_name = "ENDPOINT:REGION", value_parser = parse_url)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bucket_address: Option<BucketAddress>,
+
+    #[arg(short = 'n', long, value_name = "NAME", value_parser = parse_url)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bucket_name: Option<String>,
+
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<RelayUrl>,
@@ -117,6 +130,19 @@ pub fn parse_s3_credentials(value: &str) -> Result<Credentials> {
     Ok(credentials)
 }
 
+pub fn parse_bucket_address(value: &str) -> Result<BucketAddress> {
+    let mut value_iter = value.split(":");
+
+    let endpoint = value_iter
+        .next()
+        .ok_or(anyhow::anyhow!("no endpoint provided"))?
+        .to_string();
+
+    let region = value_iter.next().unwrap_or(MINIO_REGION).to_string();
+
+    Ok(BucketAddress { endpoint, region })
+}
+
 pub fn load_config() -> Result<Config> {
     let mut config: Config = Figment::new()
         .merge(Serialized::defaults(Config::default()))
@@ -137,6 +163,21 @@ pub fn load_config() -> Result<Config> {
 pub struct MinioCredentials {
     pub access_key: String,
     pub secret_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BucketAddress {
+    pub region: String,
+    pub endpoint: String,
+}
+
+impl Default for BucketAddress {
+    fn default() -> Self {
+        Self {
+            region: MINIO_REGION.to_string(),
+            endpoint: MINIO_ENDPOINT.to_string(),
+        }
+    }
 }
 
 type Url = String;
