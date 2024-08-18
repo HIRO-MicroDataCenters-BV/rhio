@@ -8,6 +8,7 @@ from rhio import (
     GossipMessageCallback,
     Message,
     MessageType,
+    RhioError,
     TopicId,
 )
 
@@ -62,9 +63,12 @@ async def main():
     # Import and announce files from path or URL (provided via stdin)
     while True:
         import_path = await asyncio.to_thread(input, "Enter file path or URL: ")
-        hash = await import_file(node, import_path)
-        logger.info("announce blob: {}", hash)
-        await sender.announce_blob(hash)
+        try:
+            hash = await import_file(node, import_path)
+            logger.info("announce blob: {}", hash)
+            await sender.announce_blob(hash)
+        except RhioError as e:
+            logger.error(e.message())
 
 if __name__ == "__main__":
     asyncio.run(main())
