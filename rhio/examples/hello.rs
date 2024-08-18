@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use p2panda_core::PrivateKey;
+use p2panda_net::ToBytes;
 use rhio::config::Config;
 use rhio::messages::{Message, MessageMeta};
 use rhio::node::Node;
@@ -9,13 +10,13 @@ use rhio::topic_id::TopicId;
 use tokio_util::task::LocalPoolHandle;
 
 /// The only message type in our chat app
-type ChatMessage = String;
+type ChatMessage = Vec<u8>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let pool_handle = LocalPoolHandle::new(num_cpus::get());
 
-    let chat_topic_id = TopicId::new_from_str("my_chat");
+    let chat_topic_id = TopicId::new_from_str("rhio/hello_world");
     let private_key = PrivateKey::new();
     let config = Config::default();
 
@@ -33,7 +34,7 @@ async fn main() -> Result<()> {
     // Listen for arriving messages
     tokio::spawn(async move {
         while let Ok((
-            Message::Application(message),
+            Message::Application(bytes),
             MessageMeta {
                 delivered_from,
                 received_at,
@@ -41,9 +42,10 @@ async fn main() -> Result<()> {
             },
         )) = chat_rx.recv().await
         {
+            
             println!(
                 "{} from {} on topic {} at {}",
-                message,
+                String::from_utf8(bytes).expect("valid UTF-8 string bytes"),
                 delivered_from,
                 chat_topic_id.to_string(),
                 received_at
@@ -56,7 +58,7 @@ async fn main() -> Result<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             chat_tx
-                .send(Message::Application(String::from("hello")))
+                .send(Message::Application("Hello from Rust!".to_bytes()))
                 .await
                 .expect("can send message on channel");
         }

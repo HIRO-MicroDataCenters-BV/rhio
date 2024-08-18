@@ -45,7 +45,7 @@ async def main():
 
     while True:
         await asyncio.sleep(1)
-        msg = Message.application(bytearray("hello!", encoding="utf-8"))
+        msg = Message.application(bytearray("Hello from Python!", encoding="utf-8"))
         await sender.send(msg)
 
 

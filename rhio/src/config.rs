@@ -55,38 +55,47 @@ impl Default for Config {
     version
 )]
 struct Cli {
+    /// node bind port
     #[arg(short = 'p', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
+    /// connection ticket string
     #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
     #[serde(skip_serializing_if = "Option::is_none")]
     ticket: Option<Vec<Ticket>>,
 
+    /// path to private key
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
 
+    /// path to sync directory (for use with example/sync)
     #[arg(short = 's', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     sync_dir: Option<PathBuf>,
 
+    /// path to blob store and database
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
 
+    /// minio credentials 
     #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
     credentials: Option<Credentials>,
 
+    /// minio bucket address string
     #[arg(short = 'a', long, value_name = "ENDPOINT:REGION", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     bucket_address: Option<BucketAddress>,
 
+    /// minio bucket name
     #[arg(short = 'n', long, value_name = "NAME", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     bucket_name: Option<String>,
 
+    /// relay addresses
     #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
     #[serde(skip_serializing_if = "Option::is_none")]
     relay: Option<RelayUrl>,
