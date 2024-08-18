@@ -56,7 +56,7 @@ async def main():
 
     logger.info("subscribing to gossip topic: {}", topic)
     sender = await node.subscribe(topic, HandleAnnouncement(node))
-    
+
     await sender.ready()
     logger.info("gossip topic ready")
 
@@ -69,6 +69,7 @@ async def main():
             await sender.announce_blob(hash)
         except RhioError as e:
             logger.error(e.message())
+
 
 if __name__ == "__main__":
     asyncio.run(main())

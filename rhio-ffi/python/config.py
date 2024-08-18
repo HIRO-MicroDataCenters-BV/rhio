@@ -2,6 +2,7 @@ import argparse
 
 from rhio import Cli, Config
 
+
 def parse_config():
     # parse arguments
     parser = argparse.ArgumentParser(description="Python Rhio Node")
@@ -16,11 +17,28 @@ def parse_config():
     )
     parser.add_argument("-k", "--private-key", type=str, help="path to private key")
     parser.add_argument("-s", "--sync-dir", type=str, help="path to sync directory")
-    parser.add_argument("-b", "--blobs-dir", type=str, help="path to blob store and database")
-    parser.add_argument("-i", "--import-path", type=str, help="path or URL to file which should be imported to the blob store")
+    parser.add_argument(
+        "-b", "--blobs-dir", type=str, help="path to blob store and database"
+    )
+    parser.add_argument(
+        "-i",
+        "--import-path",
+        type=str,
+        help="path or URL to file which should be imported to the blob store",
+    )
     parser.add_argument("-n", "--bucket-name", type=str, help="bucket name")
-    parser.add_argument("-a", "--bucket-address", type=str, help="bucket address in the format <ENDPOINT>:<REGION>")
-    parser.add_argument("-c", "--credentials", type=str, help="minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>")
+    parser.add_argument(
+        "-a",
+        "--bucket-address",
+        type=str,
+        help="bucket address in the format <ENDPOINT>:<REGION>",
+    )
+    parser.add_argument(
+        "-c",
+        "--credentials",
+        type=str,
+        help="minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>",
+    )
     parser.add_argument("-r", "--relay", type=str, help="relay addresses")
 
     args = parser.parse_args()
