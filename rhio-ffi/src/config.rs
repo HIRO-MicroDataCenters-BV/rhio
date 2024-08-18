@@ -5,7 +5,7 @@ use rhio::config::{
 };
 
 use crate::error::RhioError;
-use crate::types::{ImportPath, Path};
+use crate::types::Path;
 
 #[derive(Default, Clone, uniffi::Record)]
 pub struct Cli {
@@ -19,8 +19,6 @@ pub struct Cli {
     pub sync_dir: Option<String>,
     #[uniffi(default = None)]
     pub blobs_dir: Option<String>,
-    #[uniffi(default = None)]
-    pub import_path: Option<ImportPath>,
     #[uniffi(default = None)]
     pub bucket_name: Option<String>,
     #[uniffi(default = None)]
@@ -57,8 +55,6 @@ impl Config {
         inner.sync_dir = cli.sync_dir.map(PathBuf::from);
 
         inner.blobs_dir = cli.blobs_dir.map(PathBuf::from);
-
-        inner.import_path = cli.import_path.map(Into::into);
 
         if let Some(bucket_name) = cli.bucket_name {
             inner.bucket_name = bucket_name

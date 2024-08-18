@@ -22,7 +22,6 @@ pub struct Config {
     pub bucket_address: BucketAddress,
     pub credentials: Credentials,
     pub blobs_dir: Option<PathBuf>,
-    pub import_path: Option<ImportPath>,
     pub sync_dir: Option<PathBuf>,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
@@ -43,7 +42,6 @@ impl Default for Config {
             credentials: credentials,
             blobs_dir: None,
             sync_dir: None,
-            import_path: None,
             network_config,
         }
     }
@@ -76,10 +74,6 @@ struct Cli {
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
-
-    #[arg(short = 'i', long, value_name = "PATH | URL", value_parser=parse_import_path)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    import_path: Option<ImportPath>,
 
     #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,6 +181,15 @@ pub enum ImportPath {
     File(PathBuf),
     Url(Url),
 }
+
+impl FromStr for ImportPath {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        parse_import_path(s)
+    }
+}
+
 
 impl Display for ImportPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

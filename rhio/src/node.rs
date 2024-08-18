@@ -25,7 +25,7 @@ use crate::topic_id::TopicId;
 /// over topics and syncing blob data using the BAO protocol.
 #[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
-    config: Config,
+    pub config: Config,
     network: Network,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
     #[allow(dead_code)]

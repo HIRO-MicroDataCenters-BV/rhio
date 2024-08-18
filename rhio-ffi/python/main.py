@@ -29,13 +29,12 @@ class HandleAnnouncement(GossipMessageCallback):
         logger.info("blob exported to minio: {}", hash)
 
 
-async def import_file(node, sender, config):
-    if config.import_path != None:
-        hash = await node.import_blob(config.import_path)
-        logger.info("file imported: {} {}", hash, config.import_path)
-        await node.export_blob_minio(hash, "eu-west-2", "http://localhost:9000", "rhio")
-        logger.info("blob exported to minio: {}", hash)
-        await sender.announce_blob(hash)
+async def import_file(node, import_path):
+    hash = await node.import_blob(import_path)
+    logger.info("file imported: {} {}", hash, import_path)
+    await node.export_blob_minio(hash, "eu-west-2", "http://localhost:9000", "rhio")
+    logger.info("blob exported to minio: {}", hash)
+    return hash
 
 
 async def main():
@@ -60,13 +59,12 @@ async def main():
     await sender.ready()
     logger.info("gossip topic ready")
 
-    # import file
-    # @TODO: take import path from stdin
-    # await import_file(node, sender, config)
-
+    # Import and announce files from path or URL (provided via stdin)
     while True:
-        await asyncio.sleep(1)
-
+        import_path = await asyncio.to_thread(input, "Enter file path or URL: ")
+        hash = await import_file(node, import_path)
+        logger.info("announce blob: {}", hash)
+        await sender.announce_blob(hash)
 
 if __name__ == "__main__":
     asyncio.run(main())

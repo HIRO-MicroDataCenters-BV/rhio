@@ -206,7 +206,6 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_core::PublicKey;
-    use rhio::ticket::Ticket;
     use tokio::sync::mpsc;
 
     use crate::config::Config;
@@ -246,7 +245,7 @@ mod tests {
             .into_iter()
             .map(Into::into)
             .collect();
-        
+
         let mut config1 = Config::default();
         config1.inner.network_config.bind_port = 2023;
         config1.inner.network_config.direct_node_addresses = vec![(n0_id, n0_addresses, None)];
