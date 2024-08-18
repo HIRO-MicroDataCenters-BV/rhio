@@ -166,14 +166,18 @@ where
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
             ToRhioActor::ImportUrl { url, reply } => {
-                let hash = self.on_import_url(&url).await?;
-                info!("imported blob: {hash} {url:?}");
-                reply.send(Ok(hash)).ok();
+                let result = self.on_import_url(&url).await;
+                if let Ok(hash) = result {
+                    info!("imported blob: {hash} {url}");
+                }
+                reply.send(result).ok();
             }
             ToRhioActor::ImportFile { path, reply } => {
-                let hash = self.on_import_blob(&path).await?;
-                info!("imported blob: {hash} {path:?}");
-                reply.send(Ok(hash)).ok();
+                let result = self.on_import_blob(&path).await;
+                if let Ok(hash) = result {
+                    info!("imported blob: {hash} {path:?}");
+                }
+                reply.send(result).ok();
             }
             ToRhioActor::ExportBlobFilesystem { path, reply, hash } => {
                 let result = self.on_export_blob_filesystem(hash, &path).await;

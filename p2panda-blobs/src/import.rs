@@ -5,7 +5,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use futures_lite::StreamExt;
 use futures_util::Stream;
@@ -107,14 +107,6 @@ async fn add_from_path<S: Store>(
         ImportProgress::OutboardDone { hash, id } => Some(AddProgress::Done { hash, id }),
         _ => None,
     });
-
-    // Check that the path is absolute and exists.
-    ensure!(path.is_absolute(), "path must be absolute");
-    ensure!(
-        path.exists(),
-        "trying to add missing path: {}",
-        path.display()
-    );
 
     let import_mode = ImportMode::default();
     let (tag, _size) = store
