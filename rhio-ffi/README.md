@@ -37,9 +37,9 @@ python3 python/main.py -c "rhio:rhio_password"
 ```bash
 python3 python/main.py --help
 
-usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-i IMPORT_PATH] [-n BUCKET_NAME] [-a BUCKET_ADDRESS] [-c CREDENTIALS] [-r RELAY]
+usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-n BUCKET_NAME] [-a BUCKET_ADDRESS] [-c CREDENTIALS] [-r RELAY]
 
-Python Rhio Node
+p2p blob syncing node for minio databases
 
 options:
   -h, --help            show this help message and exit
@@ -49,15 +49,13 @@ options:
   -k PRIVATE_KEY, --private-key PRIVATE_KEY
                         path to private key
   -s SYNC_DIR, --sync-dir SYNC_DIR
-                        path to sync directory
+                        path to sync directory (for use with example/sync)
   -b BLOBS_DIR, --blobs-dir BLOBS_DIR
                         path to blob store and database
-  -i IMPORT_PATH, --import-path IMPORT_PATH
-                        path or URL to file which should be imported to the blob store
   -n BUCKET_NAME, --bucket-name BUCKET_NAME
-                        bucket name
+                        minio bucket name
   -a BUCKET_ADDRESS, --bucket-address BUCKET_ADDRESS
-                        bucket address in the format <ENDPOINT>:<REGION>
+                        minio bucket address in the format <ENDPOINT>:<REGION>
   -c CREDENTIALS, --credentials CREDENTIALS
                         minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>
   -r RELAY, --relay RELAY
