@@ -66,7 +66,7 @@ where
 
     pub async fn get(&self, hash: Hash) -> anyhow::Result<Option<<S as Map>::Entry>> {
         let hash = IrohHash::from_bytes(*hash.as_bytes());
-        let entry = self.store.get(&hash.into()).await?;
+        let entry = self.store.get(&hash).await?;
         Ok(entry)
     }
 

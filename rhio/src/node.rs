@@ -158,8 +158,7 @@ where
                 reply,
             })
             .await?;
-        let result = reply_rx.await?;
-        result
+        reply_rx.await?
     }
 
     /// Download a blob from the network.

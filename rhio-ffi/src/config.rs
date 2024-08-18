@@ -77,8 +77,8 @@ impl Config {
     }
 }
 
-impl Into<InnerConfig> for Config {
-    fn into(self) -> InnerConfig {
-        self.inner
+impl From<Config> for InnerConfig {
+    fn from(value: Config) -> Self {
+        value.inner
     }
 }

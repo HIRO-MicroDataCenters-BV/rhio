@@ -39,7 +39,7 @@ impl Default for Config {
         Self {
             bucket_name: BUCKET_NAME.to_string(),
             bucket_address: BucketAddress::default(),
-            credentials: credentials,
+            credentials,
             blobs_dir: None,
             sync_dir: None,
             network_config,

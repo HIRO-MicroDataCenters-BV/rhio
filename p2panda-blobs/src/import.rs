@@ -149,7 +149,6 @@ where
         }
         ImportProgress::OutboardDone { hash, id } => Some(AddProgress::Done { hash, id }),
         ImportProgress::CopyProgress { id, offset } => Some(AddProgress::Progress { id, offset }),
-        _ => None,
     });
 
     let (tag, _size) = store

@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{Read, Write};
-#[cfg(target_os = "unix")]
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
@@ -35,7 +35,7 @@ pub fn generate_ephemeral_private_key() -> PrivateKey {
 ///
 /// This method automatically creates the required directories on that path and fixes the
 /// permissions of the file (0600, read and write permissions only for the owner).
-#[cfg(target_os = "unix")]
+#[cfg(target_os = "linux")]
 fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<()> {
     let mut file = File::create(&path)?;
     file.write_all(private_key.as_bytes())?;
@@ -44,12 +44,12 @@ fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<(
     // Set permission for sensitive information
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o600);
-    fs::set_permissions(path, permissions)?;
+    std::fs::set_permissions(path, permissions)?;
 
     Ok(())
 }
 
-#[cfg(not(target_os = "unix"))]
+#[cfg(not(target_os = "linux"))]
 fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<()> {
     let mut file = File::create(path)?;
     file.write_all(private_key.to_hex().as_bytes())?;

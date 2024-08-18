@@ -112,12 +112,11 @@ where
             joined_topics: HashSet::new(),
             inbox,
         };
-        let task = rt.spawn_pinned(|| async move {
+        rt.spawn_pinned(|| async move {
             if let Err(err) = actor.run().await {
                 panic!("rhio actor failed: {err:?}");
             }
-        });
-        task
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {

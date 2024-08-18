@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     let node_clone = node.clone();
     pool_handle.spawn_pinned(|| async move {
         let stdin = std::io::stdin();
-        while let Ok(input_str) = read_input(&&stdin) {
+        while let Ok(input_str) = read_input(&stdin) {
             let import_path = ImportPath::from_str(input_str.trim())?;
             let result = handle_import(&node_clone, import_path).await;
 
@@ -81,18 +81,15 @@ async fn main() -> Result<()> {
     // For all blob announcements we receive on the gossip topic, download the blob from the
     // network and export it to our own minio store
     while let Ok((message, _)) = topic_rx.recv().await {
-        match message {
-            Message::BlobAnnouncement(hash) => {
-                node.download_blob(hash).await?;
-                node.export_blob_minio(
-                    hash,
-                    node.config.bucket_address.region.clone(),
-                    node.config.bucket_address.endpoint.clone(),
-                    node.config.bucket_name.clone(),
-                )
-                .await?;
-            }
-            _ => (),
+        if let Message::BlobAnnouncement(hash) = message {
+            node.download_blob(hash).await?;
+            node.export_blob_minio(
+                hash,
+                node.config.bucket_address.region.clone(),
+                node.config.bucket_address.endpoint.clone(),
+                node.config.bucket_name.clone(),
+            )
+            .await?;
         }
     }
 
@@ -108,14 +105,12 @@ async fn handle_import(node: &Node<()>, import_path: ImportPath) -> Result<Hash>
         // Import a file from the local filesystem
         ImportPath::File(path) => {
             println!("import from path: {path:?}");
-            let hash = node.import_blob_filesystem(path.clone()).await?;
-            hash
+            node.import_blob_filesystem(path.clone()).await?
         }
         // Import a file from the given url
         ImportPath::Url(url) => {
             println!("import from url: {url}");
-            let hash = node.import_blob_url(url.clone()).await?;
-            hash
+            node.import_blob_url(url.clone()).await?
         }
     };
 
@@ -133,11 +128,11 @@ async fn handle_import(node: &Node<()>, import_path: ImportPath) -> Result<Hash>
 }
 
 fn read_input(stdin: &Stdin) -> Result<String> {
-    println!("");
+    println!();
     print!("Enter file path or URL: ");
     let _ = std::io::stdout().flush();
     let mut buffer = String::new();
     stdin.read_line(&mut buffer)?;
-    println!("");
+    println!();
     Ok(buffer)
 }
