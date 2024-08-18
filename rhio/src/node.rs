@@ -59,13 +59,25 @@ where
             // Spawn a rhio actor backed by a filesystem blob store
             let blob_store = FilesystemStore::load(blobs_dir).await?;
             let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-            let task = RhioActor::spawn(private_key.clone(), blobs, log_store, rhio_actor_rx, rt.clone());
+            let task = RhioActor::spawn(
+                private_key.clone(),
+                blobs,
+                log_store,
+                rhio_actor_rx,
+                rt.clone(),
+            );
             (network, task)
         } else {
             // Spawn a rhio actor backed by an in memory blob store
             let blob_store = BlobsMemoryStore::new();
             let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-            let task = RhioActor::spawn(private_key.clone(), blobs, log_store, rhio_actor_rx, rt.clone());
+            let task = RhioActor::spawn(
+                private_key.clone(),
+                blobs,
+                log_store,
+                rhio_actor_rx,
+                rt.clone(),
+            );
             (network, task)
         };
 

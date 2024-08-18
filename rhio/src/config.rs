@@ -80,7 +80,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
 
-    /// minio credentials 
+    /// minio credentials
     #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
     credentials: Option<Credentials>,
@@ -198,7 +198,6 @@ impl FromStr for ImportPath {
         parse_import_path(s)
     }
 }
-
 
 impl Display for ImportPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

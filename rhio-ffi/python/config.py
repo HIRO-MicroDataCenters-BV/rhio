@@ -5,7 +5,9 @@ from rhio import Cli, Config
 
 def parse_config():
     # parse arguments
-    parser = argparse.ArgumentParser(description="p2p blob syncing node for minio databases")
+    parser = argparse.ArgumentParser(
+        description="p2p blob syncing node for minio databases"
+    )
     parser.add_argument("-p", "--port", type=int, default=2024, help="node bind port")
     parser.add_argument(
         "-t",
@@ -16,7 +18,12 @@ def parse_config():
         help="connection ticket string",
     )
     parser.add_argument("-k", "--private-key", type=str, help="path to private key")
-    parser.add_argument("-s", "--sync-dir", type=str, help="path to sync directory (for use with example/sync)")
+    parser.add_argument(
+        "-s",
+        "--sync-dir",
+        type=str,
+        help="path to sync directory (for use with example/sync)",
+    )
     parser.add_argument(
         "-b", "--blobs-dir", type=str, help="path to blob store and database"
     )

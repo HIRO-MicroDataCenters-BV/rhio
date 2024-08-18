@@ -42,7 +42,6 @@ async fn main() -> Result<()> {
             },
         )) = chat_rx.recv().await
         {
-            
             println!(
                 "{} from {} on topic {} at {}",
                 String::from_utf8(bytes).expect("valid UTF-8 string bytes"),
