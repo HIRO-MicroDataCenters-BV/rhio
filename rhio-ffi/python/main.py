@@ -36,7 +36,9 @@ class HandleAnnouncement(GossipMessageCallback):
 async def import_file(node, config, import_path):
     hash = await node.import_blob(import_path)
     logger.info("file imported: {} {}", hash, import_path)
-    await node.export_blob_minio(hash, config.minio_region(), config.minio_endpoint(), config.minio_bucket_name())
+    await node.export_blob_minio(
+        hash, config.minio_region(), config.minio_endpoint(), config.minio_bucket_name()
+    )
     logger.info("blob exported to minio: {}", hash)
     return hash
 

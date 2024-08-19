@@ -70,7 +70,7 @@ class FileSystemSync(GossipMessageCallback):
         self.sync_dir = sync_dir
         self.paths = dict()
         self.blobs = set()
-        self.exported_blobs = dict()        
+        self.exported_blobs = dict()
 
     async def on_message(self, message, meta):
         """Process FileSystem events"""

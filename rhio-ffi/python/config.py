@@ -50,6 +50,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def config_from_args(args):
     cli = Cli()
     cli.bind_port = args.port
