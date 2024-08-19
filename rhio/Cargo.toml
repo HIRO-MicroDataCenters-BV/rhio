@@ -31,7 +31,6 @@ figment = { version = "0.10.19", features = ["env"] }
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
 hex = "0.4.3"
-notify-debouncer-full = "0.3.1"
 num_cpus = "1.16.0"
 p2panda-blobs = { path = "../p2panda-blobs" }
 p2panda-core = { path = "../p2panda-core" }
@@ -48,3 +47,4 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"
+notify-debouncer-full = "0.3.1"
