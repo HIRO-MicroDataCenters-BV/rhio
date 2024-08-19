@@ -34,7 +34,7 @@ class Watcher:
             # calculate path of blob relative to blobs dir
             rel_path = self.relative_path(path)
 
-            # we don't want to import blobs we just exported, so catch this case here
+            # we don't want to import blobs we ourselves exported, so catch this case here
             if rel_path in self.file_system.exported_blobs:
                 self.file_system.exported_blobs.pop(rel_path)
                 return
@@ -43,15 +43,15 @@ class Watcher:
 
             # import the blob and get it's hash
             hash = await self.node.import_blob(path)
+            self.file_system.blobs.add(hash)
             logger.info("blob imported: {}", hash)
 
             # send a file system event to announce a new file was created
             msg = Message.file_system(rel_path, hash)
             meta = await self.sender.send(msg)
 
-            # we don't receive messages we ourselves broadcast on a gossip channel, so pass this
-            # new event to our file-system aggregator manually.
-            await self.file_system.on_message(msg, meta)
+            # add the file to our file-system aggregate
+            self.file_system.paths[rel_path] = (meta.operation_timestamp(), hash)
 
     async def watch(self):
         """Run the watcher"""
@@ -70,7 +70,7 @@ class FileSystemSync(GossipMessageCallback):
         self.sync_dir = sync_dir
         self.paths = dict()
         self.blobs = set()
-        self.exported_blobs = dict()
+        self.exported_blobs = dict()        
 
     async def on_message(self, message, meta):
         """Process FileSystem events"""
