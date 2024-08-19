@@ -113,7 +113,7 @@ where
 
     /// Import a blob from the filesystem.
     ///
-    /// Move a blob from the a location on the local filesystem into dedicated blob store and
+    /// Add a blob from a path on the local filesystem to the dedicated blob store and
     /// make it available on the network identified by it's Blake3 hash.
     pub async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
