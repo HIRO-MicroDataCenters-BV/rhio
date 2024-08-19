@@ -58,7 +58,7 @@ impl Node {
 
     /// Import a blob from the filesystem.
     ///
-    /// Move a blob from the a location on the local filesystem into dedicated blob store and
+    /// Add a blob from a path on the local filesystem to the dedicated blob store and
     /// make it available on the network identified by it's Blake3 hash.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn import_blob_filesystem(&self, path: Path) -> Result<Hash, RhioError> {
