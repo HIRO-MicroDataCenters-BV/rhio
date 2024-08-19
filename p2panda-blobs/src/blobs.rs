@@ -32,7 +32,7 @@ where
 
 impl<S> Blobs<S>
 where
-    S: Store + Clone + Send + Sync + 'static,
+    S: Store,
 {
     pub async fn from_builder(
         network_builder: NetworkBuilder,
@@ -64,6 +64,10 @@ where
         Ok((network, blobs))
     }
 
+    /// Get an entry for a hash.
+    ///
+    /// The entry gives us access to a blobs metadata and methods for accessing the actual
+    /// blob data. Getting only the entry is a cheap operation though.
     pub async fn get(&self, hash: Hash) -> anyhow::Result<Option<<S as Map>::Entry>> {
         let hash = IrohHash::from_bytes(*hash.as_bytes());
         let entry = self.store.get(&hash).await?;

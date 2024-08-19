@@ -7,9 +7,7 @@ use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
-use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
-use iroh_blobs::store::{MapEntry, Store};
-use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent};
+use p2panda_blobs::{AsyncSliceReader, Blobs, DownloadBlobEvent, ImportBlobEvent, MapEntry, Store};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
@@ -75,7 +73,7 @@ pub enum ToRhioActor<T> {
 pub struct RhioActor<T, S>
 where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
-    S: Store + Clone + Send + Sync + 'static,
+    S: Store,
 {
     blobs: Blobs<S>,
     private_key: PrivateKey,
@@ -91,7 +89,7 @@ where
 impl<T, S> RhioActor<T, S>
 where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
-    S: Store + Clone + Send + Sync + 'static,
+    S: Store,
 {
     pub fn spawn(
         private_key: PrivateKey,
