@@ -1,6 +1,6 @@
 import os, asyncio
 
-from config import parse_config
+from config import parse_args, config_from_args
 from loguru import logger
 from rhio import (
     rhio_ffi,
@@ -26,8 +26,9 @@ async def main():
     loop = asyncio.get_running_loop()
     rhio_ffi.uniffi_set_event_loop(loop)
 
-    # parse config
-    config = parse_config()
+    # parse arguments
+    args = parse_args()
+    config = config_from_args(args)
 
     # spawn the rhio node
     node = await Node.spawn(config)

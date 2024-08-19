@@ -3,7 +3,7 @@ import argparse
 from rhio import Cli, Config
 
 
-def parse_config():
+def parse_args():
     # parse arguments
     parser = argparse.ArgumentParser(
         description="p2p blob syncing node for minio databases"
@@ -42,8 +42,9 @@ def parse_config():
     )
     parser.add_argument("-r", "--relay", type=str, help="relay addresses")
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
+def config_from_args(args):
     cli = Cli()
     cli.bind_port = args.port
     cli.ticket = args.ticket

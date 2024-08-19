@@ -1,6 +1,6 @@
 import os, asyncio
 
-from config import parse_config
+from config import parse_args, config_from_args
 from loguru import logger
 from rhio import (
     rhio_ffi,
@@ -122,7 +122,9 @@ async def main():
     rhio_ffi.uniffi_set_event_loop(loop)
 
     # parse arguments
-    config = parse_config()
+    args = parse_args()
+    config = config_from_args(args)
+    sync_dir = args.sync_dir
 
     # spawn the rhio node
     node = await Node.spawn(config)
@@ -131,14 +133,14 @@ async def main():
     # subscribe to a topic, providing a callback method which will be run on each
     # topic event we receive
     topic = TopicId.new_from_str("rhio/file_system_sync")
-    file_system_aggregate = FileSystemSync(node, config.sync_dir)
+    file_system_aggregate = FileSystemSync(node, sync_dir)
 
     logger.info("subscribing to gossip topic: {}", topic)
     sender = await node.subscribe(topic, file_system_aggregate)
     await sender.ready()
 
     logger.info("gossip topic ready")
-    await Watcher(sender, node, file_system_aggregate, config.sync_dir).watch()
+    await Watcher(sender, node, file_system_aggregate, sync_dir).watch()
 
 
 if __name__ == "__main__":

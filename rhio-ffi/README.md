@@ -67,4 +67,4 @@ options:
 There are two example python scripts in the `python` directory. 
 
 `python3 python/hello_world.py` simple node which says hello to discovered peers  
-`python3 python/sync.py -sync-path="path_to_sync_dir"` syncs files in the provided directory with other peers
+`python3 python/sync.py --sync-dir="path_to_sync_dir"` syncs files in the provided directory with other peers
