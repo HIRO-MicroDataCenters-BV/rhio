@@ -86,7 +86,7 @@ struct Cli {
     credentials: Option<Credentials>,
 
     /// minio bucket address string
-    #[arg(short = 'a', long, value_name = "ENDPOINT:REGION", value_parser = parse_url)]
+    #[arg(short = 'a', long, value_name = "ENDPOINT:REGION", value_parser = parse_bucket_address)]
     #[serde(skip_serializing_if = "Option::is_none")]
     bucket_address: Option<BucketAddress>,
 
