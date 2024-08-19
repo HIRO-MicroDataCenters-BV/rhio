@@ -13,7 +13,7 @@ pip install -r requirements.txt
 # Build wheel
 maturin develop
 # Run the example (run this in two terminals)
-python3 python/hello_world.py
+python python/hello.py
 ```
 
 ## `minio` container
@@ -21,7 +21,7 @@ python3 python/hello_world.py
 Run a local `minio` instance for testing purposes.
 
 ```bash
-# Start minio instance (run from repository root directory)
+# Start two minio instance (run from repository root directory)
 docker-compose up
 ```
 
@@ -29,15 +29,15 @@ docker-compose up
 
 ### CLI
 
-```bash
+```shell
 # run the main python cli application
-python3 python/main.py -c "rhio:rhio_password"
+python python/main.py -c "rhio:rhio_password"
 ```
 
-```bash
-python3 python/main.py --help
-
-usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-n BUCKET_NAME] [-a BUCKET_ADDRESS] [-c CREDENTIALS] [-r RELAY]
+```shell
+python python/main.py --help                                                      
+usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-n MINIO_BUCKET_NAME] [-e MINIO_ENDPOINT] [-g MINIO_REGION] [-c MINIO_CREDENTIALS]
+               [-r RELAY]
 
 p2p blob syncing node for minio databases
 
@@ -52,11 +52,13 @@ options:
                         path to sync directory (for use with example/sync)
   -b BLOBS_DIR, --blobs-dir BLOBS_DIR
                         path to blob store and database
-  -n BUCKET_NAME, --bucket-name BUCKET_NAME
+  -n MINIO_BUCKET_NAME, --minio-bucket-name MINIO_BUCKET_NAME
                         minio bucket name
-  -a BUCKET_ADDRESS, --bucket-address BUCKET_ADDRESS
-                        minio bucket address in the format <ENDPOINT>:<REGION>
-  -c CREDENTIALS, --credentials CREDENTIALS
+  -e MINIO_ENDPOINT, --minio-endpoint MINIO_ENDPOINT
+                        minio instance endpoint address
+  -g MINIO_REGION, --minio-region MINIO_REGION
+                        minio instance region
+  -c MINIO_CREDENTIALS, --minio-credentials MINIO_CREDENTIALS
                         minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>
   -r RELAY, --relay RELAY
                         relay addresses
@@ -66,5 +68,5 @@ options:
 
 There are two example python scripts in the `python` directory. 
 
-`python3 python/hello_world.py` simple node which says hello to discovered peers  
-`python3 python/sync.py --sync-dir="path_to_sync_dir"` syncs files in the provided directory with other peers
+`python python/hello_world.py` simple node which says hello to discovered peers  
+`python python/sync.py --sync-dir="path_to_sync_dir"` syncs files in the provided directory with other peers

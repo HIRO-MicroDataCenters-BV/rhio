@@ -16,8 +16,11 @@ from rhio import (
 class HandleAnnouncement(GossipMessageCallback):
     """Download an announced blob to the blob store and then export it to minio bucket"""
 
-    def __init__(self, node):
+    def __init__(self, node, config):
         self.node = node
+        self.minio_bucket_name = config.minio_bucket_name()
+        self.minio_region = config.minio_region()
+        self.minio_endpoint = config.minio_endpoint()
 
     async def on_message(self, msg, meta):
         hash = msg.as_blob_announcement()
@@ -25,15 +28,15 @@ class HandleAnnouncement(GossipMessageCallback):
         await self.node.download_blob(hash)
         logger.info("blob downloaded: {}", hash)
         await self.node.export_blob_minio(
-            hash, "eu-west-2", "http://localhost:9000", "rhio"
+            hash, self.minio_region, self.minio_endpoint, self.minio_bucket_name
         )
         logger.info("blob exported to minio: {}", hash)
 
 
-async def import_file(node, import_path):
+async def import_file(node, config, import_path):
     hash = await node.import_blob(import_path)
     logger.info("file imported: {} {}", hash, import_path)
-    await node.export_blob_minio(hash, "eu-west-2", "http://localhost:9000", "rhio")
+    await node.export_blob_minio(hash, config.minio_region(), config.minio_endpoint(), config.minio_bucket_name())
     logger.info("blob exported to minio: {}", hash)
     return hash
 
@@ -56,7 +59,7 @@ async def main():
     topic = TopicId.new_from_str("rhio/blob_announce")
 
     logger.info("subscribing to gossip topic: {}", topic)
-    sender = await node.subscribe(topic, HandleAnnouncement(node))
+    sender = await node.subscribe(topic, HandleAnnouncement(node, config))
 
     await sender.ready()
     logger.info("gossip topic ready")
@@ -65,7 +68,7 @@ async def main():
     while True:
         import_path = await asyncio.to_thread(input, "Enter file path or URL: ")
         try:
-            hash = await import_file(node, import_path)
+            hash = await import_file(node, config, import_path)
             logger.info("announce blob: {}", hash)
             await sender.announce_blob(hash)
         except RhioError as e:

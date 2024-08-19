@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use rhio::config::{
-    parse_bucket_address, parse_s3_credentials, parse_ticket, parse_url, Config as InnerConfig,
-};
+use rhio::config::{parse_s3_credentials, parse_ticket, parse_url, Config as InnerConfig};
 
 use crate::error::RhioError;
 use crate::types::Path;
@@ -20,11 +18,13 @@ pub struct Cli {
     #[uniffi(default = None)]
     pub blobs_dir: Option<String>,
     #[uniffi(default = None)]
-    pub bucket_name: Option<String>,
+    pub minio_bucket_name: Option<String>,
     #[uniffi(default = None)]
-    pub bucket_address: Option<String>,
+    pub minio_endpoint: Option<String>,
     #[uniffi(default = None)]
-    pub credentials: Option<String>,
+    pub minio_region: Option<String>,
+    #[uniffi(default = None)]
+    pub minio_credentials: Option<String>,
     #[uniffi(default = None)]
     pub relay: Option<String>,
 }
@@ -32,6 +32,21 @@ pub struct Cli {
 #[derive(Clone, Debug, Default, uniffi::Object)]
 pub struct Config {
     pub inner: InnerConfig,
+}
+
+#[uniffi::export]
+impl Config {
+    pub fn minio_bucket_name(&self) -> String {
+        self.inner.minio.bucket_name.to_owned()
+    }
+
+    pub fn minio_endpoint(&self) -> String {
+        self.inner.minio.endpoint.to_owned()
+    }
+
+    pub fn minio_region(&self) -> String {
+        self.inner.minio.region.to_owned()
+    }
 }
 
 #[uniffi::export]
@@ -56,17 +71,21 @@ impl Config {
 
         inner.blobs_dir = cli.blobs_dir.map(PathBuf::from);
 
-        if let Some(bucket_name) = cli.bucket_name {
-            inner.bucket_name = bucket_name
+        if let Some(bucket_name) = cli.minio_bucket_name {
+            inner.minio.bucket_name = bucket_name
         };
 
-        if let Some(bucket_address) = cli.bucket_address {
-            inner.bucket_address =
-                parse_bucket_address(&bucket_address).expect("invalid bucket address")
+        if let Some(minio_endpoint) = cli.minio_endpoint {
+            inner.minio.endpoint = minio_endpoint
         };
 
-        if let Some(credentials_str) = cli.credentials {
-            inner.credentials = parse_s3_credentials(&credentials_str).expect("invalid import path")
+        if let Some(minio_region) = cli.minio_region {
+            inner.minio.region = minio_region
+        };
+
+        if let Some(credentials_str) = cli.minio_credentials {
+            inner.minio.credentials =
+                parse_s3_credentials(&credentials_str).expect("invalid credentials")
         };
 
         inner.network_config.relay = cli

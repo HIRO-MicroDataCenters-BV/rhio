@@ -23,6 +23,8 @@ async fn main() -> Result<()> {
     let config = load_config()?;
     let relay = config.network_config.relay.clone();
 
+    println!("{config:?}");
+
     let private_key = match &config.network_config.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
@@ -85,9 +87,9 @@ async fn main() -> Result<()> {
             node.download_blob(hash).await?;
             node.export_blob_minio(
                 hash,
-                node.config.bucket_address.region.clone(),
-                node.config.bucket_address.endpoint.clone(),
-                node.config.bucket_name.clone(),
+                node.config.minio.region.clone(),
+                node.config.minio.endpoint.clone(),
+                node.config.minio.bucket_name.clone(),
             )
             .await?;
         }
@@ -118,9 +120,9 @@ async fn handle_import(node: &Node<()>, import_path: ImportPath) -> Result<Hash>
     println!("export to minio bucket: {hash}");
     node.export_blob_minio(
         hash,
-        node.config.bucket_address.region.clone(),
-        node.config.bucket_address.endpoint.clone(),
-        node.config.bucket_name.clone(),
+        node.config.minio.region.clone(),
+        node.config.minio.endpoint.clone(),
+        node.config.minio.bucket_name.clone(),
     )
     .await?;
 

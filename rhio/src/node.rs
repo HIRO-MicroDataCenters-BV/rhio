@@ -166,7 +166,7 @@ where
                 hash,
                 bucket_name,
                 region: Region::Custom { region, endpoint },
-                credentials: self.config.credentials.clone(),
+                credentials: self.config.minio.credentials.clone(),
                 reply,
             })
             .await?;

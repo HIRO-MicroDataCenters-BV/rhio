@@ -18,11 +18,10 @@ const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    pub bucket_name: String,
-    pub bucket_address: BucketAddress,
-    pub credentials: Credentials,
     pub blobs_dir: Option<PathBuf>,
     pub sync_dir: Option<PathBuf>,
+    #[serde(flatten)]
+    pub minio: MinioConfig,
     #[serde(flatten)]
     pub network_config: NetworkConfig,
 }
@@ -34,12 +33,8 @@ impl Default for Config {
             ..NetworkConfig::default()
         };
 
-        let credentials = Credentials::default()
-            .unwrap_or(Credentials::anonymous().expect("method can never fail"));
         Self {
-            bucket_name: BUCKET_NAME.to_string(),
-            bucket_address: BucketAddress::default(),
-            credentials,
+            minio: MinioConfig::default(),
             blobs_dir: None,
             sync_dir: None,
             network_config,
@@ -81,17 +76,22 @@ struct Cli {
     blobs_dir: Option<PathBuf>,
 
     /// minio credentials
-    #[arg(short = 'c', long, value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
+    #[arg(short = 'c', long = "minio-credentials", value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
     credentials: Option<Credentials>,
 
-    /// minio bucket address string
-    #[arg(short = 'a', long, value_name = "ENDPOINT:REGION", value_parser = parse_bucket_address)]
+    /// minio bucket endpoint string
+    #[arg(short = 'e', long = "minio-endpoint", value_name = "ENDPOINT")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    bucket_address: Option<BucketAddress>,
+    endpoint: Option<String>,
+
+    /// minio bucket region string
+    #[arg(short = 'g', long = "minio-region", value_name = "REGION")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    region: Option<String>,
 
     /// minio bucket name
-    #[arg(short = 'n', long, value_name = "NAME", value_parser = parse_url)]
+    #[arg(short = 'n', long = "minio-bucket-name", value_name = "NAME")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bucket_name: Option<String>,
 
@@ -133,19 +133,6 @@ pub fn parse_s3_credentials(value: &str) -> Result<Credentials> {
     Ok(credentials)
 }
 
-pub fn parse_bucket_address(value: &str) -> Result<BucketAddress> {
-    let mut value_iter = value.split(":");
-
-    let endpoint = value_iter
-        .next()
-        .ok_or(anyhow::anyhow!("no endpoint provided"))?
-        .to_string();
-
-    let region = value_iter.next().unwrap_or(MINIO_REGION).to_string();
-
-    Ok(BucketAddress { endpoint, region })
-}
-
 pub fn load_config() -> Result<Config> {
     let mut config: Config = Figment::new()
         .merge(Serialized::defaults(Config::default()))
@@ -163,22 +150,23 @@ pub fn load_config() -> Result<Config> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MinioCredentials {
-    pub access_key: String,
-    pub secret_key: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BucketAddress {
-    pub region: String,
+pub struct MinioConfig {
+    pub credentials: Credentials,
+    pub bucket_name: String,
     pub endpoint: String,
+    pub region: String,
 }
 
-impl Default for BucketAddress {
+impl Default for MinioConfig {
     fn default() -> Self {
+        let credentials = Credentials::default()
+            .unwrap_or(Credentials::anonymous().expect("method can never fail"));
+
         Self {
-            region: MINIO_REGION.to_string(),
+            credentials,
+            bucket_name: BUCKET_NAME.to_string(),
             endpoint: MINIO_ENDPOINT.to_string(),
+            region: MINIO_REGION.to_string(),
         }
     }
 }
