@@ -17,7 +17,7 @@ use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
-use crate::config::Config;
+use crate::config::{Config, ImportPath};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
@@ -109,6 +109,27 @@ where
     /// usually only a subset of these will be applicable to a certain remote node.
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.network.direct_addresses().await
+    }
+
+    /// Import a blob into the node's blob store and sync it with the `minio` backend.
+    pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash> {
+        let hash = match import_path {
+            // Import a file from the local filesystem
+            ImportPath::File(path) => self.import_blob_filesystem(path.clone()).await?,
+            // Import a file from the given url
+            ImportPath::Url(url) => self.import_blob_url(url.clone()).await?,
+        };
+
+        // Export the blob data from the blob store to a minio bucket
+        self.export_blob_minio(
+            hash,
+            self.config.minio.region.clone(),
+            self.config.minio.endpoint.clone(),
+            self.config.minio.bucket_name.clone(),
+        )
+        .await?;
+
+        Ok(hash)
     }
 
     /// Import a blob from the filesystem.
