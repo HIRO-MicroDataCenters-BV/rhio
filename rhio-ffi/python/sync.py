@@ -104,7 +104,7 @@ class FileSystemSync(GossipMessageCallback):
             path = os.path.join(self.sync_dir, rel_path)
 
             # export blob to filesystem
-            await self.node.export_blob(hash, path)
+            await self.node.export_blob_filesystem(hash, path)
             logger.info("exported blob to file-system: {}", path)
 
             # add the file to our file-system aggregate

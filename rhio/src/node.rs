@@ -130,7 +130,7 @@ where
     ///
     /// Add a blob from a path on the local filesystem to the dedicated blob store and
     /// make it available on the network identified by it's Blake3 hash.
-    pub async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
+    async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
             .send(ToRhioActor::ImportFile {
@@ -145,7 +145,7 @@ where
     ///
     /// Download a blob from a url, move it into the dedicated blob store and make it available on
     /// the network identified by it's Blake3 hash.
-    pub async fn import_blob_url(&self, url: String) -> Result<Hash> {
+    async fn import_blob_url(&self, url: String) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
             .send(ToRhioActor::ImportUrl { url, reply })
@@ -196,7 +196,16 @@ where
         self.actor_tx
             .send(ToRhioActor::DownloadBlob { hash, reply })
             .await?;
-        reply_rx.await?
+        let result = reply_rx.await?;
+        result?;
+
+        self.export_blob_minio(
+            hash,
+            self.config.minio.region.clone(),
+            self.config.minio.endpoint.clone(),
+            self.config.minio.bucket_name.clone(),
+        )
+        .await
     }
 
     /// Subscribe to a gossip topic.

@@ -27,10 +27,6 @@ class HandleAnnouncement(GossipMessageCallback):
         logger.info("received {} from {}", msg, meta.delivered_from())
         await self.node.download_blob(hash)
         logger.info("blob downloaded: {}", hash)
-        await self.node.export_blob_minio(
-            hash, self.minio_region, self.minio_endpoint, self.minio_bucket_name
-        )
-        logger.info("blob exported to minio: {}", hash)
 
 async def main():
     # setup event loop, to ensure async callbacks work

@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 use rhio::aggregate::{FileSystem, FileSystemAction};
-use rhio::config::load_config;
+use rhio::config::{load_config, ImportPath};
 use rhio::logging::setup_tracing;
 use rhio::messages::{FileSystemEvent, Message};
 use rhio::node::Node;
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
                     let relative_path = to_relative_path(&path, &sync_dir);
                     if !exported_blobs.remove(&relative_path) {
                         info!("file added: {path:?}");
-                        let hash = node.import_blob_filesystem(path.clone()).await.expect("can import blob");
+                        let hash = node.import_blob(ImportPath::File(path.clone())).await.expect("can import blob");
                         let fs_event = FileSystemEvent::Create(relative_path, hash);
                         let context = fs_topic_tx.send(Message::FileSystem(fs_event.clone())).await.expect("can send topic event");
                         let _ = file_system.process(fs_event, context.operation_timestamp);

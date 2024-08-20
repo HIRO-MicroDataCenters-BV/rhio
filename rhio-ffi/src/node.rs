@@ -54,27 +54,10 @@ impl Node {
             .map(|addrs| addrs.into_iter().map(SocketAddr::from).collect())
     }
 
-    /// Import a blob from the filesystem.
+    /// Import a blob from either a path or a URL and export it to the minio store.
     ///
     /// Add a blob from a path on the local filesystem to the dedicated blob store and
     /// make it available on the network identified by it's Blake3 hash.
-    #[uniffi::method(async_runtime = "tokio")]
-    pub async fn import_blob_filesystem(&self, path: Path) -> Result<Hash, RhioError> {
-        let hash = self.inner.import_blob_filesystem(path.into()).await?;
-        Ok(hash.into())
-    }
-
-    /// Import a blob from a url.
-    ///
-    /// Download a blob from a url, move it into the dedicated blob store and make it available on
-    /// the network identified by it's Blake3 hash.
-    #[uniffi::method(async_runtime = "tokio")]
-    pub async fn import_blob_url(&self, url: String) -> Result<Hash, RhioError> {
-        let hash = self.inner.import_blob_url(url).await?;
-        Ok(hash.into())
-    }
-
-    /// Import a blob from either a path or a URL.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash, RhioError> {
         let hash = self.inner.import_blob(import_path.into()).await?;
@@ -85,7 +68,7 @@ impl Node {
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
     #[uniffi::method(async_runtime = "tokio")]
-    pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
+    pub async fn export_blob_filesystem(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
         self.inner
             .export_blob_filesystem(hash.into(), path.into())
             .await?;
@@ -109,7 +92,7 @@ impl Node {
         Ok(())
     }
 
-    /// Download a blob from the network.
+    /// Download a blob from the network and export it to a minio store.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
     #[uniffi::method(async_runtime = "tokio")]

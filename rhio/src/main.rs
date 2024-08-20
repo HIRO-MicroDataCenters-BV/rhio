@@ -78,15 +78,7 @@ async fn main() -> Result<()> {
             // network and export it to our own minio store
             Ok((message, _)) = topic_rx.recv() => {
                 if let Message::BlobAnnouncement(hash) = message {
-                    // @TODO: also abstract away these two methods behind node API
                     node.download_blob(hash).await?;
-                    node.export_blob_minio(
-                        hash,
-                        node.config.minio.region.clone(),
-                        node.config.minio.endpoint.clone(),
-                        node.config.minio.bucket_name.clone(),
-                    )
-                    .await?;
                 }
             }
         }
