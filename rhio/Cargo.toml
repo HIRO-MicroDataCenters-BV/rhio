@@ -31,6 +31,7 @@ figment = { version = "0.10.19", features = ["env"] }
 futures-lite = "2.3.0"
 futures-util = "0.3.30"
 hex = "0.4.3"
+iroh-blobs = { version = "0.20.0", features = ["fs-store"], default-features = false }
 num_cpus = "1.16.0"
 p2panda-blobs = { path = "../p2panda-blobs" }
 p2panda-core = { path = "../p2panda-core" }

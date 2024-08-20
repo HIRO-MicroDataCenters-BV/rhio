@@ -4147,6 +4147,7 @@ dependencies = [
  "futures-lite 2.3.0",
  "futures-util",
  "hex",
+ "iroh-blobs",
  "notify-debouncer-full",
  "num_cpus",
  "p2panda-blobs",
