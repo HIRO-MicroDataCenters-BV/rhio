@@ -20,8 +20,7 @@ async fn main() -> Result<()> {
     let relay = config.network_config.relay.clone();
 
     // Spawn the node
-    let node: Node<ChatMessage> =
-        Node::spawn(config.clone(), private_key.clone()).await?;
+    let node: Node<ChatMessage> = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {
