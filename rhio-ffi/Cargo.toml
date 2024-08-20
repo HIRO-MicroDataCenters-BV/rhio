@@ -24,8 +24,6 @@ tracing = "0.1.40"
 tokio = "1.39.2"
 futures = "0.3.30"
 p2panda-core = { path = "../p2panda-core" }
-tokio-util = { version = "0.7.11", features = ["rt"] }
-num_cpus = "1.16.0"
 
 [dependencies-build]
 uniffi = { version = "0.28.0", features = ["build"] }

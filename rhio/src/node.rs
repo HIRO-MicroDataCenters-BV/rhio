@@ -37,7 +37,7 @@ where
 {
     /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        let pool = LocalPoolHandle::new(num_cpus::get());
+        let pool = LocalPoolHandle::new(1);
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
         let log_store = LogMemoryStore::default();
