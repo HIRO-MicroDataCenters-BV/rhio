@@ -5,7 +5,6 @@ use futures::FutureExt;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::Node as RhioNode;
-use tokio_util::task::LocalPoolHandle;
 use tracing::warn;
 
 use crate::config::Config;
@@ -26,9 +25,8 @@ impl Node {
     /// Configure and spawn a node.
     #[uniffi::constructor(async_runtime = "tokio")]
     pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
-        let pool_handle = LocalPoolHandle::new(num_cpus::get());
         let private_key = generate_ephemeral_private_key();
-        let rhio_node = RhioNode::spawn(config.clone().into(), private_key, pool_handle).await?;
+        let rhio_node = RhioNode::spawn(config.clone().into(), private_key).await?;
         Ok(Self { inner: rhio_node })
     }
 
@@ -79,10 +77,8 @@ impl Node {
     /// Import a blob from either a path or a URL.
     #[uniffi::method(async_runtime = "tokio")]
     pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash, RhioError> {
-        match import_path.inner {
-            rhio::config::ImportPath::File(path) => self.import_blob_filesystem(path.into()).await,
-            rhio::config::ImportPath::Url(url) => self.import_blob_url(url).await,
-        }
+        let hash = self.inner.import_blob(import_path.into()).await?;
+        Ok(hash.into())
     }
 
     /// Export a blob to the filesystem.

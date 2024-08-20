@@ -1,4 +1,4 @@
-use std::io::{Stdin, Write};
+use std::io::Write;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
@@ -10,11 +10,10 @@ use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private
 use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
 use rhio::BLOB_ANNOUNCE_TOPIC;
-use tokio_util::task::LocalPoolHandle;
+use tokio::sync::mpsc;
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> Result<()> {
-    let pool_handle = LocalPoolHandle::new(num_cpus::get());
     setup_tracing();
 
     // Load config file and private key
@@ -27,8 +26,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> =
-        Node::spawn(config.clone(), private_key.clone(), pool_handle.clone()).await?;
+    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {
@@ -55,18 +53,15 @@ async fn main() -> Result<()> {
     topic_ready.await;
     println!("gossip overlay joined");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
-    pool_handle.spawn_pinned(|| async move {
-        let stdin = std::io::stdin();
-        while let Ok(input_str) = read_input(&stdin) {
-            let import_path =
-                ImportPath::from_str(input_str.trim()).expect("error parsing import string");
-            tx.send(import_path).await.expect("channel not closed");
-        }
-    });
+    // Spawn dedicated thread for accepting user input
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    std::thread::spawn(move || input_loop(tx));
 
     loop {
         tokio::select! {
+            biased;
+
+            _ = tokio::signal::ctrl_c() => break,
             // Handle import path inputs arriving from stdin
             Some(import_path) = rx.recv() => {
                 let result = node.import_blob(import_path).await;
@@ -82,7 +77,6 @@ async fn main() -> Result<()> {
             // For all blob announcements we receive on the gossip topic, download the blob from the
             // network and export it to our own minio store
             Ok((message, _)) = topic_rx.recv() => {
-                println!("received gossip message: {message:?}");
                 if let Message::BlobAnnouncement(hash) = message {
                     // @TODO: also abstract away these two methods behind node API
                     node.download_blob(hash).await?;
@@ -95,21 +89,27 @@ async fn main() -> Result<()> {
                     .await?;
                 }
             }
-            _ = tokio::signal::ctrl_c() => break
         }
     }
 
+    println!();
+    println!("shutting down");
     node.shutdown().await?;
 
     Ok(())
 }
 
-fn read_input(stdin: &Stdin) -> Result<String> {
-    println!();
-    print!("Enter file path or URL: ");
-    let _ = std::io::stdout().flush();
+fn input_loop(line_tx: mpsc::Sender<ImportPath>) -> Result<()> {
     let mut buffer = String::new();
-    stdin.read_line(&mut buffer)?;
-    println!();
-    Ok(buffer)
+    let stdin = std::io::stdin();
+    loop {
+        println!();
+        print!("Enter file path or URL: ");
+        let _ = std::io::stdout().flush();
+        stdin.read_line(&mut buffer)?;
+        println!();
+        let import_path = ImportPath::from_str(buffer.trim()).expect("error parsing import string");
+        line_tx.blocking_send(import_path)?;
+        buffer.clear();
+    }
 }

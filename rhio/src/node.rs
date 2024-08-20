@@ -28,9 +28,7 @@ pub struct Node<T = Vec<u8>> {
     pub config: Config,
     network: Network,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
-    #[allow(dead_code)]
-    rt: LocalPoolHandle,
-    task: SharedAbortingJoinHandle<()>,
+    actor_handle: SharedAbortingJoinHandle<()>,
 }
 
 impl<T> Node<T>
@@ -38,11 +36,8 @@ where
     T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
 {
     /// Configure and spawn a node.
-    pub async fn spawn(
-        config: Config,
-        private_key: PrivateKey,
-        rt: LocalPoolHandle,
-    ) -> Result<Self> {
+    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
+        let pool = LocalPoolHandle::new(num_cpus::get());
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
         let log_store = LogMemoryStore::default();
@@ -55,38 +50,37 @@ where
             Err(err) => error!("Failed to initiate local discovery: {err}"),
         }
 
-        let (network, task) = if let Some(blobs_dir) = &config.blobs_dir {
+        let (network, actor_handle) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
             let blob_store = FilesystemStore::load(blobs_dir).await?;
             let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-            let task = RhioActor::spawn(
+            let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
                 log_store,
                 rhio_actor_rx,
-                rt.clone(),
+                pool.clone(),
             );
-            (network, task)
+            (network, actor_handle)
         } else {
             // Spawn a rhio actor backed by an in memory blob store
             let blob_store = BlobsMemoryStore::new();
             let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
-            let task = RhioActor::spawn(
+            let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
                 log_store,
                 rhio_actor_rx,
-                rt.clone(),
+                pool.clone(),
             );
-            (network, task)
+            (network, actor_handle)
         };
 
         let node = Node {
             config,
             network,
             actor_tx,
-            rt,
-            task: task.into(),
+            actor_handle: actor_handle.into(),
         };
 
         Ok(node)
@@ -238,7 +232,7 @@ where
         // Trigger shutdown of the main run task by activating the cancel token
         self.actor_tx.send(ToRhioActor::Shutdown).await?;
         self.network.shutdown().await?;
-        self.task.await.map_err(|err| anyhow::anyhow!("{err}"))?;
+        self.actor_handle.await.map_err(|err| anyhow::anyhow!("{err}"))?;
         Ok(())
     }
 }
@@ -293,7 +287,6 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_net::network::OutEvent;
-    use tokio_util::task::LocalPoolHandle;
 
     use crate::config::Config;
     use crate::logging::setup_tracing;
@@ -303,7 +296,6 @@ mod tests {
 
     #[tokio::test]
     async fn join_gossip_overlay() {
-        let pool_handle = LocalPoolHandle::new(5);
         setup_tracing();
 
         let private_key_1 = generate_ephemeral_private_key();
@@ -314,17 +306,13 @@ mod tests {
         config_2.network_config.bind_port = 2023;
 
         // Spawn the first node
-        let node_1: Node<()> = Node::spawn(config_1, private_key_1, pool_handle.clone())
-            .await
-            .unwrap();
+        let node_1: Node<()> = Node::spawn(config_1, private_key_1).await.unwrap();
 
         // Retrieve the address of the first node
         let node_1_addr = node_1.network.endpoint().node_addr().await.unwrap();
 
         // Spawn the second node
-        let node_2: Node<()> = Node::spawn(config_2, private_key_2, pool_handle)
-            .await
-            .unwrap();
+        let node_2: Node<()> = Node::spawn(config_2, private_key_2).await.unwrap();
 
         // Retrieve the address of the second node
         let node_2_addr = node_2.network.endpoint().node_addr().await.unwrap();

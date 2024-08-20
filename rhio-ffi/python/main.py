@@ -32,17 +32,6 @@ class HandleAnnouncement(GossipMessageCallback):
         )
         logger.info("blob exported to minio: {}", hash)
 
-
-async def import_file(node, config, import_path):
-    hash = await node.import_blob(import_path)
-    logger.info("file imported: {} {}", hash, import_path)
-    await node.export_blob_minio(
-        hash, config.minio_region(), config.minio_endpoint(), config.minio_bucket_name()
-    )
-    logger.info("blob exported to minio: {}", hash)
-    return hash
-
-
 async def main():
     # setup event loop, to ensure async callbacks work
     loop = asyncio.get_running_loop()
@@ -70,7 +59,8 @@ async def main():
     while True:
         import_path = await asyncio.to_thread(input, "Enter file path or URL: ")
         try:
-            hash = await import_file(node, config, import_path)
+            hash = await node.import_blob(import_path)
+            logger.info("file imported: {} {}", hash, import_path)
             logger.info("announce blob: {}", hash)
             await sender.announce_blob(hash)
         except RhioError as e:
