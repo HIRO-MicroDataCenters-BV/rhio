@@ -85,7 +85,7 @@ impl Config {
 
         if let Some(credentials_str) = cli.minio_credentials {
             inner.minio.credentials =
-                parse_s3_credentials(&credentials_str).expect("invalid credentials")
+                Some(parse_s3_credentials(&credentials_str).expect("invalid credentials"))
         };
 
         inner.network_config.relay = cli

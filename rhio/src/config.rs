@@ -151,7 +151,7 @@ pub fn load_config() -> Result<Config> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MinioConfig {
-    pub credentials: Credentials,
+    pub credentials: Option<Credentials>,
     pub bucket_name: String,
     pub endpoint: String,
     pub region: String,
@@ -159,11 +159,8 @@ pub struct MinioConfig {
 
 impl Default for MinioConfig {
     fn default() -> Self {
-        let credentials = Credentials::default()
-            .unwrap_or(Credentials::anonymous().expect("method can never fail"));
-
         Self {
-            credentials,
+            credentials: None,
             bucket_name: BUCKET_NAME.to_string(),
             endpoint: MINIO_ENDPOINT.to_string(),
             region: MINIO_REGION.to_string(),

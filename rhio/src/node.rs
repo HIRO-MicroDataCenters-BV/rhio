@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -115,13 +115,15 @@ where
         };
 
         // Export the blob data from the blob store to a minio bucket
-        self.export_blob_minio(
-            hash,
-            self.config.minio.region.clone(),
-            self.config.minio.endpoint.clone(),
-            self.config.minio.bucket_name.clone(),
-        )
-        .await?;
+        if self.config.minio.credentials.is_some() {
+            self.export_blob_minio(
+                hash,
+                self.config.minio.region.clone(),
+                self.config.minio.endpoint.clone(),
+                self.config.minio.bucket_name.clone(),
+            )
+            .await?;
+        }
 
         Ok(hash)
     }
@@ -174,6 +176,10 @@ where
         endpoint: String,
         bucket_name: String,
     ) -> Result<()> {
+        let Some(credentials) = &self.config.minio.credentials else {
+            return Err(anyhow!("No minio credentials provided"));
+        };
+
         // Get the blobs entry from the blob store
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -181,7 +187,7 @@ where
                 hash,
                 bucket_name,
                 region: Region::Custom { region, endpoint },
-                credentials: self.config.minio.credentials.clone(),
+                credentials: credentials.clone(),
                 reply,
             })
             .await?;
@@ -199,13 +205,17 @@ where
         let result = reply_rx.await?;
         result?;
 
-        self.export_blob_minio(
-            hash,
-            self.config.minio.region.clone(),
-            self.config.minio.endpoint.clone(),
-            self.config.minio.bucket_name.clone(),
-        )
-        .await
+        if self.config.minio.credentials.is_some() {
+            self.export_blob_minio(
+                hash,
+                self.config.minio.region.clone(),
+                self.config.minio.endpoint.clone(),
+                self.config.minio.bucket_name.clone(),
+            )
+            .await?;
+        }
+
+        Ok(())
     }
 
     /// Subscribe to a gossip topic.

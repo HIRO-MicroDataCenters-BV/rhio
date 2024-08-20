@@ -18,9 +18,6 @@ class HandleAnnouncement(GossipMessageCallback):
 
     def __init__(self, node, config):
         self.node = node
-        self.minio_bucket_name = config.minio_bucket_name()
-        self.minio_region = config.minio_region()
-        self.minio_endpoint = config.minio_endpoint()
 
     async def on_message(self, msg, meta):
         hash = msg.as_blob_announcement()
