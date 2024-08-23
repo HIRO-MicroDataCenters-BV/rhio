@@ -5,10 +5,9 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
-use iroh_net::util::SharedAbortingJoinHandle;
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
