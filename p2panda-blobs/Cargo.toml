@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+bytes = "1.7.1"
 flume = "0.11.0"
 futures-buffered = "0.2.6"
 futures-lite = "2.3.0"

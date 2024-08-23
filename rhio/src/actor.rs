@@ -1,19 +1,26 @@
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::{self, SystemTime};
 
 use anyhow::{Context, Result};
 use futures_lite::FutureExt;
-use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent, MemoryStore as BlobMemoryStore};
+use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
+use iroh_blobs::store::{MapEntry, Store};
+use p2panda_blobs::{Blobs, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_store::MemoryStore as LogsMemoryStore;
+use s3::creds::Credentials;
+use s3::{Bucket, BucketConfiguration, Region};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamExt, StreamMap};
+use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, info};
 
 use crate::extensions::RhioExtensions;
@@ -27,13 +34,24 @@ pub type SubscribeResult<T> = Result<(
 )>;
 
 pub enum ToRhioActor<T> {
-    ImportBlob {
+    ImportFile {
         path: PathBuf,
         reply: oneshot::Sender<Result<Hash>>,
     },
-    ExportBlob {
+    ImportUrl {
+        url: String,
+        reply: oneshot::Sender<Result<Hash>>,
+    },
+    ExportBlobFilesystem {
         hash: Hash,
         path: PathBuf,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    ExportBlobMinio {
+        hash: Hash,
+        bucket_name: String,
+        region: Region,
+        credentials: Credentials,
         reply: oneshot::Sender<Result<()>>,
     },
     DownloadBlob {
@@ -54,8 +72,12 @@ pub enum ToRhioActor<T> {
     Shutdown,
 }
 
-pub struct RhioActor<T> {
-    blobs: Blobs<BlobMemoryStore>,
+pub struct RhioActor<T, S>
+where
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
+    S: Store,
+{
+    blobs: Blobs<S>,
     private_key: PrivateKey,
     store: LogsMemoryStore<RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
@@ -66,20 +88,22 @@ pub struct RhioActor<T> {
     inbox: mpsc::Receiver<ToRhioActor<T>>,
 }
 
-impl<T> RhioActor<T>
+impl<T, S> RhioActor<T, S>
 where
-    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug,
+    T: Serialize + DeserializeOwned + Clone + std::fmt::Debug + Send + Sync + 'static,
+    S: Store,
 {
-    pub fn new(
-        blobs: Blobs<BlobMemoryStore>,
+    pub fn spawn(
         private_key: PrivateKey,
+        blobs: Blobs<S>,
         store: LogsMemoryStore<RhioExtensions>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
-    ) -> Self {
+        rt: LocalPoolHandle,
+    ) -> JoinHandle<()> {
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
-        Self {
-            blobs,
+        let mut actor = Self {
             private_key,
+            blobs,
             store,
             topic_gossip_tx: HashMap::default(),
             topic_topic_rx: StreamMap::default(),
@@ -87,7 +111,12 @@ where
             broadcast_join,
             joined_topics: HashSet::new(),
             inbox,
-        }
+        };
+        rt.spawn_pinned(|| async move {
+            if let Err(err) = actor.run().await {
+                panic!("rhio actor failed: {err:?}");
+            }
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -135,15 +164,24 @@ where
 
     async fn on_actor_message(&mut self, msg: ToRhioActor<T>) -> Result<bool> {
         match msg {
-            ToRhioActor::ImportBlob { path, reply } => {
-                let hash = self.on_import_blob(&path).await?;
-                info!("imported blob: {hash} {path:?}");
-                reply.send(Ok(hash)).ok();
+            ToRhioActor::ImportUrl { url, reply } => {
+                let result = self.on_import_url(&url).await;
+                if let Ok(hash) = result {
+                    info!("imported blob: {hash} {url}");
+                }
+                reply.send(result).ok();
             }
-            ToRhioActor::ExportBlob { path, reply, hash } => {
-                let result = self.on_export_blob(hash, &path).await;
+            ToRhioActor::ImportFile { path, reply } => {
+                let result = self.on_import_blob(&path).await;
+                if let Ok(hash) = result {
+                    info!("imported blob: {hash} {path:?}");
+                }
+                reply.send(result).ok();
+            }
+            ToRhioActor::ExportBlobFilesystem { path, reply, hash } => {
+                let result = self.on_export_blob_filesystem(hash, &path).await;
                 if result.is_ok() {
-                    info!("exported blob: {hash} {path:?}");
+                    info!("exported blob to filesystem: {hash} {path:?}");
                 }
                 reply.send(result).ok();
             }
@@ -151,6 +189,21 @@ where
                 let result = self.on_download_blob(hash).await;
                 if result.is_ok() {
                     info!("downloaded blob {hash}");
+                }
+                reply.send(result).ok();
+            }
+            ToRhioActor::ExportBlobMinio {
+                hash,
+                bucket_name,
+                region,
+                credentials,
+                reply,
+            } => {
+                let result = self
+                    .on_export_blob_minio(hash, bucket_name.clone(), region, credentials)
+                    .await;
+                if result.is_ok() {
+                    info!("exported blob to minio: {hash} {bucket_name}");
                 }
                 reply.send(result).ok();
             }
@@ -276,14 +329,38 @@ where
 
     async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
         let mut stream = self.blobs.import_blob(path.to_path_buf()).await;
+
         let event = stream
             .next()
             .await
             .expect("no event arrived on blob import stream");
-        match event {
+
+        let hash = match event {
             ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
             ImportBlobEvent::Done(hash) => Ok(hash),
-        }
+        }?;
+
+        Ok(hash)
+    }
+
+    async fn on_import_url(&mut self, url: &String) -> Result<Hash> {
+        let stream = reqwest::get(url)
+            .await?
+            .bytes_stream()
+            .map(|result| result.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
+        let mut stream = self.blobs.import_blob_from_stream(stream).await;
+
+        let event = stream
+            .next()
+            .await
+            .expect("no event arrived on blob import stream");
+
+        let hash = match event {
+            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
+            ImportBlobEvent::Done(hash) => Ok(hash),
+        }?;
+
+        Ok(hash)
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
@@ -359,7 +436,66 @@ where
         Ok(())
     }
 
-    async fn on_export_blob(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
+    async fn on_export_blob_filesystem(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
         self.blobs.export_blob(hash, path).await
+    }
+
+    async fn on_export_blob_minio(
+        &mut self,
+        hash: Hash,
+        bucket_name: String,
+        region: Region,
+        credentials: Credentials,
+    ) -> Result<()> {
+        let entry = self.blobs.get(hash).await?.expect("entry exists");
+
+        // Initiate the minio bucket
+        let mut bucket =
+            Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
+
+        if !bucket.exists().await? {
+            bucket = Bucket::create_with_path_style(
+                &bucket_name,
+                region,
+                credentials.clone(),
+                BucketConfiguration::default(),
+            )
+            .await?
+            .bucket;
+        };
+
+        // Start a multi-part upload
+        let mut parts = Vec::new();
+        let mpu = bucket
+            .initiate_multipart_upload(&hash.to_string(), "application/octet-stream")
+            .await?;
+
+        // Access the actual blob data and iterate over it's bytes in chunks
+        let mut reader = entry.data_reader().await?;
+        let size = reader.size().await?;
+        for (index, offset) in (0..size).step_by(5 * 1024 * 1024).enumerate() {
+            // Upload this chunk to the minio bucket
+            let bytes = reader.read_at(offset, 5 * 1024 * 1024).await?;
+            let part = bucket
+                .put_multipart_chunk(
+                    bytes.to_vec(),
+                    &hash.to_string(),
+                    { index + 1 } as u32,
+                    &mpu.upload_id,
+                    "application/octet-stream",
+                )
+                .await?;
+            parts.push(part);
+        }
+
+        let response = bucket
+            .complete_multipart_upload(&hash.to_string(), &mpu.upload_id, parts)
+            .await?;
+
+        if response.status_code() != 200 {
+            error!("{response}");
+            return Err(anyhow::anyhow!(response));
+        }
+        Ok(())
     }
 }

@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use rhio::config::Config as RhioConfig;
 use rhio::node::TopicSender;
 use rhio::private_key::generate_ephemeral_private_key;
 use rhio::Node as RhioNode;
@@ -12,7 +11,7 @@ use crate::config::Config;
 use crate::error::{CallbackError, RhioError};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
-use crate::types::{Hash, Path, PublicKey, SocketAddr};
+use crate::types::{Hash, ImportPath, Path, PublicKey, SocketAddr};
 
 /// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
 /// over topics and syncing blob data using the BAO protocol.
@@ -27,8 +26,7 @@ impl Node {
     #[uniffi::constructor(async_runtime = "tokio")]
     pub async fn spawn(config: &Config) -> Result<Self, RhioError> {
         let private_key = generate_ephemeral_private_key();
-        let config: RhioConfig = config.clone().try_into()?;
-        let rhio_node = RhioNode::spawn(config.network_config, private_key).await?;
+        let rhio_node = RhioNode::spawn(config.clone().into(), private_key).await?;
         Ok(Self { inner: rhio_node })
     }
 
@@ -48,6 +46,7 @@ impl Node {
     /// direct addresses contain both the locally-bound addresses and the Node's publicly
     /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
     /// usually only a subset of these will be applicable to a certain remote node.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.inner
             .direct_addresses()
@@ -55,26 +54,48 @@ impl Node {
             .map(|addrs| addrs.into_iter().map(SocketAddr::from).collect())
     }
 
-    /// Import a blob from the filesystem.
+    /// Import a blob from either a path or a URL and export it to the minio store.
     ///
-    /// This method moves a blob into dedicated blob store and makes it available on the network
-    /// identified by it's Blake3 hash.
-    pub async fn import_blob(&self, path: Path) -> Result<Hash, RhioError> {
-        let hash = self.inner.import_blob(path.into()).await?;
+    /// Add a blob from a path on the local filesystem to the dedicated blob store and
+    /// make it available on the network identified by it's Blake3 hash.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash, RhioError> {
+        let hash = self.inner.import_blob(import_path.into()).await?;
         Ok(hash.into())
     }
 
     /// Export a blob to the filesystem.
     ///
     /// Copies an existing blob from the blob store to a location on the filesystem.
-    pub async fn export_blob(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
-        self.inner.export_blob(hash.into(), path.into()).await?;
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn export_blob_filesystem(&self, hash: Hash, path: Path) -> Result<(), RhioError> {
+        self.inner
+            .export_blob_filesystem(hash.into(), path.into())
+            .await?;
         Ok(())
     }
 
-    /// Download a blob from the network.
+    /// Export a blob to a minio bucket.
+    ///
+    /// Copies an existing blob from the blob store to the provided minio bucket.
+    #[uniffi::method(async_runtime = "tokio")]
+    pub async fn export_blob_minio(
+        &self,
+        hash: Hash,
+        region: String,
+        endpoint: String,
+        bucket_name: String,
+    ) -> Result<(), RhioError> {
+        self.inner
+            .export_blob_minio(hash.into(), region, endpoint, bucket_name)
+            .await?;
+        Ok(())
+    }
+
+    /// Download a blob from the network and export it to a minio store.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
+    #[uniffi::method(async_runtime = "tokio")]
     pub async fn download_blob(&self, hash: Hash) -> Result<(), RhioError> {
         self.inner.download_blob(hash.into()).await?;
         Ok(())
@@ -144,6 +165,12 @@ impl Sender {
         Ok(MessageMeta(meta))
     }
 
+    /// Broadcast a blob announcement message to all peers subscribing to the same topic.
+    pub async fn announce_blob(&self, hash: Hash) -> Result<MessageMeta, RhioError> {
+        let meta = self.inner.announce_blob(hash.into()).await?;
+        Ok(MessageMeta(meta))
+    }
+
     /// Wait for another peer to be subscribed to this topic.
     pub async fn ready(&self) {
         let fut = self.ready_fut.lock().unwrap().take();
@@ -158,11 +185,11 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_core::PublicKey;
-    use rhio::ticket::Ticket;
     use tokio::sync::mpsc;
 
+    use crate::config::Config;
+    use crate::error::CallbackError;
     use crate::messages::Message;
-    use crate::{error::CallbackError, node::Config};
 
     use super::*;
 
@@ -193,16 +220,15 @@ mod tests {
         let n0_addresses = n0
             .direct_addresses()
             .await
-            .unwrap()
+            .expect("has direct addresses")
             .into_iter()
-            .map(std::net::SocketAddr::from)
+            .map(Into::into)
             .collect();
-        let ticket = Ticket::new(n0_id.into(), n0_addresses, None);
-        let config1 = Config {
-            bind_port: 2023,
-            ticket: vec![ticket.to_string()],
-            ..Default::default()
-        };
+
+        let mut config1 = Config::default();
+        config1.inner.network_config.bind_port = 2023;
+        config1.inner.network_config.direct_node_addresses = vec![(n0_id, n0_addresses, None)];
+
         let n1 = Node::spawn(&config1).await.unwrap();
 
         tokio::time::sleep(Duration::from_secs(2)).await;

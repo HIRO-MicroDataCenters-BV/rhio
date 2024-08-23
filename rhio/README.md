@@ -2,46 +2,59 @@
 
 > MINIO + HIRO + IROH = RHIO
 
+## `minio` container
+
+Run a local `minio` instance for testing purposes.
+
+```bash
+# Start two minio instances (run from repository root directory)
+docker-compose up
+```
+
 ## Usage
 
+### CLI
+
+```bash
+# Run the cli application
+cargo run -- -c "rhio:rhio_password"
 ```
+
+For extra logging:
+```bash
+# Run the cli application with info level logging
+RUST_LOG=rhio=info cargo run -- -c "rhio:rhio_password"
+```
+
+```bash
+     Running `/home/sandreae/Code/rhio/target/debug/rhio --help`
 p2p blob syncing node for minio databases
 
 Usage: rhio [OPTIONS]
 
 Options:
   -p, --bind-port <PORT>
-  -n, --direct-node-addresses [<"NODE_ID|IP_ADDR|...">...]
+          node bind port
+  -t, --ticket [<TICKET>...]
+          connection ticket string
   -k, --private-key <PATH>
-  -b, --blobs-path <PATH>
-  -h, --help                                                Print help
-  -V, --version                                             Print version
+          path to private key
+  -s, --sync-dir <PATH>
+          path to sync directory (for use with example/sync)
+  -b, --blobs-dir <PATH>
+          path to blob store and database
+  -c, --minio-credentials <ACCESS_KEY:SECRET_KEY>
+          minio credentials
+  -e, --minio-endpoint <ENDPOINT>
+          minio bucket endpoint string
+  -g, --minio-region <REGION>
+          minio bucket region string
+  -n, --minio-bucket-name <NAME>
+          minio bucket name
+  -r, --relay <URL>
+          relay addresses
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
-
-## Example
-
-**1. Start first node**
-
-```
-# Create "blobs" folder
-mkdir blobs
-
-# Run node pointing at folder
-cargo run -- -b ./blobs
-```
-
-**2. Start second node**
-
-```
-# Create another "blobs" folder (for example on a second machine, if on the same machine, make sure it has a different name)
-mkdir blobs-2
-
-# The first node will spawn and "direct addresses" will be printed in stdout, launch a second node and use these addresses to connect to it
-cargo run -- -b ./blobs-2 -n "<paste direct address here>"
-
-# Feel free to add more nodes ..
-```
-
-**3. Add files into one blobs folder**
-
-All nodes will eventually sync up!

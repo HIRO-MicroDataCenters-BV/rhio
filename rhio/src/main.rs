@@ -1,21 +1,16 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::io::Write;
+use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use notify_debouncer_full::notify::{EventKind, RecursiveMode, Watcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult};
-use rhio::aggregate::{FileSystem, FileSystemAction};
-use rhio::config::load_config;
+use rhio::config::{load_config, ImportPath};
 use rhio::logging::setup_tracing;
-use rhio::messages::{FileSystemEvent, Message};
+use rhio::messages::Message;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use rhio::ticket::Ticket;
 use rhio::topic_id::TopicId;
-use rhio::FILE_SYSTEM_EVENT_TOPIC;
+use rhio::BLOB_ANNOUNCE_TOPIC;
 use tokio::sync::mpsc;
-use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -31,7 +26,7 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.network_config.clone(), private_key.clone()).await?;
+    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
 
     if let Some(addresses) = node.direct_addresses().await {
         match &relay {
@@ -49,100 +44,64 @@ async fn main() -> Result<()> {
         println!("‣ node public key: {}", node.id());
     }
 
-    println!("‣ watching folder: {}", config.blobs_path.display());
-    println!();
-
-    // Join p2p gossip overlay and announce blobs from our directory there
+    // Join gossip overlay for `BLOB_ANNOUNCE_TOPIC` topic
     println!("joining gossip overlay ..");
+    let topic = TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC);
+    let (topic_tx, mut topic_rx, topic_ready) = node.subscribe(topic).await?;
 
-    let fs_topic = TopicId::new_from_str(FILE_SYSTEM_EVENT_TOPIC);
-    let (fs_topic_tx, mut fs_topic_rx, ready) = node.subscribe(fs_topic).await?;
-    ready.await;
+    // Wait for the gossip topic to be ready
+    topic_ready.await;
+    println!("gossip overlay joined");
 
-    println!("gossip overlay joined!");
-
-    // Watch for changes in the blobs directory
-    let (files_tx, mut files_rx) = mpsc::channel::<Vec<PathBuf>>(1);
-    let mut debouncer = new_debouncer(
-        Duration::from_secs(2),
-        None,
-        move |result: DebounceEventResult| match result {
-            Ok(events) => {
-                for event in events {
-                    match event.kind {
-                        EventKind::Create(_) => (),
-                        _ => continue, // ignore all other events
-                    }
-
-                    if let Err(err) = files_tx.blocking_send(event.paths.clone()) {
-                        error!("failed sending file event: {err}");
-                    }
-                }
-            }
-            Err(errors) => {
-                for err in errors {
-                    error!("error watching file changes: {err}");
-                }
-            }
-        },
-    )
-    .unwrap();
-    debouncer
-        .watcher()
-        .watch(&config.blobs_path, RecursiveMode::NonRecursive)?;
-
-    let mut file_system = FileSystem::new();
-    let mut exported_blobs = HashSet::new();
+    // Spawn dedicated thread for accepting user input
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    std::thread::spawn(move || input_loop(tx));
 
     loop {
         tokio::select! {
-            Some(paths) = files_rx.recv() => {
-                for path in paths {
-                    let relative_path = to_relative_path(&path, &config.blobs_path);
-                    if !exported_blobs.remove(&relative_path) {
-                        info!("file added: {path:?}");
-                        let hash = node.import_blob(path.clone()).await.expect("can import blob");
-                        let fs_event = FileSystemEvent::Create(relative_path, hash);
-                        let context = fs_topic_tx.send(Message::FileSystem(fs_event.clone())).await.expect("can send topic event");
-                        let _ = file_system.process(fs_event, context.operation_timestamp);
-                    }
-                }
-            }
-            Ok((message, context)) = fs_topic_rx.recv() => {
-                match message {
-                    Message::FileSystem(event) => {
-                        let actions = file_system.process(event, context.operation_timestamp);
-                        for action in actions {
-                            match action {
-                                FileSystemAction::DownloadAndExport { hash, path } => {
-                                    if node.download_blob(hash).await.is_ok() {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
-                                        exported_blobs.insert(path);
-                                    }
-                                }
-                                FileSystemAction::Export { hash, path } => {
-                                        node.export_blob(hash, config.blobs_path.join(&path)).await.expect("failed to export blob");
-                                        exported_blobs.insert(path);
-                                }
-                            }
-                        }
+            biased;
+
+            _ = tokio::signal::ctrl_c() => break,
+            // Handle import path inputs arriving from stdin
+            Some(import_path) = rx.recv() => {
+                let result = node.import_blob(import_path).await;
+                match result {
+                    Ok(hash) => {
+                        let _ = topic_tx.announce_blob(hash).await?;
                     },
-                    _ => panic!("received unexpected message")
+                    Err(err) => {
+                        tracing::error!("{err}");
+                    },
+                }
+            },
+            // For all blob announcements we receive on the gossip topic, download the blob from the
+            // network and export it to our own minio store
+            Ok((message, _)) = topic_rx.recv() => {
+                if let Message::BlobAnnouncement(hash) = message {
+                    node.download_blob(hash).await?;
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
-                break;
-            },
         }
     }
 
+    println!();
+    println!("shutting down");
     node.shutdown().await?;
 
     Ok(())
 }
 
-fn to_relative_path(path: &Path, base: &Path) -> PathBuf {
-    path.strip_prefix(base)
-        .expect("Blob import path contains blob dir")
-        .to_path_buf()
+fn input_loop(line_tx: mpsc::Sender<ImportPath>) -> Result<()> {
+    let mut buffer = String::new();
+    let stdin = std::io::stdin();
+    loop {
+        println!();
+        print!("Enter file path or URL: ");
+        let _ = std::io::stdout().flush();
+        stdin.read_line(&mut buffer)?;
+        println!();
+        let import_path = ImportPath::from_str(buffer.trim()).expect("error parsing import string");
+        line_tx.blocking_send(import_path)?;
+        buffer.clear();
+    }
 }

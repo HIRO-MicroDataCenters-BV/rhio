@@ -13,23 +13,33 @@ pip install -r requirements.txt
 # Build wheel
 maturin develop
 # Run the example (run this in two terminals)
-python3 python/hello_world.py
+python python/hello.py
 ```
 
-## `Python` use
+## `minio` container
 
-There are two example python scripts in the `python` directory. 
+Run a local `minio` instance for testing purposes.
 
-`python3 python/hello_world.py` simple node which says hello to discovered peers  
-`python3 python/main.py -blobs-path="blobs"` syncs files in the provided directory with other peers
+```bash
+# Start two minio instance (run from repository root directory)
+docker-compose up
+```
+
+## `Python` usage
 
 ### CLI
 
-```bash
-> python3 python/main.py --help                
-usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-b BLOBS_PATH] [-r RELAY]
+```shell
+# run the main python cli application
+python python/main.py -c "rhio:rhio_password"
+```
 
-Python Rhio Node
+```shell
+python python/main.py --help                                                      
+usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-n MINIO_BUCKET_NAME] [-e MINIO_ENDPOINT] [-g MINIO_REGION] [-c MINIO_CREDENTIALS]
+               [-r RELAY]
+
+p2p blob syncing node for minio databases
 
 options:
   -h, --help            show this help message and exit
@@ -38,8 +48,25 @@ options:
                         connection ticket string
   -k PRIVATE_KEY, --private-key PRIVATE_KEY
                         path to private key
-  -b BLOBS_PATH, --blobs-path BLOBS_PATH
-                        path to blobs dir
+  -s SYNC_DIR, --sync-dir SYNC_DIR
+                        path to sync directory (for use with example/sync)
+  -b BLOBS_DIR, --blobs-dir BLOBS_DIR
+                        path to blob store and database
+  -n MINIO_BUCKET_NAME, --minio-bucket-name MINIO_BUCKET_NAME
+                        minio bucket name
+  -e MINIO_ENDPOINT, --minio-endpoint MINIO_ENDPOINT
+                        minio instance endpoint address
+  -g MINIO_REGION, --minio-region MINIO_REGION
+                        minio instance region
+  -c MINIO_CREDENTIALS, --minio-credentials MINIO_CREDENTIALS
+                        minio credentials in the format <ACCESS_KEY>:<SECRET_KEY>
   -r RELAY, --relay RELAY
                         relay addresses
 ```
+
+### examples
+
+There are two example python scripts in the `python` directory. 
+
+`python python/hello_world.py` simple node which says hello to discovered peers  
+`python python/sync.py --sync-dir="path_to_sync_dir"` syncs files in the provided directory with other peers

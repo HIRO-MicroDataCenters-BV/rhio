@@ -23,7 +23,7 @@ async-trait = "0.1.81"
 tracing = "0.1.40"
 tokio = "1.39.2"
 futures = "0.3.30"
-p2panda-core = {path = "../p2panda-core"}
+p2panda-core = { path = "../p2panda-core" }
 
 [dependencies-build]
 uniffi = { version = "0.28.0", features = ["build"] }
