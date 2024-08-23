@@ -50,6 +50,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1674,6 +1680,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash",
+ "allocator-api2",
 ]
 
 [[package]]
@@ -3046,6 +3053,7 @@ name = "p2panda-blobs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "bytes",
  "flume",
  "futures-buffered",
@@ -4002,6 +4010,7 @@ dependencies = [
  "futures-lite 2.3.0",
  "hex",
  "iroh-blobs",
+ "iroh-net",
  "notify-debouncer-full",
  "p2panda-blobs",
  "p2panda-core",
@@ -5104,6 +5113,8 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
+ "hashbrown 0.14.5",
  "pin-project-lite",
  "slab",
  "tokio",
