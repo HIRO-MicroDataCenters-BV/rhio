@@ -9,9 +9,9 @@ use futures_util::Stream;
 use iroh_base::hash::Hash as IrohHash;
 use iroh_blobs::downloader::Downloader;
 use iroh_blobs::store::{Map, Store};
+use iroh_blobs::util::local_pool::{Config as LocalPoolConfig, LocalPool, LocalPoolHandle};
 use p2panda_core::Hash;
 use p2panda_net::{Network, NetworkBuilder};
-use tokio_util::task::LocalPoolHandle;
 
 use crate::download::download_blob;
 use crate::export::export_blob;
@@ -38,12 +38,15 @@ where
         network_builder: NetworkBuilder,
         store: S,
     ) -> Result<(Network, Self)> {
-        let pool_handle = LocalPoolHandle::new(num_cpus::get());
+        // Calls `num_cpus::get()` to define thread count.
+        let local_pool_config = LocalPoolConfig::default();
+        let local_pool = LocalPool::new(local_pool_config);
+        let local_pool_handle = local_pool.handle();
 
         let network = network_builder
             .protocol(
                 BLOBS_ALPN,
-                BlobsProtocol::new(store.clone(), pool_handle.clone()),
+                BlobsProtocol::new(store.clone(), local_pool_handle.clone()),
             )
             .build()
             .await?;
@@ -51,13 +54,13 @@ where
         let downloader = Downloader::new(
             store.clone(),
             network.endpoint().clone(),
-            pool_handle.clone(),
+            local_pool_handle.clone(),
         );
 
         let blobs = Self {
             downloader,
             network: network.clone(),
-            pool_handle,
+            pool_handle: local_pool_handle.clone(),
             store,
         };
 
