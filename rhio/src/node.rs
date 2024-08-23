@@ -5,9 +5,10 @@ use std::path::PathBuf;
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
+use iroh_net::util::SharedAbortingJoinHandle;
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
+use p2panda_net::{LocalDiscovery, Network, NetworkBuilder};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
@@ -18,6 +19,7 @@ use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
+use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
@@ -40,7 +42,7 @@ where
         let pool = LocalPoolHandle::new(1);
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
-        let log_store = LogMemoryStore::default();
+        let log_store: LogMemoryStore<LogId, RhioExtensions> = LogMemoryStore::new();
 
         let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
             .private_key(private_key.clone());
