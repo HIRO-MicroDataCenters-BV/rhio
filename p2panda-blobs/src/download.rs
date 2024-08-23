@@ -27,7 +27,7 @@ pub async fn download_blob(
         format: BlobFormat::Raw,
     };
 
-    pool_handle.spawn(move || async move {
+    pool_handle.spawn_detached(move || async move {
         match download_queued(network, &downloader, hash_and_format, progress.clone()).await {
             Ok(stats) => {
                 progress.send(DownloadProgress::AllDone(stats)).await.ok();

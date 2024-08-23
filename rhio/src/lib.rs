@@ -1,5 +1,3 @@
-#![feature(absolute_path)]
-
 pub mod actor;
 pub mod aggregate;
 pub mod config;

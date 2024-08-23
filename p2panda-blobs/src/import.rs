@@ -25,14 +25,12 @@ pub async fn import_blob<S: Store>(
 ) -> impl Stream<Item = ImportBlobEvent> {
     let (sender, receiver) = async_channel::bounded(32);
 
-    {
-        let sender = sender.clone();
-        pool_handle.spawn(|| async move {
-            if let Err(e) = add_from_path(store, path, sender.clone()).await {
-                sender.send(AddProgress::Abort(e.into())).await.ok();
-            }
-        });
-    }
+    let sender = sender.clone();
+    pool_handle.spawn_detached(|| async move {
+        if let Err(e) = add_from_path(store, path, sender.clone()).await {
+            sender.send(AddProgress::Abort(e.into())).await.ok();
+        }
+    });
 
     receiver.filter_map(|event| {
         match event {
@@ -60,14 +58,12 @@ where
 {
     let (sender, receiver) = async_channel::bounded(32);
 
-    {
-        let sender = sender.clone();
-        pool_handle.spawn(|| async move {
-            if let Err(e) = add_from_stream(store, data, sender.clone()).await {
-                sender.send(AddProgress::Abort(e.into())).await.ok();
-            }
-        });
-    }
+    let sender = sender.clone();
+    pool_handle.spawn_detached(|| async move {
+        if let Err(e) = add_from_stream(store, data, sender.clone()).await {
+            sender.send(AddProgress::Abort(e.into())).await.ok();
+        }
+    });
 
     receiver.filter_map(|event| {
         match event {
