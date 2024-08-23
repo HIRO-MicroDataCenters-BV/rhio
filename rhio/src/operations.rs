@@ -4,11 +4,11 @@ use anyhow::Result;
 use p2panda_core::{
     validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
 };
-use p2panda_store::{LogId, LogStore, OperationStore};
+use p2panda_store::{LogStore, OperationStore};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::extensions::RhioExtensions;
+use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, ToBytes};
 
 pub fn ingest<S>(
@@ -17,11 +17,11 @@ pub fn ingest<S>(
     body: Option<Body>,
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
     let operation = Operation {
         hash: header.hash(),
-        header,
+        header: header.clone(),
         body,
     };
 
@@ -29,9 +29,11 @@ where
     validate_operation(&operation)?;
 
     // Get latest operation.
-    let log_id: LogId = RhioExtensions::extract(&operation);
+    let log_id: LogId = header
+        .extract()
+        .unwrap_or_else(|| header.clone().public_key.to_string());
     let latest_operation = store
-        .latest_operation(operation.header.public_key, log_id)
+        .latest_operation(operation.header.public_key, log_id.clone())
         .expect("memory store does not error");
 
     // Validate that it matches the backlink.
@@ -41,7 +43,7 @@ where
 
     // Persist the operation.
     store
-        .insert_operation(operation.clone())
+        .insert_operation(operation.clone(), log_id.to_owned())
         .expect("no errors from memory store");
 
     Ok(operation)
@@ -54,7 +56,7 @@ pub fn create<S, T>(
     message: &Message<T>,
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<RhioExtensions> + LogStore<RhioExtensions>,
+    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
     T: Serialize + DeserializeOwned + Clone,
 {
     // Encode body.
@@ -98,7 +100,7 @@ where
         body: Some(body.clone()),
     };
 
-    store.insert_operation(operation.clone())?;
+    store.insert_operation(operation.clone(), log_id.to_owned())?;
 
     Ok(operation)
 }

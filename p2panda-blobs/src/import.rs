@@ -12,29 +12,27 @@ use futures_util::Stream;
 use iroh_base::rpc::RpcError;
 use iroh_blobs::provider::AddProgress;
 use iroh_blobs::store::{ImportMode, ImportProgress, Store};
-use iroh_blobs::util::progress::{FlumeProgressSender, ProgressSender};
+use iroh_blobs::util::local_pool::LocalPoolHandle;
+use iroh_blobs::util::progress::{AsyncChannelProgressSender, ProgressSender};
 use iroh_blobs::{BlobFormat, HashAndFormat};
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
-use tokio_util::task::LocalPoolHandle;
 
 pub async fn import_blob<S: Store>(
     store: S,
     pool_handle: LocalPoolHandle,
     path: PathBuf,
 ) -> impl Stream<Item = ImportBlobEvent> {
-    let (sender, receiver) = flume::bounded(32);
+    let (sender, receiver) = async_channel::bounded(32);
 
-    {
-        let sender = sender.clone();
-        pool_handle.spawn_pinned(|| async move {
-            if let Err(e) = add_from_path(store, path, sender.clone()).await {
-                sender.send_async(AddProgress::Abort(e.into())).await.ok();
-            }
-        });
-    }
+    let sender = sender.clone();
+    pool_handle.spawn_detached(|| async move {
+        if let Err(e) = add_from_path(store, path, sender.clone()).await {
+            sender.send(AddProgress::Abort(e.into())).await.ok();
+        }
+    });
 
-    receiver.into_stream().filter_map(|event| {
+    receiver.filter_map(|event| {
         match event {
             AddProgress::AllDone { hash, .. } => {
                 Some(ImportBlobEvent::Done(Hash::from_bytes(*hash.as_bytes())))
@@ -58,18 +56,16 @@ where
     T: Stream<Item = io::Result<Bytes>> + Send + Unpin + 'static,
     S: Store,
 {
-    let (sender, receiver) = flume::bounded(32);
+    let (sender, receiver) = async_channel::bounded(32);
 
-    {
-        let sender = sender.clone();
-        pool_handle.spawn_pinned(|| async move {
-            if let Err(e) = add_from_stream(store, data, sender.clone()).await {
-                sender.send_async(AddProgress::Abort(e.into())).await.ok();
-            }
-        });
-    }
+    let sender = sender.clone();
+    pool_handle.spawn_detached(|| async move {
+        if let Err(e) = add_from_stream(store, data, sender.clone()).await {
+            sender.send(AddProgress::Abort(e.into())).await.ok();
+        }
+    });
 
-    receiver.into_stream().filter_map(|event| {
+    receiver.filter_map(|event| {
         match event {
             AddProgress::AllDone { hash, .. } => {
                 Some(ImportBlobEvent::Done(Hash::from_bytes(*hash.as_bytes())))
@@ -87,9 +83,9 @@ where
 async fn add_from_path<S: Store>(
     store: S,
     path: PathBuf,
-    progress: flume::Sender<AddProgress>,
+    progress: async_channel::Sender<AddProgress>,
 ) -> Result<()> {
-    let progress = FlumeProgressSender::new(progress);
+    let progress = AsyncChannelProgressSender::new(progress);
     let names = Arc::new(Mutex::new(BTreeMap::new()));
 
     let import_progress = progress.clone().with_filter_map(move |x| match x {
@@ -126,13 +122,13 @@ async fn add_from_path<S: Store>(
 async fn add_from_stream<T, S>(
     store: S,
     data: T,
-    progress: flume::Sender<AddProgress>,
+    progress: async_channel::Sender<AddProgress>,
 ) -> Result<()>
 where
     T: Stream<Item = io::Result<Bytes>> + Send + Unpin + 'static,
     S: Store,
 {
-    let progress = FlumeProgressSender::new(progress);
+    let progress = AsyncChannelProgressSender::new(progress);
     let names = Arc::new(Mutex::new(BTreeMap::new()));
 
     let import_progress = progress.clone().with_filter_map(move |x| match x {

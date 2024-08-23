@@ -9,9 +9,9 @@ use futures_util::Stream;
 use iroh_base::hash::Hash as IrohHash;
 use iroh_blobs::downloader::Downloader;
 use iroh_blobs::store::{Map, Store};
+use iroh_blobs::util::local_pool::{Config as LocalPoolConfig, LocalPool};
 use p2panda_core::Hash;
 use p2panda_net::{Network, NetworkBuilder};
-use tokio_util::task::LocalPoolHandle;
 
 use crate::download::download_blob;
 use crate::export::export_blob;
@@ -19,14 +19,14 @@ use crate::import::{import_blob, import_blob_from_stream, ImportBlobEvent};
 use crate::protocol::{BlobsProtocol, BLOBS_ALPN};
 use crate::DownloadBlobEvent;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Blobs<S>
 where
     S: Store,
 {
     downloader: Downloader,
     network: Network,
-    pool_handle: LocalPoolHandle,
+    rt: LocalPool,
     store: S,
 }
 
@@ -38,12 +38,14 @@ where
         network_builder: NetworkBuilder,
         store: S,
     ) -> Result<(Network, Self)> {
-        let pool_handle = LocalPoolHandle::new(num_cpus::get());
+        // Calls `num_cpus::get()` to define thread count.
+        let local_pool_config = LocalPoolConfig::default();
+        let local_pool = LocalPool::new(local_pool_config);
 
         let network = network_builder
             .protocol(
                 BLOBS_ALPN,
-                BlobsProtocol::new(store.clone(), pool_handle.clone()),
+                BlobsProtocol::new(store.clone(), local_pool.handle().clone()),
             )
             .build()
             .await?;
@@ -51,13 +53,13 @@ where
         let downloader = Downloader::new(
             store.clone(),
             network.endpoint().clone(),
-            pool_handle.clone(),
+            local_pool.handle().clone(),
         );
 
         let blobs = Self {
             downloader,
             network: network.clone(),
-            pool_handle,
+            rt: local_pool,
             store,
         };
 
@@ -75,21 +77,21 @@ where
     }
 
     pub async fn import_blob(&self, path: PathBuf) -> impl Stream<Item = ImportBlobEvent> {
-        import_blob(self.store.clone(), self.pool_handle.clone(), path).await
+        import_blob(self.store.clone(), self.rt.handle().clone(), path).await
     }
 
     pub async fn import_blob_from_stream<T>(&self, data: T) -> impl Stream<Item = ImportBlobEvent>
     where
         T: Stream<Item = io::Result<Bytes>> + Send + Unpin + 'static,
     {
-        import_blob_from_stream(self.store.clone(), self.pool_handle.clone(), data).await
+        import_blob_from_stream(self.store.clone(), self.rt.handle().clone(), data).await
     }
 
     pub async fn download_blob(&self, hash: Hash) -> impl Stream<Item = DownloadBlobEvent> {
         download_blob(
             self.network.clone(),
             self.downloader.clone(),
-            self.pool_handle.clone(),
+            self.rt.handle().clone(),
             hash,
         )
         .await

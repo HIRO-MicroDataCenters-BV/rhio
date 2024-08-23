@@ -18,6 +18,7 @@ use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
+use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
@@ -40,7 +41,7 @@ where
         let pool = LocalPoolHandle::new(1);
         let (actor_tx, rhio_actor_rx) = mpsc::channel(256);
 
-        let log_store = LogMemoryStore::default();
+        let log_store: LogMemoryStore<LogId, RhioExtensions> = LogMemoryStore::new();
 
         let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
             .private_key(private_key.clone());
