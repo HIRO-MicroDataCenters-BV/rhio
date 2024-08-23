@@ -29,11 +29,8 @@ where
     validate_operation(&operation)?;
 
     // Get latest operation.
-    let extensions = header
-        .extensions
-        .clone()
-        .expect("header to contain extensions");
-    let log_id: LogId = RhioExtensions::extract(&extensions)
+    let log_id: LogId = header
+        .extract()
         .unwrap_or_else(|| header.clone().public_key.to_string());
     let latest_operation = store
         .latest_operation(operation.header.public_key, log_id.clone())
