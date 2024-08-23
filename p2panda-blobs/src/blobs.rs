@@ -50,8 +50,11 @@ where
             .build()
             .await?;
 
-        let downloader =
-            Downloader::new(store.clone(), network.endpoint().clone(), local_pool.handle().clone());
+        let downloader = Downloader::new(
+            store.clone(),
+            network.endpoint().clone(),
+            local_pool.handle().clone(),
+        );
 
         let blobs = Self {
             downloader,
