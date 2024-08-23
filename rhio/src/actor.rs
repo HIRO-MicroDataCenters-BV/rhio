@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map, HashMap, HashSet};
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -243,8 +243,8 @@ where
     )> {
         // If we didn't already subscribe to this topic, then add the topic gossip channels
         // to our sender and receiver maps.
-        if !self.topic_gossip_tx.contains_key(&topic) {
-            self.topic_gossip_tx.insert(topic, topic_tx);
+        if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx.entry(topic) {
+            entry.insert(topic_tx);
 
             let rx_stream = Box::pin(async_stream::stream! {
               while let Ok(item) = topic_rx.recv().await {
@@ -317,7 +317,7 @@ where
         message: Message<T>,
     ) -> Result<GossipOperation<T>> {
         // The log id is {PUBLIC_KEY}/{TOPIC_ID} string.
-        let log_id = format!("{}/{}", self.private_key.public_key().to_hex(), topic).into();
+        let log_id = format!("{}/{}", self.private_key.public_key().to_hex(), topic);
 
         // Create an operation for this event.
         let operation = create(&mut self.store, &self.private_key, &log_id, &message)?;
