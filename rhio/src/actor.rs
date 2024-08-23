@@ -23,7 +23,7 @@ use tokio_stream::{Stream, StreamExt, StreamMap};
 use tokio_util::task::LocalPoolHandle;
 use tracing::{debug, error, info};
 
-use crate::extensions::RhioExtensions;
+use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::{create, ingest};
 use crate::topic_id::TopicId;
@@ -79,7 +79,7 @@ where
 {
     blobs: Blobs<S>,
     private_key: PrivateKey,
-    store: LogsMemoryStore<RhioExtensions>,
+    store: LogsMemoryStore<LogId, RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
     topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<(Message<T>, MessageMeta)>>,
@@ -96,7 +96,7 @@ where
     pub fn spawn(
         private_key: PrivateKey,
         blobs: Blobs<S>,
-        store: LogsMemoryStore<RhioExtensions>,
+        store: LogsMemoryStore<LogId, RhioExtensions>,
         inbox: mpsc::Receiver<ToRhioActor<T>>,
         rt: LocalPoolHandle,
     ) -> JoinHandle<()> {
@@ -328,7 +328,7 @@ where
     }
 
     async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
-        let mut stream = self.blobs.import_blob(path.to_path_buf()).await;
+        let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
 
         let event = stream
             .next()
@@ -348,7 +348,7 @@ where
             .await?
             .bytes_stream()
             .map(|result| result.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
-        let mut stream = self.blobs.import_blob_from_stream(stream).await;
+        let mut stream = Box::pin(self.blobs.import_blob_from_stream(stream).await);
 
         let event = stream
             .next()
@@ -424,7 +424,7 @@ where
     }
 
     async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
-        let mut stream = self.blobs.download_blob(hash).await;
+        let mut stream = Box::pin(self.blobs.download_blob(hash).await);
         while let Some(event) = stream.next().await {
             match event {
                 DownloadBlobEvent::Abort(err) => {
