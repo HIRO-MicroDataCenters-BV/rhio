@@ -3,14 +3,23 @@ name = "p2panda-sync"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["log"]
+log = ["dep:p2panda-core", "dep:p2panda-store", "dep:ciborium", "core"]
+core = ["dep:tokio-stream", "dep:tokio-util", "dep:serde", "dep:anyhow"]
+
 [dependencies]
 futures = "0.3.30"
+anyhow = { version = "1.0.86", optional = true }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "79a620eb8b236cceea3b4d12f119567fcc125d0c", optional = true }
+p2panda-store = { git = "https://github.com/p2panda/p2panda.git", rev = "79a620eb8b236cceea3b4d12f119567fcc125d0c", optional = true }
+serde = { version = "1.0.208", optional = true }
+tokio-stream = { version = "0.1.15", optional = true }
+tokio-util = { version = "0.7.11", features = [
+    "codec",
+    "compat",
+], optional = true }
+ciborium = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.86"
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-quinn = { version = "0.11.3", features = ["futures-io"] }
-serde = "1.0.208"
-tokio-stream = "0.1.15"
-tokio-util = { version = "0.7.11", features = ["codec", "compat"] }
+tokio = { version = "1.39.3", features = ["rt", "macros"] }
