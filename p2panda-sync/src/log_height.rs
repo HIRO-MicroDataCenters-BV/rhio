@@ -119,7 +119,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use super::{LogHeightMessageHandler, LogId, MessageDecoder};
-    use crate::core::SyncBase;
+    use crate::engine::SyncEngine;
     use crate::log_height::Message;
     use crate::traits::{Sync, ToBytes};
 
@@ -136,7 +136,7 @@ mod tests {
 
     #[tokio::test]
     async fn basic() {
-        let mut sync = SyncBase {
+        let mut sync = SyncEngine {
             store: MemoryStore::<LogId, LogHeightExtensions>::new(),
             decoder: MessageDecoder {
                 _extension: PhantomData {},
@@ -177,7 +177,7 @@ mod tests {
         ]
         .concat();
 
-        sync.sync(&String::from("my_topic"), send, &recv[..], &mut tx)
+        sync.run(&String::from("my_topic"), send, &recv[..], &mut tx)
             .await
             .unwrap();
 

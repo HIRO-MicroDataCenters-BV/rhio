@@ -15,7 +15,7 @@ pub trait Sync<T, M> {
     /// [quin::RecvStream](https://docs.rs/quinn/latest/quinn/struct.RecvStream.html) could be
     /// passed into this method. The rx side of a mpsc channel is also taken so that new messages
     /// received through the sync protocol can be sent on to the application.
-    async fn sync(
+    async fn run(
         &mut self,
         subject: &T,
         send: impl AsyncWrite + Unpin,

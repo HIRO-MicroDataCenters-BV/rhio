@@ -7,13 +7,13 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use crate::traits::{MessageHandler, Sync, ToBytes};
 
-pub struct SyncBase<S, D, H> {
+pub struct SyncEngine<S, D, H> {
     pub(crate) store: S,
     pub(crate) decoder: D,
     pub(crate) message_handler: H,
 }
 
-impl<T, M, S, D, H> Sync<T, M> for SyncBase<S, D, H>
+impl<T, M, S, D, H> Sync<T, M> for SyncEngine<S, D, H>
 where
     M: ToBytes,
     D: Decoder<Item = M, Error = anyhow::Error> + Clone,
@@ -21,7 +21,7 @@ where
 {
     type Error = anyhow::Error;
 
-    async fn sync(
+    async fn run(
         &mut self,
         subject: &T,
         send: impl AsyncWrite + Unpin,
