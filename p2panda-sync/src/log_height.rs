@@ -1,13 +1,17 @@
 use std::marker::PhantomData;
 
 use anyhow::anyhow;
-use futures::{channel::mpsc::Sender, SinkExt, Stream, StreamExt};
+use futures::{Sink, SinkExt, Stream, StreamExt};
+use futures::channel::mpsc::Sender;
 use p2panda_core::{Body, Extension, Header, Operation, PublicKey};
 use p2panda_store::OperationStore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tokio_util::{bytes::Buf, codec::Decoder};
+use tokio_util::{
+    bytes::Buf,
+    codec::{Decoder, Encoder},
+};
 
-use crate::traits::{Strategy, ToBytes};
+use crate::traits::Strategy;
 
 type LogId = String;
 type SeqNum = u64;
@@ -20,14 +24,38 @@ pub enum Message<E> {
     SyncDone,
 }
 
-impl<E> ToBytes for Message<E>
+#[cfg(test)]
+impl<E> Message<E>
 where
     E: Serialize,
 {
-    fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         ciborium::into_writer(&self, &mut bytes).expect("type can be serialized");
         bytes
+    }
+}
+
+#[derive(Clone, Default)]
+struct MessageEncoder<E> {
+    _extension: PhantomData<E>,
+}
+
+impl<E> Encoder<Message<E>> for MessageEncoder<E>
+where
+    E: Serialize,
+{
+    type Error = anyhow::Error;
+
+    fn encode(
+        &mut self,
+        item: Message<E>,
+        dst: &mut tokio_util::bytes::BytesMut,
+    ) -> Result<(), Self::Error> {
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&item, &mut bytes)?;
+        dst.extend_from_slice(&bytes);
+        Ok(())
     }
 }
 
@@ -48,12 +76,11 @@ where
         &mut self,
         src: &mut tokio_util::bytes::BytesMut,
     ) -> Result<Option<Self::Item>, Self::Error> {
-        let slice: &[u8] = src;
-        let result: Result<Message<E>, _> = ciborium::from_reader(slice);
+        let reader = src.reader();
+        let result: Result<Message<E>, _> = ciborium::from_reader(reader);
         match result {
             // If we read the item, we also need to advance the underlying buffer.
             Ok(item) => {
-                src.advance(item.to_bytes().len());
                 return Ok(Some(item));
             }
             Err(ref error) => match error {
@@ -80,11 +107,11 @@ where
         &mut self,
         store: &mut S,
         _topic: &T,
-        mut recv: impl Stream<Item = Result<Message<E>, Self::Error>> + Unpin,
-        reply_tx: &mut Sender<Message<E>>,
-        app_tx: &mut Sender<Message<E>>,
+        mut stream: impl Stream<Item = Result<Message<E>, Self::Error>> + Unpin,
+        mut sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
+        mut app_sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error> {
-        while let Some(result) = recv.next().await {
+        while let Some(result) = stream.next().await {
             let message = result?;
 
             let replies = match &message {
@@ -107,15 +134,15 @@ where
                 Message::SyncDone => vec![],
             };
 
-            app_tx.send(message).await?;
+            app_sink.send(message).await?;
 
             for message in replies {
-                reply_tx.send(message).await?;
+                sink.send(message).await?;
             }
         }
 
-        reply_tx.close_channel();
-        app_tx.close_channel();
+        sink.close().await?;
+        app_sink.close().await?;
 
         Ok(())
     }
@@ -124,15 +151,15 @@ where
 #[cfg(test)]
 mod tests {
     use futures::channel::mpsc::channel;
-    use futures::StreamExt;
+    use futures::{SinkExt, StreamExt};
     use p2panda_core::{Body, Extension, Header, PrivateKey};
     use p2panda_store::MemoryStore;
     use serde::{Deserialize, Serialize};
 
     use super::{LogHeightStrategy, LogId, MessageDecoder};
     use crate::engine::SyncEngine;
-    use crate::log_height::Message;
-    use crate::traits::{Sync, ToBytes};
+    use crate::log_height::{Message, MessageEncoder};
+    use crate::traits::Sync;
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
     pub struct LogHeightExtensions {
@@ -149,8 +176,13 @@ mod tests {
     async fn basic() {
         let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let decoder = MessageDecoder::default();
+        let encoder = MessageEncoder::default();
         let strategy = LogHeightStrategy {};
-        let mut sync = SyncEngine { decoder, strategy };
+        let mut sync = SyncEngine {
+            strategy,
+            decoder,
+            encoder,
+        };
 
         let private_key = PrivateKey::new();
 
@@ -173,7 +205,7 @@ mod tests {
 
         let message = Message::Operation(header, Some(body));
 
-        let (mut tx, mut rx) = channel(128);
+        let (tx, mut rx) = channel(128);
 
         let send = Vec::new();
         let recv: Vec<u8> = vec![
@@ -188,7 +220,7 @@ mod tests {
             &String::from("my_topic"),
             send,
             &recv[..],
-            &mut tx,
+            tx.sink_map_err(anyhow::Error::from),
         )
         .await
         .unwrap();

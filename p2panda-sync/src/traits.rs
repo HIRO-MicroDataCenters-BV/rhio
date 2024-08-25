@@ -1,11 +1,6 @@
 use std::fmt::Debug;
 
-use futures::channel::mpsc::Sender;
-use futures::{AsyncRead, AsyncWrite, Stream};
-
-pub trait ToBytes {
-    fn to_bytes(&self) -> Vec<u8>;
-}
+use futures::{AsyncRead, AsyncWrite, Sink, Stream};
 
 pub trait Sync<S, T, M> {
     type Error: Debug;
@@ -23,7 +18,7 @@ pub trait Sync<S, T, M> {
         topic: &T,
         send: impl AsyncWrite + Unpin + 'static,
         recv: impl AsyncRead + Unpin,
-        rx: &mut Sender<M>,
+        app_sink: impl Sink<M, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error>;
 }
 
@@ -34,8 +29,8 @@ pub trait Strategy<S, T, M> {
         &mut self,
         store: &mut S,
         topic: &T,
-        recv: impl Stream<Item = Result<M, anyhow::Error>> + Unpin,
-        reply_tx: &mut Sender<M>,
-        app_tx: &mut Sender<M>
+        stream: impl Stream<Item = Result<M, Self::Error>> + Unpin,
+        sink: impl Sink<M, Error = Self::Error> + Unpin,
+        app_sink: impl Sink<M, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error>;
 }
