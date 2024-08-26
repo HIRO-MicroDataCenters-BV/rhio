@@ -14,11 +14,11 @@ use crate::traits::Strategy;
 
 type LogId = String;
 type SeqNum = u64;
-pub type LogHeights = (PublicKey, Vec<(LogId, SeqNum)>);
+pub type LogHeights = Vec<(PublicKey, SeqNum)>;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Message<E> {
-    Have(Vec<LogHeights>),
+    Have(LogHeights),
     Operation(Header<E>, Option<Body>),
     SyncDone,
 }
@@ -95,7 +95,7 @@ where
 
 struct LogHeightStrategy;
 
-impl<S, T, E> Strategy<S, T, Message<E>> for LogHeightStrategy
+impl<S, E> Strategy<S, LogId, Message<E>> for LogHeightStrategy
 where
     S: OperationStore<LogId, E> + LogStore<LogId, E>,
     E: Clone + std::fmt::Debug + Serialize + DeserializeOwned + Extension<LogId>,
@@ -105,7 +105,7 @@ where
     async fn sync(
         &mut self,
         store: &mut S,
-        _topic: &T,
+        topic: &LogId, // topic is assumed to be equivalent to the log id we are interested in
         mut stream: impl Stream<Item = Result<Message<E>, Self::Error>>
             + Unpin
             + futures::stream::FusedStream,
@@ -116,29 +116,25 @@ where
 
             let replies = match &message {
                 Message::Have(log_heights) => {
-                    let mut messages = vec![];
-                    for (public_key, log_heights) in log_heights {
-                        // @TODO: we need to filer this sync session over the provided topic. The
-                        // topic is assumed to be equivalent to a log id. We need a new method on
-                        // the store for getting all logs (or maybe just their heights?) by their
-                        // log id.
+                    // @TODO: We need a new method on the store for getting all logs (or maybe
+                    // just their heights?) by their log id so that we can send back any logs the
+                    // remote peer doesn't know anything about.
 
-                        for (log_id, seq_num) in log_heights {
-                            let local_seq_num = store
-                                .latest_operation(*public_key, log_id.to_owned())?
-                                .map(|operation| operation.header.seq_num)
-                                .unwrap_or(0);
-                            if *seq_num >= local_seq_num {
-                                continue;
-                            }
-                            let mut log = store.get_log(*public_key, log_id.to_owned())?;
-                            log.split_off(*seq_num as usize + 1).into_iter().for_each(
-                                |operation| {
-                                    messages
-                                        .push(Message::Operation(operation.header, operation.body))
-                                },
-                            );
+                    let mut messages = vec![];
+                    for (public_key, seq_num) in log_heights {
+                        let local_seq_num = store
+                            .latest_operation(*public_key, topic.to_string())?
+                            .map(|operation| operation.header.seq_num)
+                            .unwrap_or(0);
+                        if *seq_num >= local_seq_num {
+                            continue;
                         }
+                        let mut log = store.get_log(*public_key, topic.to_string())?;
+                        log.split_off(*seq_num as usize + 1)
+                            .into_iter()
+                            .for_each(|operation| {
+                                messages.push(Message::Operation(operation.header, operation.body))
+                            });
                     }
                     messages
                 }
@@ -161,12 +157,14 @@ where
                 sink.send(message).await?;
             }
 
+            // If we received a `SyncDone` message then we can break out of this loop.
             if let Message::SyncDone = message {
                 break;
             }
         }
 
-        sink.close().await?;
+        // We have processed all messages on the stream so can now send a final `SyncDone` on the sink
+        sink.send(Message::SyncDone).await?;
 
         Ok(())
     }
@@ -227,6 +225,8 @@ mod tests {
 
     #[tokio::test]
     async fn basic() {
+        const TOPIC_ID: &str = "my_topic";
+
         // Setup store with 3 operations in it
         let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let private_key = PrivateKey::new();
@@ -249,14 +249,16 @@ mod tests {
             Some(operation1.hash),
             None,
         );
+
+        // Insert these operations to the store using `TOPIC_ID` as the log id
         store
-            .insert_operation(operation0.clone(), String::from(""))
+            .insert_operation(operation0.clone(), TOPIC_ID.to_string())
             .unwrap();
         store
-            .insert_operation(operation1.clone(), String::from(""))
+            .insert_operation(operation1.clone(), TOPIC_ID.to_string())
             .unwrap();
         store
-            .insert_operation(operation2.clone(), String::from(""))
+            .insert_operation(operation2.clone(), TOPIC_ID.to_string())
             .unwrap();
 
         // Compose the `SyncEngine`
@@ -272,17 +274,16 @@ mod tests {
         let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
         // Write some message into peer_b's send buffer
-        let message1: Message<LogHeightExtensions> = Message::Have(vec![(
-            private_key.public_key(),
-            vec![("log_id".to_string(), 0)],
-        )]);
+        let message1: Message<LogHeightExtensions> =
+            Message::Have(vec![(private_key.public_key(), 0)]);
         let message2: Message<LogHeightExtensions> = Message::SyncDone;
         let message_bytes = vec![message1.to_bytes(), message2.to_bytes()].concat();
         peer_b.write_all(&message_bytes[..]).await.unwrap();
 
         // Run the sync session (which consumes the above messages)
         sync.run(
-            &String::from("my_topic"),
+            // We specify the topic id here
+            &TOPIC_ID.to_string(),
             peer_a_write.compat_write(),
             peer_a_read.compat(),
         )
@@ -298,9 +299,15 @@ mod tests {
             Message::Operation(operation1.header.clone(), operation1.body.clone());
         let received_message2 =
             Message::Operation(operation2.header.clone(), operation2.body.clone());
+        let receive_message3 = Message::<LogHeightExtensions>::SyncDone;
         assert_eq!(
             buf,
-            [received_message1.to_bytes(), received_message2.to_bytes()].concat()
+            [
+                received_message1.to_bytes(),
+                received_message2.to_bytes(),
+                receive_message3.to_bytes()
+            ]
+            .concat()
         );
     }
 }
