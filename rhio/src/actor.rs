@@ -137,6 +137,11 @@ where
                         .on_gossip_event(topic_id, msg)
                         .await;
                 }
+                else => {
+                    // Error occurred outside of actor and our loop got disabled. We exit here
+                    // silently, the application will probably be exited with an error message.
+                    return Ok(());
+                }
             }
         }
     }
