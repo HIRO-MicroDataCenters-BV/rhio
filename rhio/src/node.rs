@@ -9,16 +9,13 @@ use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::{Client as NatsClient, ConnectOptions};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{
-    Config as NetworkConfig, LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle,
-};
+use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::task::LocalPoolHandle;
-use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
@@ -66,19 +63,12 @@ where
             ));
         }
 
-        let mut network_builder =
-            NetworkBuilder::from_config(network_config).private_key(private_key.clone());
-
-        // @TODO: Remove mDNS, it's not needed in rhio
-        match LocalDiscovery::new() {
-            Ok(local) => network_builder = network_builder.discovery(local),
-            Err(err) => error!("Failed to initiate local discovery: {err}"),
-        }
+        let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
 
         let (network, actor_handle) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
             let blob_store = FilesystemStore::load(blobs_dir).await?;
-            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let (network, blobs) = Blobs::from_builder(builder, blob_store).await?;
             let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
@@ -90,7 +80,7 @@ where
         } else {
             // Spawn a rhio actor backed by an in memory blob store
             let blob_store = BlobsMemoryStore::new();
-            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let (network, blobs) = Blobs::from_builder(builder, blob_store).await?;
             let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
