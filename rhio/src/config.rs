@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::net::SocketAddr;
 use std::path::{absolute, PathBuf};
 use std::str::FromStr;
 
@@ -7,7 +8,8 @@ use clap::Parser;
 use directories::ProjectDirs;
 use figment::providers::{Env, Format, Serialized, Toml};
 use figment::Figment;
-use p2panda_net::Config as NetworkConfig;
+use p2panda_core::PublicKey;
+use p2panda_net::config::DEFAULT_BIND_PORT;
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
@@ -28,13 +30,12 @@ pub const NATS_ENDPOINT: &str = "localhost:4222";
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Config {
+    // @TODO: Remove this as soon as we've implemented full MinIO storage.
     pub blobs_dir: Option<PathBuf>,
-    pub sync_dir: Option<PathBuf>,
-    #[serde(flatten)]
     pub minio: MinioConfig,
     pub nats: NatsConfig,
     #[serde(flatten)]
-    pub network_config: NetworkConfig,
+    pub node: NodeConfig,
     pub log_level: Option<String>,
 }
 
@@ -72,26 +73,6 @@ struct Cli {
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
-
-    /// MinIO database credentials.
-    #[arg(long = "minio-credentials", value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    credentials: Option<Credentials>,
-
-    /// MinIO database endpoint.
-    #[arg(long = "minio-endpoint", value_name = "ENDPOINT")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    endpoint: Option<String>,
-
-    /// MinIO bucket region string.
-    #[arg(long = "minio-region", value_name = "REGION")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    region: Option<String>,
-
-    /// MinIO bucket name for blob storage.
-    #[arg(long = "minio-bucket-name", value_name = "NAME")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bucket_name: Option<String>,
 
     /// Set log verbosity. Use this for learning more about how your node behaves or for debugging.
     ///
@@ -156,7 +137,7 @@ pub fn load_config() -> Result<Config> {
         figment = figment.merge(Toml::file(path));
     }
 
-    let config = figment
+    let config: Config = figment
         .merge(Env::raw())
         .merge(Serialized::defaults(cli))
         .extract()?;
@@ -214,12 +195,33 @@ impl Default for NatsConfig {
     }
 }
 
-type Url = String;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NodeConfig {
+    pub bind_port: u16,
+    pub known_nodes: Vec<KnownNode>,
+    pub private_key: Option<PathBuf>,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            bind_port: DEFAULT_BIND_PORT,
+            known_nodes: vec![],
+            private_key: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KnownNode {
+    pub public_key: PublicKey,
+    pub direct_addresses: Vec<SocketAddr>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ImportPath {
     File(PathBuf),
-    Url(Url),
+    Url(String),
 }
 
 impl FromStr for ImportPath {

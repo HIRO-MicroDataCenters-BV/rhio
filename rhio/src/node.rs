@@ -9,7 +9,9 @@ use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::{Client as NatsClient, ConnectOptions};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
+use p2panda_net::{
+    Config as NetworkConfig, LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle,
+};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
@@ -23,6 +25,9 @@ use crate::config::{Config, ImportPath};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
+
+// @TODO: Give rhio a cool network id
+const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
 
 /// p2panda network node which handles connecting to other peers, syncing operations over topics
 /// and blobs using the bao protocol.
@@ -47,9 +52,24 @@ where
 
         let log_store: LogMemoryStore<LogId, RhioExtensions> = LogMemoryStore::new();
 
-        let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
-            .private_key(private_key.clone());
+        let mut network_config = NetworkConfig {
+            bind_port: config.node.bind_port,
+            network_id: RHIO_NETWORK_ID,
+            ..Default::default()
+        };
 
+        for node in &config.node.known_nodes {
+            network_config.direct_node_addresses.push((
+                node.public_key,
+                node.direct_addresses.clone(),
+                None,
+            ));
+        }
+
+        let mut network_builder =
+            NetworkBuilder::from_config(network_config).private_key(private_key.clone());
+
+        // @TODO: Remove mDNS, it's not needed in rhio
         match LocalDiscovery::new() {
             Ok(local) => network_builder = network_builder.discovery(local),
             Err(err) => error!("Failed to initiate local discovery: {err}"),
@@ -87,39 +107,6 @@ where
                 .await
                 .context("connecting to NATS server")?;
         let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
-
-        // {
-        //     let nats_jetstream = nats_jetstream.clone();
-        //     tokio::task::spawn(async move {
-        //         let consumer: PushConsumer = nats_jetstream
-        //             .get_or_create_stream(JetstreamStreamConfig {
-        //                 name: "blobs_stream_1".to_string(),
-        //                 subjects: vec!["blobs.*".to_string()],
-        //                 ..Default::default()
-        //             })
-        //             .await
-        //             .unwrap()
-        //             .get_or_create_consumer(
-        //                 "consumer",
-        //                 JetstreamConsumerConfig {
-        //                     deliver_subject: "announcements".to_string(),
-        //                     filter_subject: "blobs.announcements".to_string(),
-        //                     durable_name: None,
-        //                     ack_policy: AckPolicy::None,
-        //                     ..Default::default()
-        //                 },
-        //             )
-        //             .await
-        //             .unwrap();
-        //
-        //         let mut messages = consumer.messages().await.unwrap();
-        //
-        //         while let Some(message) = messages.next().await {
-        //             let message = message.unwrap();
-        //             println!("message: {:?}", message.message.payload);
-        //         }
-        //     });
-        // }
 
         let node = Node {
             config,
@@ -358,21 +345,18 @@ mod tests {
     use p2panda_net::network::OutEvent;
 
     use crate::config::Config;
-    use crate::logging::setup_tracing;
     use crate::private_key::generate_ephemeral_private_key;
 
     use super::Node;
 
     #[tokio::test]
     async fn join_gossip_overlay() {
-        setup_tracing();
-
         let private_key_1 = generate_ephemeral_private_key();
         let private_key_2 = generate_ephemeral_private_key();
 
         let config_1 = Config::default();
         let mut config_2 = Config::default();
-        config_2.network_config.bind_port = 2023;
+        config_2.node.bind_port = 2023;
 
         // Spawn the first node
         let node_1: Node<()> = Node::spawn(config_1, private_key_1).await.unwrap();

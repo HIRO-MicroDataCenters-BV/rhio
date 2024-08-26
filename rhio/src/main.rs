@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
     setup_tracing(config.log_level.clone());
     hello_rhio();
 
-    let private_key = match &config.network_config.private_key {
+    let private_key = match &config.node.private_key {
         Some(path) => generate_or_load_private_key(path.clone())
             .context("Could not load private key from file")?,
         None => generate_ephemeral_private_key(),
