@@ -119,21 +119,24 @@ where
                 Message::Have(log_heights) => {
                     let mut messages = vec![];
                     for (public_key, log_heights) in log_heights {
+                        // @TODO: need a new method on `LogStore` where we can get all logs which
+                        // have the same log id.
+
                         for (log_id, seq_num) in log_heights {
                             let local_seq_num = store
                                 .latest_operation(*public_key, log_id.to_owned())?
                                 .map(|operation| operation.header.seq_num)
                                 .unwrap_or(0);
-                            if *seq_num > local_seq_num {
+                            if *seq_num >= local_seq_num {
                                 continue;
                             }
                             let mut log = store.get_log(*public_key, log_id.to_owned())?;
-                            log.split_off(*seq_num as usize)
-                                .into_iter()
-                                .for_each(|operation| {
+                            log.split_off(*seq_num as usize + 1).into_iter().for_each(
+                                |operation| {
                                     messages
                                         .push(Message::Operation(operation.header, operation.body))
-                                });
+                                },
+                            );
                         }
                     }
                     messages
@@ -241,35 +244,35 @@ mod tests {
         let private_key = PrivateKey::new();
 
         let body = Body::new("Hello, Sloth!".as_bytes());
-        let operation1 = generate_operation(&private_key, body.clone(), 0, 0, None, None);
-        let operation2 = generate_operation(
+        let operation0 = generate_operation(&private_key, body.clone(), 0, 0, None, None);
+        let operation1 = generate_operation(
             &private_key,
             body.clone(),
             1,
             100,
-            Some(operation1.hash),
+            Some(operation0.hash),
             None,
         );
-        let operation3 = generate_operation(
+        let operation2 = generate_operation(
             &private_key,
             body.clone(),
             2,
             200,
-            Some(operation2.hash),
+            Some(operation1.hash),
             None,
         );
+        store
+            .insert_operation(operation0.clone(), String::from(""))
+            .unwrap();
         store
             .insert_operation(operation1.clone(), String::from(""))
             .unwrap();
         store
             .insert_operation(operation2.clone(), String::from(""))
             .unwrap();
-        store
-            .insert_operation(operation3.clone(), String::from(""))
-            .unwrap();
 
         let (app_tx, _app_rx) = channel(128);
-        let (peer_a, mut peer_b) = tokio::io::duplex(128000);
+        let (peer_a, mut peer_b) = tokio::io::duplex(64*1024);
         let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
         peer_b
@@ -299,17 +302,15 @@ mod tests {
 
         let send_message1 = Message::Operation(operation1.header.clone(), operation1.body.clone());
         let send_message2 = Message::Operation(operation2.header.clone(), operation2.body.clone());
-        let send_message3 = Message::Operation(operation3.header.clone(), operation3.body.clone());
 
         let mut buf = Vec::new();
-        let _ = peer_b.read_to_end(&mut buf).await;
+        peer_b.read_to_end(&mut buf).await.unwrap();
 
         assert_eq!(
             buf,
             [
                 send_message1.to_bytes(),
-                send_message2.to_bytes(),
-                send_message3.to_bytes()
+                send_message2.to_bytes()
             ]
             .concat()
         );
