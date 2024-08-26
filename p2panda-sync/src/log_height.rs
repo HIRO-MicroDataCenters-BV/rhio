@@ -97,8 +97,8 @@ struct LogHeightStrategy;
 
 impl<S, T, E> Strategy<S, T, Message<E>> for LogHeightStrategy
 where
-    E: Clone + std::fmt::Debug + Serialize + DeserializeOwned + Extension<LogId>,
     S: OperationStore<LogId, E> + LogStore<LogId, E>,
+    E: Clone + std::fmt::Debug + Serialize + DeserializeOwned + Extension<LogId>,
 {
     type Error = anyhow::Error;
 
@@ -110,7 +110,6 @@ where
             + Unpin
             + futures::stream::FusedStream,
         mut sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
-        mut app_sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error> {
         while let Some(result) = stream.next().await {
             let message = result?;
@@ -154,8 +153,6 @@ where
                 Message::SyncDone => vec![],
             };
 
-            app_sink.send(message.clone()).await?;
-
             // @TODO: we'd rather process all messages at once using `send_all`. For this
             // we need to turn `replies` into a stream.
             for message in replies {
@@ -167,7 +164,6 @@ where
             }
         }
 
-        app_sink.close().await?;
         sink.close().await?;
 
         Ok(())
@@ -176,8 +172,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::channel::mpsc::channel;
-    use futures::SinkExt;
     use p2panda_core::{Body, Extension, Hash, Header, Operation, PrivateKey};
     use p2panda_store::{MemoryStore, OperationStore};
     use serde::{Deserialize, Serialize};
@@ -231,15 +225,6 @@ mod tests {
 
     #[tokio::test]
     async fn basic() {
-        let decoder = MessageDecoder::default();
-        let encoder = MessageEncoder::default();
-        let strategy = LogHeightStrategy {};
-        let mut sync = SyncEngine {
-            strategy,
-            decoder,
-            encoder,
-        };
-
         let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let private_key = PrivateKey::new();
 
@@ -271,8 +256,17 @@ mod tests {
             .insert_operation(operation2.clone(), String::from(""))
             .unwrap();
 
-        let (app_tx, _app_rx) = channel(128);
-        let (peer_a, mut peer_b) = tokio::io::duplex(64*1024);
+        let strategy = LogHeightStrategy {};
+        let decoder = MessageDecoder::default();
+        let encoder = MessageEncoder::default();
+        let mut sync = SyncEngine {
+            store,
+            strategy,
+            decoder,
+            encoder,
+        };
+
+        let (peer_a, mut peer_b) = tokio::io::duplex(64 * 1024);
         let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
         peer_b
@@ -291,11 +285,9 @@ mod tests {
             .unwrap();
 
         sync.run(
-            &mut store,
             &String::from("my_topic"),
             peer_a_write.compat_write(),
             peer_a_read.compat(),
-            app_tx.sink_map_err(anyhow::Error::from),
         )
         .await
         .unwrap();
@@ -308,11 +300,7 @@ mod tests {
 
         assert_eq!(
             buf,
-            [
-                send_message1.to_bytes(),
-                send_message2.to_bytes()
-            ]
-            .concat()
+            [send_message1.to_bytes(), send_message2.to_bytes()].concat()
         );
     }
 }

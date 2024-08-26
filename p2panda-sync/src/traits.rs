@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use futures::{AsyncRead, AsyncWrite, Sink, Stream};
 
-pub trait Sync<S, T, M> {
+pub trait Sync<T, M> {
     type Error: Debug;
 
     /// Run a full sync session over a "topic".
@@ -14,11 +14,9 @@ pub trait Sync<S, T, M> {
     /// received through the sync protocol can be sent on to the application.
     async fn run(
         &mut self,
-        store: &mut S,
         topic: &T,
         send: impl AsyncWrite + Unpin + 'static,
         recv: impl AsyncRead + Unpin,
-        app_sink: impl Sink<M, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error>;
 }
 
@@ -29,8 +27,7 @@ pub trait Strategy<S, T, M> {
         &mut self,
         store: &mut S,
         topic: &T,
-        stream: impl Stream<Item = Result<M, Self::Error>> + Unpin  + futures::stream::FusedStream,
+        stream: impl Stream<Item = Result<M, Self::Error>> + Unpin + futures::stream::FusedStream,
         sink: impl Sink<M, Error = Self::Error> + Unpin,
-        app_sink: impl Sink<M, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error>;
 }
