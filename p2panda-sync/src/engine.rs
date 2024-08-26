@@ -41,6 +41,7 @@ where
         let stream = FramedRead::new(recv.compat(), self.decoder.clone()).fuse();
         let sink = FramedWrite::new(send.compat_write(), self.encoder.clone());
 
+        // Run the sync strategy until completion.
         self.strategy
             .sync(&mut self.store, topic, stream, sink)
             .await?;

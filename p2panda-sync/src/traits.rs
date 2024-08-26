@@ -10,8 +10,7 @@ pub trait Sync<T, M> {
     /// Accepts a sender and receiver which implement (`AsyncWrite` and `AsyncRead`) respectively.
     /// For example [quinn::SendStream](https://docs.rs/quinn/latest/quinn/struct.SendStream.html) and
     /// [quin::RecvStream](https://docs.rs/quinn/latest/quinn/struct.RecvStream.html) could be
-    /// passed into this method. The rx side of a mpsc channel is also taken so that new messages
-    /// received through the sync protocol can be sent on to the application.
+    /// passed into this method.
     async fn run(
         &mut self,
         topic: &T,
@@ -23,6 +22,7 @@ pub trait Sync<T, M> {
 pub trait Strategy<S, T, M> {
     type Error: Debug;
 
+    /// Run the sync protocol over the provided `Stream` and `Sink`.
     async fn sync(
         &mut self,
         store: &mut S,
