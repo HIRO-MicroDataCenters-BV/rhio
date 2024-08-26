@@ -10,13 +10,16 @@ use p2panda_net::{Config as NetworkConfig, RelayUrl};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
-use crate::ticket::Ticket;
-use crate::{BUCKET_NAME, MINIO_ENDPOINT, MINIO_REGION};
+/// Default HTTP API endpoint for MinIO server.
+pub const MINIO_ENDPOINT: &str = "http://localhost:9000";
 
-// Use iroh's staging relay node for testing
-const DEFAULT_RELAY_URL: &str = "https://staging-euw1-1.relay.iroh.network";
+/// Default S3 Region for MinIO blob store.
+pub const MINIO_REGION: &str = "eu-west-2";
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Default S3 bucket name for MinIO blob store.
+pub const BUCKET_NAME: &str = "rhio";
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub blobs_dir: Option<PathBuf>,
     pub sync_dir: Option<PathBuf>,
@@ -26,84 +29,51 @@ pub struct Config {
     pub network_config: NetworkConfig,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        let network_config = NetworkConfig {
-            relay: Some(DEFAULT_RELAY_URL.parse().expect("valid url")),
-            ..NetworkConfig::default()
-        };
-
-        Self {
-            minio: MinioConfig::default(),
-            blobs_dir: None,
-            sync_dir: None,
-            network_config,
-        }
-    }
-}
-
 #[derive(Parser, Serialize, Debug)]
 #[command(
     name = "rhio",
-    about = "p2p blob syncing node for minio databases",
+    about = "Peer-to-peer message and blob streaming with MinIO and NATS Jetstream support",
     long_about = None,
     version
 )]
 struct Cli {
-    /// node bind port
+    /// Bind port of Node.
     #[arg(short = 'p', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
-    /// connection ticket string
-    #[arg(short = 't', long, value_name = "TICKET", num_args = 0.., value_parser = parse_ticket)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ticket: Option<Vec<Ticket>>,
-
-    /// path to private key
+    /// Path to file containing hexadecimal-encoded Ed25519 private key.
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
 
-    /// path to sync directory (for use with example/sync)
-    #[arg(short = 's', long, value_name = "PATH")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sync_dir: Option<PathBuf>,
-
-    /// path to blob store and database
+    /// Path to file-system blob store to temporarily load blobs into when importing to MinIO
+    /// database.
+    // @TODO: This will be removed as soon as we've implemented a full MinIO storage backend. We
+    // currently need it to generate all bao-tree hashes before moving the data further to MinIO.
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
 
-    /// minio credentials
+    /// MinIO database credentials.
     #[arg(short = 'c', long = "minio-credentials", value_name = "ACCESS_KEY:SECRET_KEY", value_parser = parse_s3_credentials)]
     #[serde(skip_serializing_if = "Option::is_none")]
     credentials: Option<Credentials>,
 
-    /// minio bucket endpoint string
+    /// MinIO database endpoint.
     #[arg(short = 'e', long = "minio-endpoint", value_name = "ENDPOINT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     endpoint: Option<String>,
 
-    /// minio bucket region string
+    /// MinIO bucket region string.
     #[arg(short = 'g', long = "minio-region", value_name = "REGION")]
     #[serde(skip_serializing_if = "Option::is_none")]
     region: Option<String>,
 
-    /// minio bucket name
+    /// MinIO bucket name for blob storage.
     #[arg(short = 'n', long = "minio-bucket-name", value_name = "NAME")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bucket_name: Option<String>,
-
-    /// relay addresses
-    #[arg(short = 'r', long, value_name = "URL", value_parser = parse_url)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    relay: Option<RelayUrl>,
-}
-
-pub fn parse_ticket(value: &str) -> Result<Ticket> {
-    let ticket = Ticket::from_str(value)?;
-    Ok(ticket)
 }
 
 pub fn parse_url(value: &str) -> Result<RelayUrl> {
@@ -140,7 +110,6 @@ pub fn load_config() -> Result<Config> {
         .merge(Serialized::defaults(Cli::parse()))
         .extract()?;
 
-    // Make blobs path absolute.
     let absolute_path = config
         .sync_dir
         .map(|path| absolute(path).expect("to establish absolute path"));
