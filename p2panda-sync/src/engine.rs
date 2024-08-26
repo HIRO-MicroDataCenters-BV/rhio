@@ -1,4 +1,4 @@
-use futures::{AsyncRead, AsyncWrite, Sink};
+use futures::{AsyncRead, AsyncWrite, Sink, StreamExt};
 use tokio_util::codec::{Decoder, Encoder, FramedRead, FramedWrite};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
@@ -38,7 +38,7 @@ where
     ) -> Result<(), Self::Error> {
         // Convert the `AsyncRead` receiver into framed (typed) `Stream`. We provide a custom
         // MessageDecoder for this purpose.
-        let stream = FramedRead::new(recv.compat(), self.decoder.clone());
+        let stream = FramedRead::new(recv.compat(), self.decoder.clone()).fuse();
         let sink = FramedWrite::new(send.compat_write(), self.encoder.clone());
 
         self.strategy

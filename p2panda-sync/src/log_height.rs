@@ -2,9 +2,8 @@ use std::marker::PhantomData;
 
 use anyhow::anyhow;
 use futures::{Sink, SinkExt, Stream, StreamExt};
-use futures::channel::mpsc::Sender;
 use p2panda_core::{Body, Extension, Header, Operation, PublicKey};
-use p2panda_store::OperationStore;
+use p2panda_store::{LogStore, OperationStore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio_util::{
     bytes::Buf,
@@ -98,8 +97,8 @@ struct LogHeightStrategy;
 
 impl<S, T, E> Strategy<S, T, Message<E>> for LogHeightStrategy
 where
-    E: Clone + Serialize + DeserializeOwned + Extension<LogId>,
-    S: OperationStore<LogId, E>,
+    E: Clone + std::fmt::Debug + Serialize + DeserializeOwned + Extension<LogId>,
+    S: OperationStore<LogId, E> + LogStore<LogId, E>,
 {
     type Error = anyhow::Error;
 
@@ -107,7 +106,9 @@ where
         &mut self,
         store: &mut S,
         _topic: &T,
-        mut stream: impl Stream<Item = Result<Message<E>, Self::Error>> + Unpin,
+        mut stream: impl Stream<Item = Result<Message<E>, Self::Error>>
+            + Unpin
+            + futures::stream::FusedStream,
         mut sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
         mut app_sink: impl Sink<Message<E>, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error> {
@@ -115,11 +116,27 @@ where
             let message = result?;
 
             let replies = match &message {
-                Message::Have(_log_heights) => {
-                    // @TODO:
-                    // Compare received log heights against local store and return
-                    // any operations the remote does not yet know about.
-                    vec![]
+                Message::Have(log_heights) => {
+                    let mut messages = vec![];
+                    for (public_key, log_heights) in log_heights {
+                        for (log_id, seq_num) in log_heights {
+                            let local_seq_num = store
+                                .latest_operation(*public_key, log_id.to_owned())?
+                                .map(|operation| operation.header.seq_num)
+                                .unwrap_or(0);
+                            if *seq_num > local_seq_num {
+                                continue;
+                            }
+                            let mut log = store.get_log(*public_key, log_id.to_owned())?;
+                            log.split_off(*seq_num as usize)
+                                .into_iter()
+                                .for_each(|operation| {
+                                    messages
+                                        .push(Message::Operation(operation.header, operation.body))
+                                });
+                        }
+                    }
+                    messages
                 }
                 Message::Operation(header, body) => {
                     let log_id: LogId = header.extract().unwrap_or(header.public_key.to_hex());
@@ -134,15 +151,21 @@ where
                 Message::SyncDone => vec![],
             };
 
-            app_sink.send(message).await?;
+            app_sink.send(message.clone()).await?;
 
+            // @TODO: we'd rather process all messages at once using `send_all`. For this
+            // we need to turn `replies` into a stream.
             for message in replies {
                 sink.send(message).await?;
             }
+
+            if let Message::SyncDone = message {
+                break;
+            }
         }
 
-        sink.close().await?;
         app_sink.close().await?;
+        sink.close().await?;
 
         Ok(())
     }
@@ -151,15 +174,46 @@ where
 #[cfg(test)]
 mod tests {
     use futures::channel::mpsc::channel;
-    use futures::{SinkExt, StreamExt};
-    use p2panda_core::{Body, Extension, Header, PrivateKey};
-    use p2panda_store::MemoryStore;
+    use futures::SinkExt;
+    use p2panda_core::{Body, Extension, Hash, Header, Operation, PrivateKey};
+    use p2panda_store::{MemoryStore, OperationStore};
     use serde::{Deserialize, Serialize};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
     use super::{LogHeightStrategy, LogId, MessageDecoder};
     use crate::engine::SyncEngine;
     use crate::log_height::{Message, MessageEncoder};
     use crate::traits::Sync;
+
+    fn generate_operation<E: Clone + Serialize>(
+        private_key: &PrivateKey,
+        body: Body,
+        seq_num: u64,
+        timestamp: u64,
+        backlink: Option<Hash>,
+        extensions: Option<E>,
+    ) -> Operation<E> {
+        let mut header = Header {
+            version: 1,
+            public_key: private_key.public_key(),
+            signature: None,
+            payload_size: body.size(),
+            payload_hash: Some(body.hash()),
+            timestamp,
+            seq_num,
+            backlink,
+            previous: vec![],
+            extensions,
+        };
+        header.sign(&private_key);
+
+        Operation {
+            hash: header.hash(),
+            header,
+            body: Some(body),
+        }
+    }
 
     #[derive(Clone, Debug, Default, Serialize, Deserialize)]
     pub struct LogHeightExtensions {
@@ -174,7 +228,6 @@ mod tests {
 
     #[tokio::test]
     async fn basic() {
-        let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let decoder = MessageDecoder::default();
         let encoder = MessageEncoder::default();
         let strategy = LogHeightStrategy {};
@@ -184,55 +237,81 @@ mod tests {
             encoder,
         };
 
+        let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let private_key = PrivateKey::new();
 
         let body = Body::new("Hello, Sloth!".as_bytes());
+        let operation1 = generate_operation(&private_key, body.clone(), 0, 0, None, None);
+        let operation2 = generate_operation(
+            &private_key,
+            body.clone(),
+            1,
+            100,
+            Some(operation1.hash),
+            None,
+        );
+        let operation3 = generate_operation(
+            &private_key,
+            body.clone(),
+            2,
+            200,
+            Some(operation2.hash),
+            None,
+        );
+        store
+            .insert_operation(operation1.clone(), String::from(""))
+            .unwrap();
+        store
+            .insert_operation(operation2.clone(), String::from(""))
+            .unwrap();
+        store
+            .insert_operation(operation3.clone(), String::from(""))
+            .unwrap();
 
-        let mut header = Header {
-            version: 1,
-            public_key: private_key.public_key(),
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp: 0,
-            seq_num: 0,
-            backlink: None,
-            previous: vec![],
-            extensions: None::<LogHeightExtensions>,
-        };
+        let (app_tx, _app_rx) = channel(128);
+        let (peer_a, mut peer_b) = tokio::io::duplex(128000);
+        let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
-        header.sign(&private_key);
-
-        let message = Message::Operation(header, Some(body));
-
-        let (tx, mut rx) = channel(128);
-
-        let send = Vec::new();
-        let recv: Vec<u8> = vec![
-            Message::<LogHeightExtensions>::Have(vec![]).to_bytes(),
-            message.to_bytes(),
-            Message::<LogHeightExtensions>::SyncDone.to_bytes(),
-        ]
-        .concat();
+        peer_b
+            .write_all(
+                &[
+                    Message::<LogHeightExtensions>::Have(vec![(
+                        private_key.public_key(),
+                        vec![(String::from(""), 0)],
+                    )])
+                    .to_bytes(),
+                    Message::<LogHeightExtensions>::SyncDone.to_bytes(),
+                ]
+                .concat()[..],
+            )
+            .await
+            .unwrap();
 
         sync.run(
             &mut store,
             &String::from("my_topic"),
-            send,
-            &recv[..],
-            tx.sink_map_err(anyhow::Error::from),
+            peer_a_write.compat_write(),
+            peer_a_read.compat(),
+            app_tx.sink_map_err(anyhow::Error::from),
         )
         .await
         .unwrap();
 
+        let send_message1 = Message::Operation(operation1.header.clone(), operation1.body.clone());
+        let send_message2 = Message::Operation(operation2.header.clone(), operation2.body.clone());
+        let send_message3 = Message::Operation(operation3.header.clone(), operation3.body.clone());
+
+        let mut buf = Vec::new();
+        let _ = peer_b.read_to_end(&mut buf).await;
+
         assert_eq!(
-            rx.next().await.unwrap().to_bytes(),
-            Message::<LogHeightExtensions>::Have(vec![]).to_bytes()
-        );
-        assert_eq!(rx.next().await.unwrap().to_bytes(), message.to_bytes());
-        assert_eq!(
-            rx.next().await.unwrap().to_bytes(),
-            Message::<LogHeightExtensions>::SyncDone.to_bytes()
+            buf,
+            [
+                send_message1.to_bytes(),
+                send_message2.to_bytes(),
+                send_message3.to_bytes()
+            ]
+            .concat()
         );
     }
 }

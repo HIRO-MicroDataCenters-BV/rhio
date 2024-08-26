@@ -29,7 +29,7 @@ pub trait Strategy<S, T, M> {
         &mut self,
         store: &mut S,
         topic: &T,
-        stream: impl Stream<Item = Result<M, Self::Error>> + Unpin,
+        stream: impl Stream<Item = Result<M, Self::Error>> + Unpin  + futures::stream::FusedStream,
         sink: impl Sink<M, Error = Self::Error> + Unpin,
         app_sink: impl Sink<M, Error = Self::Error> + Unpin,
     ) -> Result<(), Self::Error>;
