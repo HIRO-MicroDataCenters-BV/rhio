@@ -227,6 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn basic() {
+        // Setup store with 3 operations in it
         let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
         let private_key = PrivateKey::new();
 
@@ -258,34 +259,28 @@ mod tests {
             .insert_operation(operation2.clone(), String::from(""))
             .unwrap();
 
-        let strategy = LogHeightStrategy {};
-        let decoder = MessageDecoder::default();
-        let encoder = MessageEncoder::default();
+        // Compose the `SyncEngine`
         let mut sync = SyncEngine {
             store,
-            strategy,
-            decoder,
-            encoder,
+            strategy: LogHeightStrategy,
+            decoder: MessageDecoder::default(),
+            encoder: MessageEncoder::default(),
         };
 
+        // Create a duplex stream which simulate both ends of a bi-directional network connection
         let (peer_a, mut peer_b) = tokio::io::duplex(64 * 1024);
         let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
-        peer_b
-            .write_all(
-                &[
-                    Message::<LogHeightExtensions>::Have(vec![(
-                        private_key.public_key(),
-                        vec![(String::from(""), 0)],
-                    )])
-                    .to_bytes(),
-                    Message::<LogHeightExtensions>::SyncDone.to_bytes(),
-                ]
-                .concat()[..],
-            )
-            .await
-            .unwrap();
+        // Write some message into peer_b's send buffer
+        let message1: Message<LogHeightExtensions> = Message::Have(vec![(
+            private_key.public_key(),
+            vec![("log_id".to_string(), 0)],
+        )]);
+        let message2: Message<LogHeightExtensions> = Message::SyncDone;
+        let message_bytes = vec![message1.to_bytes(), message2.to_bytes()].concat();
+        peer_b.write_all(&message_bytes[..]).await.unwrap();
 
+        // Run the sync session (which consumes the above messages)
         sync.run(
             &String::from("my_topic"),
             peer_a_write.compat_write(),
@@ -294,15 +289,18 @@ mod tests {
         .await
         .unwrap();
 
-        let send_message1 = Message::Operation(operation1.header.clone(), operation1.body.clone());
-        let send_message2 = Message::Operation(operation2.header.clone(), operation2.body.clone());
-
+        // Read the entire buffer out of peer_b's read stream
         let mut buf = Vec::new();
         peer_b.read_to_end(&mut buf).await.unwrap();
 
+        // It should contain the following two sync messages (these are the ones peer_b is missing)
+        let received_message1 =
+            Message::Operation(operation1.header.clone(), operation1.body.clone());
+        let received_message2 =
+            Message::Operation(operation2.header.clone(), operation2.body.clone());
         assert_eq!(
             buf,
-            [send_message1.to_bytes(), send_message2.to_bytes()].concat()
+            [received_message1.to_bytes(), received_message2.to_bytes()].concat()
         );
     }
 }
