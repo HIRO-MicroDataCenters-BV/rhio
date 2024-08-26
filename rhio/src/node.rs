@@ -4,7 +4,9 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use async_nats::jetstream::Context as JetstreamContext;
+use async_nats::Client as NatsClient;
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -22,14 +24,16 @@ use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
-/// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
-/// over topics and syncing blob data using the BAO protocol.
+/// p2panda network node which handles connecting to other peers, syncing operations over topics
+/// and blobs using the bao protocol.
 #[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
     pub config: Config,
     network: Network,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: SharedAbortingJoinHandle<()>,
+    nats_client: NatsClient,
+    nats_jetstream: JetstreamContext,
 }
 
 impl<T> Node<T>
@@ -77,17 +81,59 @@ where
             (network, actor_handle)
         };
 
+        // @TODO: Make NATS server configurable
+        // @TODO: Add auth options to NATS server config
+        let nats_client = async_nats::connect("localhost:4222")
+            .await
+            .context("connecting to NATS server")?;
+        let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
+
+        // {
+        //     let nats_jetstream = nats_jetstream.clone();
+        //     tokio::task::spawn(async move {
+        //         let consumer: PushConsumer = nats_jetstream
+        //             .get_or_create_stream(JetstreamStreamConfig {
+        //                 name: "blobs_stream_1".to_string(),
+        //                 subjects: vec!["blobs.*".to_string()],
+        //                 ..Default::default()
+        //             })
+        //             .await
+        //             .unwrap()
+        //             .get_or_create_consumer(
+        //                 "consumer",
+        //                 JetstreamConsumerConfig {
+        //                     deliver_subject: "announcements".to_string(),
+        //                     filter_subject: "blobs.announcements".to_string(),
+        //                     durable_name: None,
+        //                     ack_policy: AckPolicy::None,
+        //                     ..Default::default()
+        //                 },
+        //             )
+        //             .await
+        //             .unwrap();
+        //
+        //         let mut messages = consumer.messages().await.unwrap();
+        //
+        //         while let Some(message) = messages.next().await {
+        //             let message = message.unwrap();
+        //             println!("message: {:?}", message.message.payload);
+        //         }
+        //     });
+        // }
+
         let node = Node {
             config,
             network,
             actor_tx,
             actor_handle: actor_handle.into(),
+            nats_client,
+            nats_jetstream,
         };
 
         Ok(node)
     }
 
-    /// Returns the PublicKey of this node which is used as it's unique network id.
+    /// Returns the PublicKey of this node which is used as it's ID.
     ///
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
@@ -97,16 +143,16 @@ where
 
     /// Returns the direct addresses of this Node.
     ///
-    /// The direct addresses of the Node are those that could be used by other nodes
-    /// to establish direct connectivity, depending on the network situation. The yielded lists of
-    /// direct addresses contain both the locally-bound addresses and the Node's publicly
-    /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
-    /// usually only a subset of these will be applicable to a certain remote node.
+    /// The direct addresses of the Node are those that could be used by other nodes to establish
+    /// direct connectivity, depending on the network situation. The yielded lists of direct
+    /// addresses contain both the locally-bound addresses and the Node's publicly reachable
+    /// addresses discovered through mechanisms such as STUN and port mapping. Hence usually only a
+    /// subset of these will be applicable to a certain remote node.
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.network.direct_addresses().await
     }
 
-    /// Import a blob into the node's blob store and sync it with the `minio` backend.
+    /// Import a blob into the node's blob store and sync it with the MinIO database.
     pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash> {
         let hash = match import_path {
             // Import a file from the local filesystem
@@ -131,8 +177,8 @@ where
 
     /// Import a blob from the filesystem.
     ///
-    /// Add a blob from a path on the local filesystem to the dedicated blob store and
-    /// make it available on the network identified by it's Blake3 hash.
+    /// Add a blob from a path on the local filesystem to the dedicated blob store and make it
+    /// available on the network identified by it's BLAKE3 hash.
     async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -147,7 +193,7 @@ where
     /// Import a blob from a url.
     ///
     /// Download a blob from a url, move it into the dedicated blob store and make it available on
-    /// the network identified by it's Blake3 hash.
+    /// the network identified by it's BLAKE3 hash.
     async fn import_blob_url(&self, url: String) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -197,7 +243,8 @@ where
 
     /// Download a blob from the network.
     ///
-    /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
+    /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
+    /// bucket.
     pub async fn download_blob(&self, hash: Hash) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
