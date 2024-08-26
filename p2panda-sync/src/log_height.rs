@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use anyhow::anyhow;
 use futures::{Sink, SinkExt, Stream, StreamExt};
+use p2panda_core::extensions::DefaultExtensions;
 use p2panda_core::{Body, Extension, Header, Operation, PublicKey};
 use p2panda_store::{LogStore, OperationStore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -17,7 +18,7 @@ type SeqNum = u64;
 pub type LogHeights = Vec<(PublicKey, SeqNum)>;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum Message<E> {
+pub enum Message<E = DefaultExtensions> {
     Have(LogHeights),
     Operation(Header<E>, Option<Body>),
     SyncDone,
@@ -172,13 +173,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use p2panda_core::{Body, Extension, Hash, Header, Operation, PrivateKey};
+    use p2panda_core::extensions::DefaultExtensions;
+    use p2panda_core::{Body, Hash, Header, Operation, PrivateKey};
     use p2panda_store::{MemoryStore, OperationStore};
-    use serde::{Deserialize, Serialize};
+    use serde::Serialize;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-    use super::{LogHeightStrategy, LogId, MessageDecoder};
+    use super::{LogHeightStrategy, MessageDecoder};
     use crate::engine::SyncEngine;
     use crate::log_height::{Message, MessageEncoder};
     use crate::traits::Sync;
@@ -212,23 +214,12 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-    pub struct LogHeightExtensions {
-        log_id: Option<LogId>,
-    }
-
-    impl Extension<LogId> for LogHeightExtensions {
-        fn extract(&self) -> Option<LogId> {
-            self.log_id.clone()
-        }
-    }
-
     #[tokio::test]
     async fn basic() {
         const TOPIC_ID: &str = "my_topic";
 
         // Setup store with 3 operations in it
-        let mut store = MemoryStore::<LogId, LogHeightExtensions>::new();
+        let mut store = MemoryStore::default();
         let private_key = PrivateKey::new();
 
         let body = Body::new("Hello, Sloth!".as_bytes());
@@ -274,9 +265,9 @@ mod tests {
         let (peer_a_read, peer_a_write) = tokio::io::split(peer_a);
 
         // Write some message into peer_b's send buffer
-        let message1: Message<LogHeightExtensions> =
+        let message1: Message<DefaultExtensions> =
             Message::Have(vec![(private_key.public_key(), 0)]);
-        let message2: Message<LogHeightExtensions> = Message::SyncDone;
+        let message2: Message<DefaultExtensions> = Message::SyncDone;
         let message_bytes = vec![message1.to_bytes(), message2.to_bytes()].concat();
         peer_b.write_all(&message_bytes[..]).await.unwrap();
 
@@ -299,7 +290,7 @@ mod tests {
             Message::Operation(operation1.header.clone(), operation1.body.clone());
         let received_message2 =
             Message::Operation(operation2.header.clone(), operation2.body.clone());
-        let receive_message3 = Message::<LogHeightExtensions>::SyncDone;
+        let receive_message3 = Message::<DefaultExtensions>::SyncDone;
         assert_eq!(
             buf,
             [
