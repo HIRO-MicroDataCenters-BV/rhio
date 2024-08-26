@@ -9,7 +9,7 @@ use tracing::info;
 async fn main() -> Result<()> {
     let config = load_config()?;
 
-    setup_tracing();
+    setup_tracing(config.log_level.clone());
     hello_rhio();
 
     let private_key = match &config.network_config.private_key {

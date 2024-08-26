@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::Client as NatsClient;
+use async_nats::{Client as NatsClient, ConnectOptions};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -81,11 +81,11 @@ where
             (network, actor_handle)
         };
 
-        // @TODO: Make NATS server configurable
         // @TODO: Add auth options to NATS server config
-        let nats_client = async_nats::connect("localhost:4222")
-            .await
-            .context("connecting to NATS server")?;
+        let nats_client =
+            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
+                .await
+                .context("connecting to NATS server")?;
         let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
 
         // {
