@@ -118,8 +118,10 @@ where
                 Message::Have(log_heights) => {
                     let mut messages = vec![];
                     for (public_key, log_heights) in log_heights {
-                        // @TODO: need a new method on `LogStore` where we can get all logs which
-                        // have the same log id.
+                        // @TODO: we need to filer this sync session over the provided topic. The
+                        // topic is assumed to be equivalent to a log id. We need a new method on
+                        // the store for getting all logs (or maybe just their heights?) by their
+                        // log id.
 
                         for (log_id, seq_num) in log_heights {
                             let local_seq_num = store
