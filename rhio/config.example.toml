@@ -1,0 +1,20 @@
+# bind_port = 2022
+
+# private_key = "private-key.txt"
+
+# blobs_dir = "blobs"
+
+# [[nodes]]
+# public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+# direct_addresses = [
+#   "192.168.178.100:2222",
+#   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2223",
+# ]
+
+# [minio]
+# bucket_name = "rhio"
+# endpoint = "http://localhost:9000"
+# region = "eu-central-1"
+
+# [nats]
+# endpoint = "localhost:4333"
