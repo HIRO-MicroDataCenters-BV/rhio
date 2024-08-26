@@ -185,6 +185,7 @@ mod tests {
     use std::time::Duration;
 
     use p2panda_core::PublicKey;
+    use rhio::config::KnownNode;
     use tokio::sync::mpsc;
 
     use crate::config::Config;
@@ -226,8 +227,11 @@ mod tests {
             .collect();
 
         let mut config1 = Config::default();
-        config1.inner.network_config.bind_port = 2023;
-        config1.inner.network_config.direct_node_addresses = vec![(n0_id, n0_addresses, None)];
+        config1.inner.node.bind_port = 2023;
+        config1.inner.node.known_nodes = vec![KnownNode {
+            public_key: n0_id,
+            direct_addresses: n0_addresses,
+        }];
 
         let n1 = Node::spawn(&config1).await.unwrap();
 
