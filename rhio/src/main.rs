@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
                     ConsumerEvent::StreamFailed => {
                         error!("stream failed");
                     },
-                    ConsumerEvent::Message { payload } => {
+                    ConsumerEvent::Message { payload, .. } => {
                         info!("message received {:?}", payload);
                     },
                 }

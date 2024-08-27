@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
-use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
+use async_nats::{jetstream::Context as JetstreamContext, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -12,7 +12,7 @@ use super::consumer::ConsumerEvent;
 
 pub enum ToNatsActor {
     Publish {
-        subject: String,
+        subject: Subject,
         payload: Vec<u8>,
         reply: oneshot::Sender<Result<()>>,
     },
@@ -124,7 +124,7 @@ impl NatsActor {
     /// Publish a message inside an existing stream.
     ///
     /// This method fails if the stream does not exist on the NATS server
-    async fn on_publish(&self, subject: String, payload: Vec<u8>) -> Result<()> {
+    async fn on_publish(&self, subject: Subject, payload: Vec<u8>) -> Result<()> {
         let server_ack = self.nats_jetstream.publish(subject, payload.into()).await?;
 
         // Wait until the server confirmed receiving this message, to make sure it got delivered

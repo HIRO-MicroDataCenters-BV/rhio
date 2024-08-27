@@ -5,6 +5,7 @@ use async_nats::jetstream::consumer::push::{
 };
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
+use async_nats::Subject;
 use p2panda_net::{SharedAbortingJoinHandle, ToBytes};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
@@ -30,7 +31,7 @@ pub enum ConsumerEvent {
     InitializationCompleted,
     InitializationFailed,
     StreamFailed,
-    Message { payload: Vec<u8> },
+    Message { payload: Vec<u8>, subject: Subject },
 }
 
 #[derive(Debug, PartialEq)]
@@ -123,6 +124,7 @@ impl ConsumerActor {
 
         self.subscribers_tx.send(ConsumerEvent::Message {
             payload: message.payload.to_bytes(),
+            subject: message.subject.clone(),
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
