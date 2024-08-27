@@ -4,6 +4,7 @@ pub mod config;
 pub mod extensions;
 pub mod logging;
 pub mod messages;
+mod nats;
 pub mod node;
 pub mod operations;
 pub mod private_key;

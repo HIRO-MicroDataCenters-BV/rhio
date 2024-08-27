@@ -4,9 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use anyhow::{anyhow, Context, Result};
-use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::{Client as NatsClient, ConnectOptions};
+use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -21,6 +19,7 @@ use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
+use crate::nats::Nats;
 use crate::topic_id::TopicId;
 
 // @TODO: Give rhio a cool network id
@@ -28,14 +27,12 @@ const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
 
 /// p2panda network node which handles connecting to other peers, syncing operations over topics
 /// and blobs using the bao protocol.
-#[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
     pub config: Config,
     network: Network,
+    nats: Nats,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: SharedAbortingJoinHandle<()>,
-    nats_client: NatsClient,
-    nats_jetstream: JetstreamContext,
 }
 
 impl<T> Node<T>
@@ -91,20 +88,14 @@ where
             (network, actor_handle)
         };
 
-        // @TODO: Add auth options to NATS server config
-        let nats_client =
-            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
-                .await
-                .context("connecting to NATS server")?;
-        let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
+        let nats = Nats::new(config.clone()).await?;
 
         let node = Node {
             config,
             network,
+            nats,
             actor_tx,
             actor_handle: actor_handle.into(),
-            nats_client,
-            nats_jetstream,
         };
 
         Ok(node)
