@@ -26,15 +26,6 @@ async fn main() -> Result<()> {
         info!("‣ node addresses: {}", addresses.join(", "));
     }
 
-    // Join gossip overlay for `BLOB_ANNOUNCE_TOPIC` topic
-    // println!("joining gossip overlay ..");
-    // let topic = TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC);
-    // let (topic_tx, mut topic_rx, topic_ready) = node.subscribe(topic).await?;
-    //
-    // // Wait for the gossip topic to be ready
-    // topic_ready.await;
-    // println!("gossip overlay joined");
-
     tokio::signal::ctrl_c().await?;
 
     info!("");

@@ -1,10 +1,9 @@
-use std::future::Future;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
+use async_nats::Subject;
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -12,14 +11,14 @@ use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::task::LocalPoolHandle;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
-use crate::nats::Nats;
+use crate::nats::{InitialDownloadReady, Nats};
 use crate::topic_id::TopicId;
 
 // @TODO: Give rhio a cool network id
@@ -237,32 +236,44 @@ where
         Ok(())
     }
 
-    /// Subscribe to a gossip topic.
+    /// Subscribe to a NATS subject.
     ///
-    /// Returns a sender for broadcasting messages to all peers subscribed to this topic, a
-    /// receiver where messages can be awaited, and future which resolves once the gossip overlay
-    /// is ready.
-    pub async fn subscribe(
-        &self,
-        topic: TopicId,
-    ) -> Result<(
-        TopicSender<T>,
-        broadcast::Receiver<(Message<T>, MessageMeta)>,
-        Pin<Box<dyn Future<Output = ()> + Send>>,
-    )> {
-        let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
-        let (reply, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(ToRhioActor::Subscribe {
-                topic,
-                topic_tx,
-                topic_rx,
-                reply,
-            })
-            .await?;
-        let result = reply_rx.await?;
-        let tx = TopicSender::new(topic, self.actor_tx.clone());
-        result.map(|(rx, ready)| (tx, rx, ready))
+    /// rhio connects to other clusters in the network and maintains data streams among them per
+    /// NATS subject. With the help of p2panda, rhio can maintain streams fully p2p without any
+    /// central coordination required. Towards the inner cluster though a central NATS Jetstream
+    /// server is used which persists the received data. Jetstream is also used to create new data,
+    /// other processes within the cluster publish directly to the NATS Server and rhio will pick
+    /// the data up and delegate it further to external clusters.
+    ///
+    /// Within a cluster we handle everything based on NATS subjects (with their hierarchical
+    /// design). Between rhio nodes, using the p2panda protocol, data streams are identified by
+    /// p2panda "topics" (non-hierarchical, similar to Kafka topics). While being different in
+    /// design and terminology during cross-cluster communication, the general nature of NATS
+    /// subjects is preserved from the perspective within each cluster. This is why this high-level
+    /// API only refers to NATS "subjects".
+    ///
+    /// When subscribing to a NATS subject the following steps are taking place:
+    ///
+    /// 1. An ephemeral, non-acking, push-based consumer is created, streaming subject-filtered
+    ///    data to rhio.
+    /// 2. When creating the subscription, all past data is initially downloaded and moved into an
+    ///    in-memory cache. This process might take a while, depending on the number of past
+    ///    messages in the stream.
+    /// 3. Simultaneously rhio establishes a p2panda gossip overlay with other clusters over that
+    ///    topic (hashed subject string) to already receive new data. On receipt it'll be moved
+    ///    into the in-memory cache and for persistence published to the NATS server.
+    /// 4. When the initial download from the NATS server has finished, we're continuing with
+    ///    syncing past state from external clusters using the p2panda sync protocol. Again, this
+    ///    data is cached in-memory and persisted on the NATS server.
+    /// 5. Finally, when all internal and external cluster data over this "subject" has been
+    ///    loaded, we still continue gossiping over future data.
+    ///
+    /// Since step 2 might take a while (downloading all persisted data from the database) and
+    /// blocks all subsequent steps, this method returns an oneshot receiver the user can await to
+    /// understand when the initialization has finished.
+    pub async fn subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
+        let initial_download_ready = self.nats.subscribe(subject).await?;
+        Ok(initial_download_ready)
     }
 
     /// Shutdown the node.

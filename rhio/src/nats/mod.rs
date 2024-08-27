@@ -1,14 +1,15 @@
 mod actor;
 
 use anyhow::{Context, Result};
-use async_nats::ConnectOptions;
+use async_nats::{ConnectOptions, Subject};
 use p2panda_net::SharedAbortingJoinHandle;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
-use crate::nats::actor::{InitialDownloadReady, NatsActor, ToNatsActor};
-use crate::topic_id::TopicId;
+use crate::nats::actor::{NatsActor, ToNatsActor};
+
+pub type InitialDownloadReady = oneshot::Receiver<()>;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -51,13 +52,10 @@ impl Nats {
     /// proceeds with downloading all past data from the server, the returned oneshot receiver can
     /// be used to await when that download has been finished. Finally it keeps the consumer alive
     /// in the background for handling future messages.
-    pub async fn subscribe(&self, topic: TopicId) -> Result<InitialDownloadReady> {
+    pub async fn subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
-            .send(ToNatsActor::Subscribe {
-                reply,
-                topic: topic.into(),
-            })
+            .send(ToNatsActor::Subscribe { reply, subject })
             .await?;
         reply_rx.await?
     }

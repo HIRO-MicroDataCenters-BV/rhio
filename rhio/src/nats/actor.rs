@@ -1,17 +1,15 @@
 use anyhow::{Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::Client as NatsClient;
+use async_nats::{Client as NatsClient, Subject};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
-use crate::topic_id::TopicId;
-
-pub type InitialDownloadReady = oneshot::Receiver<()>;
+use crate::nats::InitialDownloadReady;
 
 pub enum ToNatsActor {
     Subscribe {
         reply: oneshot::Sender<Result<InitialDownloadReady>>,
-        topic: TopicId,
+        subject: Subject,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -77,8 +75,8 @@ impl NatsActor {
 
     async fn on_actor_message(&mut self, msg: ToNatsActor) -> Result<()> {
         match msg {
-            ToNatsActor::Subscribe { reply, topic } => {
-                let result = self.on_subscribe(topic).await;
+            ToNatsActor::Subscribe { reply, subject } => {
+                let result = self.on_subscribe(subject).await;
                 reply.send(result).ok();
             }
             ToNatsActor::Shutdown { .. } => {
@@ -89,7 +87,7 @@ impl NatsActor {
         Ok(())
     }
 
-    async fn on_subscribe(&self, topic: TopicId) -> Result<InitialDownloadReady> {
+    async fn on_subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
         let (initial_download_ready_tx, initial_download_ready_rx) = oneshot::channel();
         Ok(initial_download_ready_rx)
     }
