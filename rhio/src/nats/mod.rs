@@ -51,10 +51,10 @@ impl Nats {
     /// With this design we can download all past messages from the stream before we can receive
     /// future messages and rely on NATS as our persistence layer.
     ///
-    /// This method creates a consumer and fails if something goes wrong with that. Then it
-    /// proceeds with downloading all past data from the server, the returned oneshot receiver can
-    /// be used to await when that download has been finished. Finally it keeps the consumer alive
-    /// in the background for handling future messages.
+    /// This method creates a consumer and fails if something goes wrong it. It proceeds with
+    /// downloading all past data from the server, the returned channel can be used to await when
+    /// that download has been finished. Finally it keeps the consumer alive in the background for
+    /// handling future messages. All past and future messages are sent to the returned stream.
     pub async fn subscribe(
         &self,
         stream_name: String,
