@@ -30,9 +30,9 @@ impl TopicId {
     }
 
     #[uniffi::constructor]
-    pub fn new_from_str(topic_str: &str) -> Self {
+    pub fn from_str(value: &str) -> Self {
         Self {
-            inner: InnerTopicId::new_from_str(topic_str),
+            inner: InnerTopicId::from_str(value),
         }
     }
 }
