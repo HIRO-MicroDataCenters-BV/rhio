@@ -1,9 +1,12 @@
-use anyhow::{Context, Result};
-use async_nats::jetstream::consumer::push::{Config as ConsumerConfig, Messages};
+use anyhow::{anyhow, Context, Result};
+use async_nats::error::Error;
+use async_nats::jetstream::consumer::push::{
+    Config as ConsumerConfig, Messages, MessagesErrorKind,
+};
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
-use async_nats::jetstream::Context as JetstreamContext;
-use p2panda_net::SharedAbortingJoinHandle;
-use tokio::sync::{mpsc, oneshot};
+use async_nats::jetstream::{Context as JetstreamContext, Message};
+use p2panda_net::{SharedAbortingJoinHandle, ToBytes};
+use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tracing::error;
 
@@ -20,9 +23,22 @@ impl ConsumerId {
     }
 }
 
-pub type InitialDownloadReady = oneshot::Receiver<Result<()>>;
-
 pub enum ToConsumerActor {}
+
+#[derive(Debug, Clone)]
+pub enum ConsumerEvent {
+    InitializationCompleted,
+    InitializationFailed,
+    StreamFailed,
+    Message { payload: Vec<u8> },
+}
+
+#[derive(Debug, PartialEq)]
+enum ConsumerStatus {
+    Initializing,
+    Streaming,
+    Failed,
+}
 
 /// Manages a NATS JetStream consumer.
 ///
@@ -34,82 +50,98 @@ pub enum ToConsumerActor {}
 /// permament storage: messages are kept forever (for now). Streams consume normal NATS subjects,
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor {
+    subscribers_tx: broadcast::Sender<ConsumerEvent>,
+    #[allow(dead_code)]
     inbox: mpsc::Receiver<ToConsumerActor>,
-    stream_name: StreamName,
     messages: Messages,
-    filter_subject: FilterSubject,
     initial_stream_height: u64,
-    initial_download_ready_tx: oneshot::Sender<Result<()>>,
+    status: ConsumerStatus,
 }
 
 impl ConsumerActor {
     pub fn new(
+        subscribers_tx: broadcast::Sender<ConsumerEvent>,
         inbox: mpsc::Receiver<ToConsumerActor>,
-        stream_name: StreamName,
-        filter_subject: FilterSubject,
         messages: Messages,
         initial_stream_height: u64,
-        initial_download_ready_tx: oneshot::Sender<Result<()>>,
     ) -> Self {
         Self {
+            subscribers_tx,
             inbox,
-            stream_name,
-            filter_subject,
             messages,
             initial_stream_height,
-            initial_download_ready_tx,
+            status: ConsumerStatus::Initializing,
         }
     }
 
     pub async fn run(mut self) -> Result<()> {
-        self.run_inner().await;
-        Ok(())
+        let result = self.run_inner().await;
+        drop(self);
+        result
     }
 
-    async fn run_inner(&mut self) {
+    async fn run_inner(&mut self) -> Result<()> {
         loop {
             tokio::select! {
                 biased;
-                Some(next) = self.messages.next() => {
-                    // @TODO
+                Some(message) = self.messages.next() => {
+                    if let Err(err) = self.on_message(message).await {
+                        break Err(err);
+                    }
                 },
             }
         }
     }
+
+    async fn on_message(
+        &mut self,
+        message: Result<Message, Error<MessagesErrorKind>>,
+    ) -> Result<()> {
+        if let Err(_) = self.on_message_inner(message).await {
+            match self.status {
+                ConsumerStatus::Initializing => {
+                    self.subscribers_tx
+                        .send(ConsumerEvent::InitializationFailed)?;
+                }
+                ConsumerStatus::Streaming => {
+                    self.subscribers_tx.send(ConsumerEvent::StreamFailed)?;
+                }
+                ConsumerStatus::Failed => (),
+            }
+
+            self.status = ConsumerStatus::Failed;
+        }
+
+        Ok(())
+    }
+
+    async fn on_message_inner(
+        &mut self,
+        message: Result<Message, Error<MessagesErrorKind>>,
+    ) -> Result<()> {
+        let message = message?;
+
+        self.subscribers_tx.send(ConsumerEvent::Message {
+            payload: message.payload.to_bytes(),
+        })?;
+
+        if matches!(self.status, ConsumerStatus::Initializing) {
+            let info = message.info().map_err(|err| anyhow!(err))?;
+            if info.stream_sequence >= self.initial_stream_height {
+                self.status = ConsumerStatus::Streaming;
+                self.subscribers_tx
+                    .send(ConsumerEvent::InitializationCompleted)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
-// let result: Result<()> = loop {
-//     let message = messages.next().await;
-//
-//     match message {
-//         Some(Ok(message)) => {
-//             let message_info = match message.info() {
-//                 Ok(info) => info,
-//                 Err(err) => {
-//                     break Err(anyhow!("could not retreive jetstream message info: {err}"));
-//                 }
-//             };
-//
-//             println!("message: {:?}", message.message.payload);
-//
-//             // We're done with downloading all past messages
-//             if message_info.stream_sequence >= stream_height {
-//                 break Ok(());
-//             }
-//         }
-//         Some(Err(err)) => {
-//             break Err(anyhow!("jetstream message error occurred: {err}"));
-//         }
-//         None => (),
-//     }
-// };
-//
-// initial_download_ready_tx.send(result).expect(&format!(
-//     "send initial download ready signal for '{}' stream",
-//     stream_name,
-// ));
-
+#[derive(Debug, Clone)]
 pub struct Consumer {
+    subscribers_tx: broadcast::Sender<ConsumerEvent>,
+    #[allow(dead_code)]
     consumer_actor_tx: mpsc::Sender<ToConsumerActor>,
     #[allow(dead_code)]
     actor_handle: SharedAbortingJoinHandle<()>,
@@ -132,9 +164,7 @@ impl Consumer {
         context: &JetstreamContext,
         stream_name: StreamName,
         filter_subject: FilterSubject,
-    ) -> Result<(Self, InitialDownloadReady)> {
-        let (initial_download_ready_tx, initial_download_ready_rx) = oneshot::channel();
-
+    ) -> Result<Self> {
         let mut consumer: PushConsumer = context
             // Streams need to already be created on the server, if not, this method will fail
             // here. Note that no checks are applied here for validating if the NATS stream
@@ -185,14 +215,13 @@ impl Consumer {
         let messages = consumer.messages().await.context("get message stream")?;
 
         let (consumer_actor_tx, consumer_actor_rx) = mpsc::channel(64);
+        let (subscribers_tx, _) = broadcast::channel(256);
 
         let consumer_actor = ConsumerActor::new(
+            subscribers_tx.clone(),
             consumer_actor_rx,
-            stream_name,
-            filter_subject,
             messages,
             initial_stream_height,
-            initial_download_ready_tx,
         );
 
         let actor_handle = tokio::task::spawn(async move {
@@ -202,10 +231,15 @@ impl Consumer {
         });
 
         let consumer = Self {
+            subscribers_tx,
             consumer_actor_tx,
             actor_handle: actor_handle.into(),
         };
 
-        Ok((consumer, initial_download_ready_rx))
+        Ok(consumer)
+    }
+
+    pub fn subscribe(&mut self) -> broadcast::Receiver<ConsumerEvent> {
+        self.subscribers_tx.subscribe()
     }
 }

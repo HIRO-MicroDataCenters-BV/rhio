@@ -4,12 +4,12 @@ mod consumer;
 use anyhow::{Context, Result};
 use async_nats::ConnectOptions;
 use p2panda_net::SharedAbortingJoinHandle;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::InitialDownloadReady;
+pub use crate::nats::consumer::ConsumerEvent;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -59,7 +59,7 @@ impl Nats {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<InitialDownloadReady> {
+    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {

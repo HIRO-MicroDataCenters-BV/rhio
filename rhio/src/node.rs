@@ -10,14 +10,14 @@ use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::task::LocalPoolHandle;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
-use crate::nats::{InitialDownloadReady, Nats};
+use crate::nats::{ConsumerEvent, Nats};
 use crate::topic_id::TopicId;
 
 // @TODO: Give rhio a cool network id
@@ -277,9 +277,8 @@ where
         &self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<InitialDownloadReady> {
-        let initial_download_ready = self.nats.subscribe(stream_name, filter_subject).await?;
-        Ok(initial_download_ready)
+    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
+        self.nats.subscribe(stream_name, filter_subject).await
     }
 
     /// Shutdown the node.

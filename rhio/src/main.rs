@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
+use rhio::nats::ConsumerEvent;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 use tracing::{error, info};
@@ -28,16 +29,33 @@ async fn main() -> Result<()> {
 
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
-    let initial_download_ready = node
+    let mut rx = node
         .subscribe("my_test".into(), Some("foo.test".into()))
         .await?;
-    if let Err(err) = initial_download_ready.await? {
-        error!("initial download failed: {err}");
-    } else {
-        info!("initial download ready");
-    }
 
-    tokio::signal::ctrl_c().await?;
+    loop {
+        tokio::select! {
+            Ok(event) = rx.recv() => {
+                match event {
+                    ConsumerEvent::InitializationCompleted => {
+                        info!("initialization succeeded");
+                    },
+                    ConsumerEvent::InitializationFailed => {
+                        error!("initialization failed");
+                    },
+                    ConsumerEvent::StreamFailed => {
+                        error!("stream failed");
+                    },
+                    ConsumerEvent::Message { payload } => {
+                        info!("message received {:?}", payload);
+                    },
+                }
+            },
+            Ok(_) = tokio::signal::ctrl_c() => {
+                break;
+            },
+        }
+    }
 
     info!("");
     info!("shutting down");

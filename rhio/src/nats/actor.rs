@@ -3,10 +3,12 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::nats::consumer::{Consumer, ConsumerId, InitialDownloadReady};
+use crate::nats::consumer::{Consumer, ConsumerId};
+
+use super::consumer::ConsumerEvent;
 
 pub enum ToNatsActor {
     Publish {
@@ -29,7 +31,7 @@ pub enum ToNatsActor {
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. This method returns an oneshot receiver the user
         /// can await to understand when the initialization has finished.
-        reply: oneshot::Sender<Result<InitialDownloadReady>>,
+        reply: oneshot::Sender<Result<broadcast::Receiver<ConsumerEvent>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -136,7 +138,7 @@ impl NatsActor {
         &mut self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<InitialDownloadReady> {
+    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
         let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
         if self.consumers.contains_key(&consumer_id) {
             bail!(
@@ -146,12 +148,12 @@ impl NatsActor {
             );
         }
 
-        let (consumer, initial_download_ready) =
-            Consumer::new(&self.nats_jetstream, stream_name, filter_subject).await?;
+        let mut consumer = Consumer::new(&self.nats_jetstream, stream_name, filter_subject).await?;
+        let rx = consumer.subscribe();
 
         self.consumers.insert(consumer_id, consumer);
 
-        Ok(initial_download_ready)
+        Ok(rx)
     }
 
     async fn shutdown(&mut self) -> Result<()> {
