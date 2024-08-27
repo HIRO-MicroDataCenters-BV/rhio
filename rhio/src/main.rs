@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
+use async_nats::Subject;
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,6 +25,17 @@ async fn main() -> Result<()> {
         let addresses: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
         info!("‣ node public key: {}", node.id());
         info!("‣ node addresses: {}", addresses.join(", "));
+    }
+
+    // @TODO: Subscribe to streams based on config file instead
+    info!("subscribe to NATS stream");
+    let initial_download_ready = node
+        .subscribe("my_stream".into(), Subject::from_static("foo"))
+        .await?;
+    if let Err(err) = initial_download_ready.await? {
+        error!("initial download failed: {err}");
+    } else {
+        info!("initial download ready");
     }
 
     tokio::signal::ctrl_c().await?;

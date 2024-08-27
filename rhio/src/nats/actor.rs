@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::consumer::push::Config as ConsumerConfig;
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::Context as JetstreamContext;
@@ -125,13 +125,10 @@ impl NatsActor {
             // Streams need to already be created on the server, if not, this method will fail
             // here. Note that no checks are applied here for validating if the NATS stream
             // configuration is compatible with rhio's design
-            .get_stream(stream_name)
+            .get_stream(&stream_name)
             .await
-            .context("get stream from NATS server")?
+            .context(format!("get '{}' stream from NATS server", stream_name))?
             .create_consumer(ConsumerConfig {
-                // Give the consumer a name to identify it for debugging purposes, we choose the
-                // p2panda topic id here which might troubleshooting
-                name: Some(topic_id.to_string()),
                 // Setting a delivery subject is crucial for making this consumer push-based
                 deliver_subject: "rhio".to_string(),
                 // We want to filter the given stream based on this subject, like this we can have
@@ -147,19 +144,53 @@ impl NatsActor {
                 ..Default::default()
             })
             .await
-            .context("create ephemeral Jetstream consumer")?;
+            .context(format!(
+                "create ephemeral Jetstream consumer for '{}' stream",
+                stream_name
+            ))?;
 
         // Retreive info about the consumer to learn how many messages are currently persisted on
-        // the server
-        let consumer_info = consumer.info().await?;
+        // the server (number of "pending messages") and we need to download first
+        let num_pending = {
+            let consumer_info = consumer.info().await?;
+            consumer_info.num_pending
+        };
 
+        // Download all known messages from NATS server first
         let mut messages = consumer.messages().await.context("get message stream")?;
-
         tokio::task::spawn(async move {
-            while let Some(message) = messages.next().await {
-                let message = message.unwrap();
-                println!("message: {:?}", message.message.payload);
-            }
+            let result: Result<()> = loop {
+                let message = messages.next().await;
+
+                match message {
+                    Some(Ok(message)) => {
+                        let message_info = match message.info() {
+                            Ok(info) => info,
+                            Err(err) => {
+                                break Err(anyhow!(
+                                    "could not retreive Jetstream message info: {err}"
+                                ));
+                            }
+                        };
+
+                        println!("message: {:?}", message.message.payload);
+
+                        // We're done with downloading all past messages
+                        if message_info.stream_sequence >= num_pending {
+                            break Ok(());
+                        }
+                    }
+                    Some(Err(err)) => {
+                        break Err(anyhow!("Jetstream message error occurred: {err}"));
+                    }
+                    None => (),
+                }
+            };
+
+            initial_download_ready_tx.send(result).expect(&format!(
+                "send initial download ready signal for '{}' stream",
+                stream_name,
+            ));
         });
 
         Ok(initial_download_ready_rx)

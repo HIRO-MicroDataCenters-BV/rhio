@@ -9,7 +9,7 @@ use tracing::error;
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
 
-pub type InitialDownloadReady = oneshot::Receiver<()>;
+pub type InitialDownloadReady = oneshot::Receiver<Result<()>>;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -24,7 +24,10 @@ impl Nats {
         let nats_client =
             async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
                 .await
-                .context("connecting to NATS server")?;
+                .context(format!(
+                    "connecting to NATS server {}",
+                    config.nats.endpoint
+                ))?;
 
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
