@@ -35,7 +35,6 @@ pub enum ToNatsActor {
 
 pub struct NatsActor {
     inbox: mpsc::Receiver<ToNatsActor>,
-    nats_client: NatsClient,
     nats_jetstream: JetstreamContext,
 }
 
@@ -45,7 +44,6 @@ impl NatsActor {
 
         Self {
             inbox,
-            nats_client,
             nats_jetstream,
         }
     }
