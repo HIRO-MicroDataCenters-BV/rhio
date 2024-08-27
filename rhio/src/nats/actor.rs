@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::consumer::push::Config as ConsumerConfig;
-use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
+use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, PushConsumer};
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::{Client as NatsClient, Subject};
+use async_nats::Client as NatsClient;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tracing::error;
@@ -15,11 +15,11 @@ pub enum ToNatsActor {
         /// NATS stream name.
         stream_name: String,
 
-        /// NATS subject.
+        /// NATS subject filter.
         ///
-        /// It is possible to subscribe to multiple different subjects over the same stream.
-        /// Subjects form "filtered views" on top of streams.
-        subject: Subject,
+        /// Streams can hold different subjects, with a "subject filter" we're able to only select
+        /// the ones we're interested in. This forms "filtered views" on top of streams.
+        filter_subject: Option<String>,
 
         /// Oneshot channel to propagate errors and "readyness" state.
         ///
@@ -93,9 +93,9 @@ impl NatsActor {
             ToNatsActor::Subscribe {
                 reply,
                 stream_name,
-                subject,
+                filter_subject,
             } => {
-                let result = self.on_subscribe(stream_name, subject).await;
+                let result = self.on_subscribe(stream_name, filter_subject).await;
                 reply.send(result).ok();
             }
             ToNatsActor::Shutdown { .. } => {
@@ -109,15 +109,19 @@ impl NatsActor {
     async fn on_subscribe(
         &self,
         stream_name: String,
-        subject: Subject,
+        filter_subject: Option<String>,
     ) -> Result<InitialDownloadReady> {
         let (initial_download_ready_tx, initial_download_ready_rx) = oneshot::channel();
 
-        // Generate a p2panda "topic" by hashing the subject
-        let topic_id = TopicId::from_str(&subject.to_string());
+        // Generate a p2panda "topic" by hashing the Jetstream "name" and "filter subject"
+        let topic_id = TopicId::from_str(&format!(
+            "{}{}",
+            stream_name,
+            filter_subject.clone().unwrap_or_default()
+        ));
 
-        // We need to create a push based consumer as pull-based ones are required to explicitly
-        // acknowledge messages.
+        // A consumer is a stateful view of a stream. It acts as an interface for clients to
+        // consume a subset of messages stored in a stream.
         let mut consumer: PushConsumer = self
             .nats_jetstream
             // Streams need to already be created on the server, if not, this method will fail
@@ -127,17 +131,31 @@ impl NatsActor {
             .await
             .context(format!("get '{}' stream from NATS server", stream_name))?
             .create_consumer(ConsumerConfig {
-                // Setting a delivery subject is crucial for making this consumer push-based
+                // Give consumer a description which might aid troubleshooting.
+                description: Some(format!("topic id: {topic_id}")),
+                // Setting a delivery subject is crucial for making this consumer push-based. We
+                // need to create a push based consumer as pull-based ones are required to
+                // explicitly acknowledge messages.
+                //
+                // @NOTE(adz): Unclear to me what this really does other than it is required to be
+                // set for push-consumers? The documentation says: "The subject to deliver messages
+                // to. Setting this field decides whether the consumer is push or pull-based. With
+                // a deliver subject, the server will push messages to clients subscribed to this
+                // subject." https://docs.nats.io/nats-concepts/jetstream/consumers#push-specific
+                //
+                // .. it seems to not matter what the value inside this field is, we will still
+                // receive all messages from that stream, optionally filtered by "filter_subject"?
                 deliver_subject: "rhio".to_string(),
-                // We want to filter the given stream based on this subject, like this we can have
-                // different "views" on the same stream
-                filter_subject: subject.to_string(),
-                // This is an ephemeral consumer which will not be persisted on the server and the
-                // progress of the consumer will not be remembered. We do this by setting
-                // "durable_name" to None.
+                // We can optionally filter the given stream based on this subject filter, like
+                // this we can have different "views" on the same stream.
+                filter_subject: filter_subject.unwrap_or_default(),
+                // This is an ephemeral consumer which will not be persisted on the server / the
+                // progress of the consumer will not be remembered. We do this by _not_ setting
+                // "durable_name".
                 durable_name: None,
-                // Do not ack every incoming message, as we want to receive them _again_ after rhio
-                // got restarted
+                // Do _not_ acknowledge every incoming message, as we want to receive them _again_
+                // after rhio got restarted. The to-be-consumed stream needs to accommodate for
+                // this setting and accept an unlimited amount of un-acked message deliveries.
                 ack_policy: AckPolicy::None,
                 ..Default::default()
             })
@@ -198,3 +216,5 @@ impl NatsActor {
         Ok(())
     }
 }
+
+async fn handle_nats_stream() {}

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use async_nats::Subject;
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
 use rhio::node::Node;
@@ -30,7 +29,7 @@ async fn main() -> Result<()> {
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
     let initial_download_ready = node
-        .subscribe("my_stream".into(), Subject::from_static("foo"))
+        .subscribe("my_test".into(), Some("foo.test".into()))
         .await?;
     if let Err(err) = initial_download_ready.await? {
         error!("initial download failed: {err}");

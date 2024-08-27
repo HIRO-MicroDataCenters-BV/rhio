@@ -1,7 +1,7 @@
 mod actor;
 
 use anyhow::{Context, Result};
-use async_nats::{ConnectOptions, Subject};
+use async_nats::ConnectOptions;
 use p2panda_net::SharedAbortingJoinHandle;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
@@ -58,14 +58,14 @@ impl Nats {
     pub async fn subscribe(
         &self,
         stream_name: String,
-        subject: Subject,
+        filter_subject: Option<String>,
     ) -> Result<InitialDownloadReady> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
                 reply,
                 stream_name,
-                subject,
+                filter_subject,
             })
             .await?;
         reply_rx.await?

@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
-use async_nats::Subject;
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -277,9 +276,9 @@ where
     pub async fn subscribe(
         &self,
         stream_name: String,
-        subject: Subject,
+        filter_subject: Option<String>,
     ) -> Result<InitialDownloadReady> {
-        let initial_download_ready = self.nats.subscribe(stream_name, subject).await?;
+        let initial_download_ready = self.nats.subscribe(stream_name, filter_subject).await?;
         Ok(initial_download_ready)
     }
 
