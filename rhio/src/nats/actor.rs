@@ -1,12 +1,12 @@
-use anyhow::{Context, Result};
+use std::collections::HashMap;
+
+use anyhow::{bail, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
-use crate::nats::InitialDownloadReady;
-
-use super::consumer::consume_stream;
+use crate::nats::consumer::{Consumer, ConsumerId, InitialDownloadReady};
 
 pub enum ToNatsActor {
     Publish {
@@ -39,6 +39,7 @@ pub enum ToNatsActor {
 pub struct NatsActor {
     inbox: mpsc::Receiver<ToNatsActor>,
     nats_jetstream: JetstreamContext,
+    consumers: HashMap<ConsumerId, Consumer>,
 }
 
 impl NatsActor {
@@ -48,6 +49,7 @@ impl NatsActor {
         Self {
             inbox,
             nats_jetstream,
+            consumers: HashMap::new(),
         }
     }
 
@@ -131,11 +133,25 @@ impl NatsActor {
     }
 
     async fn on_subscribe(
-        &self,
+        &mut self,
         stream_name: String,
         filter_subject: Option<String>,
     ) -> Result<InitialDownloadReady> {
-        consume_stream(&self.nats_jetstream, stream_name, filter_subject).await
+        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
+        if self.consumers.contains_key(&consumer_id) {
+            bail!(
+                "consumer for stream '{}' with filter subject '{}' is already registered",
+                stream_name,
+                filter_subject.unwrap_or_default()
+            );
+        }
+
+        let (consumer, initial_download_ready) =
+            Consumer::new(&self.nats_jetstream, stream_name, filter_subject).await?;
+
+        self.consumers.insert(consumer_id, consumer);
+
+        Ok(initial_download_ready)
     }
 
     async fn shutdown(&mut self) -> Result<()> {

@@ -9,8 +9,7 @@ use tracing::error;
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
-
-pub type InitialDownloadReady = oneshot::Receiver<Result<()>>;
+pub use crate::nats::consumer::InitialDownloadReady;
 
 #[derive(Debug)]
 pub struct Nats {
