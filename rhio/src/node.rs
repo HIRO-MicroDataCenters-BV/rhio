@@ -267,6 +267,7 @@ where
         // Trigger shutdown of the main run task by activating the cancel token
         self.actor_tx.send(ToRhioActor::Shutdown).await?;
         self.network.shutdown().await?;
+        self.nats.shutdown().await?;
         self.actor_handle
             .await
             .map_err(|err| anyhow::anyhow!("{err}"))?;
