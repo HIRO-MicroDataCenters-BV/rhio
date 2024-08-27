@@ -4,8 +4,18 @@ use async_nats::Client as NatsClient;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
+use crate::topic_id::TopicId;
+
+pub type InitialDownloadReady = oneshot::Receiver<()>;
+
 pub enum ToNatsActor {
-    Shutdown { reply: oneshot::Sender<()> },
+    Subscribe {
+        reply: oneshot::Sender<Result<InitialDownloadReady>>,
+        topic: TopicId,
+    },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
 }
 
 pub struct NatsActor {
@@ -67,12 +77,21 @@ impl NatsActor {
 
     async fn on_actor_message(&mut self, msg: ToNatsActor) -> Result<()> {
         match msg {
+            ToNatsActor::Subscribe { reply, topic } => {
+                let result = self.on_subscribe(topic).await;
+                reply.send(result).ok();
+            }
             ToNatsActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
             }
         }
 
         Ok(())
+    }
+
+    async fn on_subscribe(&self, topic: TopicId) -> Result<InitialDownloadReady> {
+        let (initial_download_ready_tx, initial_download_ready_rx) = oneshot::channel();
+        Ok(initial_download_ready_rx)
     }
 
     async fn shutdown(&mut self) -> Result<()> {

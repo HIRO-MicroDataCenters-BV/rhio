@@ -7,7 +7,8 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
-use crate::nats::actor::{NatsActor, ToNatsActor};
+use crate::nats::actor::{InitialDownloadReady, NatsActor, ToNatsActor};
+use crate::topic_id::TopicId;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -37,6 +38,28 @@ impl Nats {
             nats_actor_tx,
             actor_handle: actor_handle.into(),
         })
+    }
+
+    /// Subscribes to a NATS Jetstream "subject" by creating a consumer hooking into a stream
+    /// provided by the NATS server.
+    ///
+    /// All consumers in rhio are push-based, ephemeral and do not ack when a message was received.
+    /// With this design we can download all past messages from the stream before we can receive
+    /// future messages and rely on NATS as our persistence layer.
+    ///
+    /// This method creates a consumer and fails if something goes wrong with that. Then it
+    /// proceeds with downloading all past data from the server, the returned oneshot receiver can
+    /// be used to await when that download has been finished. Finally it keeps the consumer alive
+    /// in the background for handling future messages.
+    pub async fn subscribe(&self, topic: TopicId) -> Result<InitialDownloadReady> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.nats_actor_tx
+            .send(ToNatsActor::Subscribe {
+                reply,
+                topic: topic.into(),
+            })
+            .await?;
+        reply_rx.await?
     }
 
     pub async fn shutdown(&self) -> Result<()> {
