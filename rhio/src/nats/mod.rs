@@ -1,4 +1,5 @@
 mod actor;
+mod consumer;
 
 use anyhow::{Context, Result};
 use async_nats::ConnectOptions;
