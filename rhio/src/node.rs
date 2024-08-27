@@ -254,8 +254,8 @@ where
     ///
     /// When subscribing to a NATS subject the following steps are taking place:
     ///
-    /// 1. An ephemeral, non-acking, push-based consumer is created, streaming subject-filtered
-    ///    data to rhio.
+    /// 1. An ephemeral, non-acking, push-based Jetstream consumer is created, streaming
+    ///    subject-filtered data to rhio.
     /// 2. When creating the subscription, all past data is initially downloaded and moved into an
     ///    in-memory cache. This process might take a while, depending on the number of past
     ///    messages in the stream.
@@ -269,8 +269,8 @@ where
     ///    loaded, we still continue gossiping over future data.
     ///
     /// Since step 2 might take a while (downloading all persisted data from the database) and
-    /// blocks all subsequent steps, this method returns an oneshot receiver the user can await to
-    /// understand when the initialization has finished.
+    /// blocks all subsequent steps (except entering gossip mode), this method returns an oneshot
+    /// receiver the user can await to understand when the initialization has finished.
     pub async fn subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
         let initial_download_ready = self.nats.subscribe(subject).await?;
         Ok(initial_download_ready)
