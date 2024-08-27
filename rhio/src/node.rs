@@ -236,7 +236,10 @@ where
         Ok(())
     }
 
-    /// Subscribe to a NATS subject.
+    /// Subscribe to a NATS subject over a NATS stream.
+    ///
+    /// It is possible to subscribe to multiple different subjects over the same stream. Subjects
+    /// form "filtered views" on top of streams.
     ///
     /// rhio connects to other clusters in the network and maintains data streams among them per
     /// NATS subject. With the help of p2panda, rhio can maintain streams fully p2p without any
@@ -271,8 +274,12 @@ where
     /// Since step 2 might take a while (downloading all persisted data from the database) and
     /// blocks all subsequent steps (except entering gossip mode), this method returns an oneshot
     /// receiver the user can await to understand when the initialization has finished.
-    pub async fn subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
-        let initial_download_ready = self.nats.subscribe(subject).await?;
+    pub async fn subscribe(
+        &self,
+        stream_name: String,
+        subject: Subject,
+    ) -> Result<InitialDownloadReady> {
+        let initial_download_ready = self.nats.subscribe(stream_name, subject).await?;
         Ok(initial_download_ready)
     }
 

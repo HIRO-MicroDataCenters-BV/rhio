@@ -52,10 +52,18 @@ impl Nats {
     /// proceeds with downloading all past data from the server, the returned oneshot receiver can
     /// be used to await when that download has been finished. Finally it keeps the consumer alive
     /// in the background for handling future messages.
-    pub async fn subscribe(&self, subject: Subject) -> Result<InitialDownloadReady> {
+    pub async fn subscribe(
+        &self,
+        stream_name: String,
+        subject: Subject,
+    ) -> Result<InitialDownloadReady> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
-            .send(ToNatsActor::Subscribe { reply, subject })
+            .send(ToNatsActor::Subscribe {
+                reply,
+                stream_name,
+                subject,
+            })
             .await?;
         reply_rx.await?
     }
