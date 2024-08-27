@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::{Client as NatsClient, ConnectOptions};
+use async_nats::Client as NatsClient;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
-
-use crate::config::Config;
 
 pub enum ToNatsActor {
     Shutdown { reply: oneshot::Sender<()> },
@@ -17,19 +15,14 @@ pub struct NatsActor {
 }
 
 impl NatsActor {
-    pub async fn new(config: Config, inbox: mpsc::Receiver<ToNatsActor>) -> Result<Self> {
-        // @TODO: Add auth options to NATS client config
-        let nats_client =
-            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
-                .await
-                .context("connecting to NATS server")?;
+    pub fn new(nats_client: NatsClient, inbox: mpsc::Receiver<ToNatsActor>) -> Self {
         let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
 
-        Ok(Self {
+        Self {
             inbox,
             nats_client,
             nats_jetstream,
-        })
+        }
     }
 
     pub async fn run(mut self) -> Result<()> {

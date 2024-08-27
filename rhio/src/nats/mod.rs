@@ -1,6 +1,7 @@
 mod actor;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use async_nats::ConnectOptions;
 use p2panda_net::SharedAbortingJoinHandle;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
@@ -17,8 +18,14 @@ pub struct Nats {
 
 impl Nats {
     pub async fn new(config: Config) -> Result<Self> {
+        // @TODO: Add auth options to NATS client config
+        let nats_client =
+            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
+                .await
+                .context("connecting to NATS server")?;
+
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
-        let nats_actor = NatsActor::new(config, nats_actor_rx).await?;
+        let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = nats_actor.run().await {

@@ -88,6 +88,9 @@ where
             (network, actor_handle)
         };
 
+        // Connect with NATS client to server and consume streams over "subjects" we're interested
+        // in. The NATS jetstream is the p2panda persistance and transport layer and holds all past
+        // and future operations.
         let nats = Nats::new(config.clone()).await?;
 
         let node = Node {
