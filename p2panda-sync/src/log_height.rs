@@ -37,7 +37,7 @@ where
 }
 
 #[derive(Clone, Default)]
-struct MessageEncoder<E> {
+pub struct MessageEncoder<E> {
     _extension: PhantomData<E>,
 }
 
@@ -60,7 +60,7 @@ where
 }
 
 #[derive(Clone, Default)]
-struct MessageDecoder<E> {
+pub struct MessageDecoder<E> {
     _extension: PhantomData<E>,
 }
 
@@ -94,7 +94,7 @@ where
     }
 }
 
-struct LogHeightStrategy;
+pub struct LogHeightStrategy;
 
 impl<S, E> Strategy<S, LogId, Message<E>> for LogHeightStrategy
 where
