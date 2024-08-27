@@ -5,9 +5,9 @@ use std::time::{self, SystemTime};
 
 use anyhow::Result;
 use futures_lite::FutureExt;
+use p2panda_core::Operation;
 use p2panda_net::network::{InEvent, OutEvent};
-use p2panda_net::Network;
-use p2panda_store::MemoryStore;
+use p2panda_store::{MemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error};
@@ -23,10 +23,10 @@ pub type SubscribeResult = Result<(
 )>;
 
 pub enum ToPandaActor {
-    Publish {
+    Store {
         topic: TopicId,
-        message: Message,
-        reply: oneshot::Sender<Result<MessageMeta>>,
+        operation: Operation<RhioExtensions>,
+        reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
         topic: TopicId,
@@ -127,12 +127,12 @@ impl PandaActor {
 
     async fn on_actor_message(&mut self, msg: ToPandaActor) -> Result<bool> {
         match msg {
-            ToPandaActor::Publish {
+            ToPandaActor::Store {
                 topic,
-                message,
+                operation,
                 reply,
             } => {
-                let result = self.on_publish(topic, message).await;
+                let result = self.on_store(topic, operation).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe {
@@ -206,26 +206,16 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    async fn on_publish(&mut self, topic: TopicId, message: Message) -> Result<MessageMeta> {
-        // // Create a p2panda operation which contains a topic message in it's body. The topic id
-        // // will be used in the log id.
-        // let operation = self.create_operation(topic, message).await?;
-        //
-        // // Send the operation on it's gossip topic.
-        // self.send_operation(topic, operation.clone()).await?;
-        //
-        // // Construct the message meta data which will be sent to any subscribing clients along
-        // // with the topic message itself.
-        // let message_context = MessageMeta {
-        //     operation_timestamp: operation.header.timestamp,
-        //     delivered_from: self.private_key.public_key(),
-        //     received_at: time::SystemTime::now()
-        //         .duration_since(SystemTime::UNIX_EPOCH)
-        //         .expect("can calculate duration since UNIX_EPOCH")
-        //         .as_secs(),
-        // };
-        // Ok(message_context)
-        todo!();
+    async fn on_store(
+        &mut self,
+        topic: TopicId,
+        operation: Operation<RhioExtensions>,
+    ) -> Result<()> {
+        // The log id is {PUBLIC_KEY}/{TOPIC_ID} string.
+        let log_id = format!("{}/{}", operation.header.public_key.to_hex(), topic);
+        self.store
+            .insert_operation(operation.clone(), log_id.to_owned())?;
+        Ok(())
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {

@@ -31,6 +31,16 @@ impl Panda {
         }
     }
 
+    pub async fn store(&self) -> Result<()> {
+        // @TODO
+        // let (reply, reply_rx) = oneshot::channel();
+        // self.panda_actor_tx
+        //     .send(ToPandaActor::Store { reply })
+        //     .await?;
+        // reply_rx.await?;
+        Ok(())
+    }
+
     pub async fn shutdown(&self) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
