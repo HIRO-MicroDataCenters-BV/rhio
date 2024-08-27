@@ -1,5 +1,6 @@
 pub mod actor;
 pub mod aggregate;
+pub mod blobs;
 pub mod config;
 pub mod extensions;
 pub mod logging;
@@ -7,6 +8,7 @@ pub mod messages;
 pub mod nats;
 pub mod node;
 pub mod operations;
+pub mod p2panda;
 pub mod private_key;
 pub mod topic_id;
 

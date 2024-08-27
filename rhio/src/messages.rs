@@ -14,7 +14,7 @@ pub struct MessageMeta {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Message<T = Vec<u8>> {
+pub enum Message {
     // Sync files in a directory
     FileSystem(FileSystemEvent),
 
@@ -22,19 +22,16 @@ pub enum Message<T = Vec<u8>> {
     BlobAnnouncement(Hash),
 
     // Application messages
-    Application(T),
+    Application(Vec<u8>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GossipOperation<T> {
-    pub message: Message<T>,
+pub struct GossipOperation {
+    pub message: Message,
     pub header: Header<RhioExtensions>,
 }
 
-impl<T> GossipOperation<T>
-where
-    T: Serialize + DeserializeOwned + Clone,
-{
+impl GossipOperation {
     pub fn body(&self) -> Body {
         Body::new(&self.message.to_bytes())
     }

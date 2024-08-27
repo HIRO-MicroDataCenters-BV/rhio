@@ -1,0 +1,294 @@
+use std::collections::{hash_map, HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
+use std::time::{self, SystemTime};
+
+use anyhow::Result;
+use futures_lite::FutureExt;
+use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_net::Network;
+use p2panda_store::MemoryStore;
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio_stream::{Stream, StreamExt, StreamMap};
+use tracing::{debug, error};
+
+use crate::extensions::{LogId, RhioExtensions};
+use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
+use crate::operations::ingest;
+use crate::topic_id::TopicId;
+
+pub type SubscribeResult = Result<(
+    broadcast::Receiver<(Message, MessageMeta)>,
+    Pin<Box<dyn Future<Output = ()> + Send>>,
+)>;
+
+pub enum ToPandaActor {
+    Publish {
+        topic: TopicId,
+        message: Message,
+        reply: oneshot::Sender<Result<MessageMeta>>,
+    },
+    Subscribe {
+        topic: TopicId,
+        topic_tx: mpsc::Sender<InEvent>,
+        topic_rx: broadcast::Receiver<OutEvent>,
+        reply: oneshot::Sender<SubscribeResult>,
+    },
+    Shutdown {
+        reply: oneshot::Sender<()>,
+    },
+}
+
+pub struct PandaActor {
+    store: MemoryStore<LogId, RhioExtensions>,
+    topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
+    topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
+    topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<(Message, MessageMeta)>>,
+    broadcast_join: broadcast::Sender<TopicId>,
+    joined_topics: HashSet<TopicId>,
+    inbox: mpsc::Receiver<ToPandaActor>,
+}
+
+impl PandaActor {
+    pub fn new(inbox: mpsc::Receiver<ToPandaActor>) -> Self {
+        let store: MemoryStore<LogId, RhioExtensions> = MemoryStore::new();
+        let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
+
+        Self {
+            store,
+            topic_gossip_tx: HashMap::default(),
+            topic_topic_rx: StreamMap::default(),
+            topic_subscribers_tx: HashMap::new(),
+            broadcast_join,
+            joined_topics: HashSet::new(),
+            inbox,
+        }
+    }
+
+    pub async fn run(mut self) -> Result<()> {
+        // Take oneshot sender from outside API awaited by `shutdown` call and fire it as soon as
+        // shutdown completed
+        let shutdown_completed_signal = self.run_inner().await;
+        if let Err(err) = self.shutdown().await {
+            error!(?err, "error during shutdown");
+        }
+
+        drop(self);
+
+        match shutdown_completed_signal {
+            Ok(reply_tx) => {
+                reply_tx.send(()).ok();
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn run_inner(&mut self) -> Result<oneshot::Sender<()>> {
+        loop {
+            tokio::select! {
+                Some(msg) = self.inbox.recv() => {
+                    match msg {
+                        ToPandaActor::Shutdown { reply } => {
+                            break Ok(reply);
+                        }
+                        msg => {
+                            if let Err(err) = self.on_actor_message(msg).await {
+                                break Err(err);
+                            }
+                        }
+                    }
+                },
+                Some((topic_id, msg)) = self.topic_topic_rx.next() => {
+                    self
+                        .on_gossip_event(topic_id, msg)
+                        .await;
+                }
+            }
+        }
+    }
+
+    async fn send_operation(&mut self, topic: TopicId, operation: GossipOperation) -> Result<()> {
+        match self.topic_gossip_tx.get_mut(&topic) {
+            Some(tx) => {
+                tx.send(InEvent::Message {
+                    bytes: operation.to_bytes(),
+                })
+                .await
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Attempted to send operation on unknown topic {topic:?}"
+                ))
+            }
+        }?;
+        Ok(())
+    }
+
+    async fn on_actor_message(&mut self, msg: ToPandaActor) -> Result<bool> {
+        match msg {
+            ToPandaActor::Publish {
+                topic,
+                message,
+                reply,
+            } => {
+                let result = self.on_publish(topic, message).await;
+                reply.send(result).ok();
+            }
+            ToPandaActor::Subscribe {
+                topic,
+                topic_tx,
+                topic_rx,
+                reply,
+            } => {
+                let result = self.on_subscribe(topic, topic_tx, topic_rx).await;
+                reply.send(result).ok();
+            }
+            ToPandaActor::Shutdown { .. } => {
+                unreachable!("handled in run_inner");
+            }
+        }
+
+        Ok(true)
+    }
+
+    async fn on_subscribe(
+        &mut self,
+        topic: TopicId,
+        topic_tx: mpsc::Sender<InEvent>,
+        mut topic_rx: broadcast::Receiver<OutEvent>,
+    ) -> Result<(
+        broadcast::Receiver<(Message, MessageMeta)>,
+        Pin<Box<dyn Future<Output = ()> + Send>>,
+    )> {
+        // If we didn't already subscribe to this topic, then add the topic gossip channels to our
+        // sender and receiver maps
+        if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx.entry(topic) {
+            entry.insert(topic_tx);
+
+            let rx_stream = Box::pin(async_stream::stream! {
+              while let Ok(item) = topic_rx.recv().await {
+                  yield item;
+              }
+            });
+
+            self.topic_topic_rx.insert(topic, rx_stream);
+        }
+
+        // Get a receiver channel which will be sent decoded gossip events arriving on this topic
+        let rx = if let Some(tx) = self.topic_subscribers_tx.get(&topic) {
+            tx.subscribe()
+        } else {
+            let (tx, rx) = broadcast::channel(128);
+            self.topic_subscribers_tx.insert(topic, tx);
+            rx
+        };
+
+        // Subscribe to the broadcast channel which receives "topic joined" events
+        let mut joined_rx = self.broadcast_join.subscribe();
+
+        // Flag if the topic has already been joined
+        let has_joined = self.joined_topics.contains(&topic);
+
+        // Future which returns when the topic has been joined (or is already joined)
+        let fut = async move {
+            if has_joined {
+                return;
+            }
+            loop {
+                let joined_topic = joined_rx.recv().await.expect("channel is not dropped");
+                if joined_topic == topic {
+                    return;
+                }
+            }
+        };
+
+        Ok((rx, fut.boxed()))
+    }
+
+    async fn on_publish(&mut self, topic: TopicId, message: Message) -> Result<MessageMeta> {
+        // // Create a p2panda operation which contains a topic message in it's body. The topic id
+        // // will be used in the log id.
+        // let operation = self.create_operation(topic, message).await?;
+        //
+        // // Send the operation on it's gossip topic.
+        // self.send_operation(topic, operation.clone()).await?;
+        //
+        // // Construct the message meta data which will be sent to any subscribing clients along
+        // // with the topic message itself.
+        // let message_context = MessageMeta {
+        //     operation_timestamp: operation.header.timestamp,
+        //     delivered_from: self.private_key.public_key(),
+        //     received_at: time::SystemTime::now()
+        //         .duration_since(SystemTime::UNIX_EPOCH)
+        //         .expect("can calculate duration since UNIX_EPOCH")
+        //         .as_secs(),
+        // };
+        // Ok(message_context)
+        todo!();
+    }
+
+    async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
+        match event {
+            OutEvent::Ready => {
+                self.joined_topics.insert(topic);
+                self.broadcast_join
+                    .send(topic)
+                    .expect("broadcast_join channel not dropped");
+            }
+            OutEvent::Message {
+                bytes,
+                delivered_from,
+            } => {
+                // Ingest the operation, this performs all expected validation.
+                let operation = match GossipOperation::from_bytes(&bytes) {
+                    Ok(operation) => operation,
+                    Err(err) => {
+                        error!("Failed to decode gossip operation: {err}");
+                        return;
+                    }
+                };
+
+                match ingest(
+                    &mut self.store,
+                    operation.header.clone(),
+                    Some(operation.body()),
+                ) {
+                    Ok(result) => result,
+                    Err(err) => {
+                        error!("Failed to ingest operation from {delivered_from}: {err}");
+                        return;
+                    }
+                };
+
+                debug!(
+                    "Received operation: {} {} {} {}",
+                    operation.header.public_key,
+                    operation.header.seq_num,
+                    operation.header.timestamp,
+                    operation.header.hash(),
+                );
+
+                let message_context = MessageMeta {
+                    operation_timestamp: operation.header.timestamp,
+                    delivered_from,
+                    received_at: time::SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .expect("can calculate duration since UNIX_EPOCH")
+                        .as_secs(),
+                };
+
+                let tx = self
+                    .topic_subscribers_tx
+                    .get(&topic)
+                    .expect("topic is known");
+
+                let _ = tx.send((operation.message.clone(), message_context));
+            }
+        }
+    }
+
+    async fn shutdown(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
