@@ -4,17 +4,18 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use async_nats::jetstream::Context as JetstreamContext;
+use async_nats::{Client as NatsClient, ConnectOptions};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{LocalDiscovery, Network, NetworkBuilder, SharedAbortingJoinHandle};
+use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore as LogMemoryStore;
 use s3::Region;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::task::LocalPoolHandle;
-use tracing::error;
 
 use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
@@ -22,14 +23,19 @@ use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
 use crate::topic_id::TopicId;
 
-/// Network node which handles connecting to known/discovered peers, gossiping p2panda operations
-/// over topics and syncing blob data using the BAO protocol.
+// @TODO: Give rhio a cool network id
+const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
+
+/// p2panda network node which handles connecting to other peers, syncing operations over topics
+/// and blobs using the bao protocol.
 #[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
     pub config: Config,
     network: Network,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: SharedAbortingJoinHandle<()>,
+    nats_client: NatsClient,
+    nats_jetstream: JetstreamContext,
 }
 
 impl<T> Node<T>
@@ -43,18 +49,26 @@ where
 
         let log_store: LogMemoryStore<LogId, RhioExtensions> = LogMemoryStore::new();
 
-        let mut network_builder = NetworkBuilder::from_config(config.network_config.clone())
-            .private_key(private_key.clone());
+        let mut network_config = NetworkConfig {
+            bind_port: config.node.bind_port,
+            network_id: RHIO_NETWORK_ID,
+            ..Default::default()
+        };
 
-        match LocalDiscovery::new() {
-            Ok(local) => network_builder = network_builder.discovery(local),
-            Err(err) => error!("Failed to initiate local discovery: {err}"),
+        for node in &config.node.known_nodes {
+            network_config.direct_node_addresses.push((
+                node.public_key,
+                node.direct_addresses.clone(),
+                None,
+            ));
         }
+
+        let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
 
         let (network, actor_handle) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
             let blob_store = FilesystemStore::load(blobs_dir).await?;
-            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let (network, blobs) = Blobs::from_builder(builder, blob_store).await?;
             let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
@@ -66,7 +80,7 @@ where
         } else {
             // Spawn a rhio actor backed by an in memory blob store
             let blob_store = BlobsMemoryStore::new();
-            let (network, blobs) = Blobs::from_builder(network_builder, blob_store).await?;
+            let (network, blobs) = Blobs::from_builder(builder, blob_store).await?;
             let actor_handle = RhioActor::spawn(
                 private_key.clone(),
                 blobs,
@@ -77,17 +91,26 @@ where
             (network, actor_handle)
         };
 
+        // @TODO: Add auth options to NATS server config
+        let nats_client =
+            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
+                .await
+                .context("connecting to NATS server")?;
+        let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
+
         let node = Node {
             config,
             network,
             actor_tx,
             actor_handle: actor_handle.into(),
+            nats_client,
+            nats_jetstream,
         };
 
         Ok(node)
     }
 
-    /// Returns the PublicKey of this node which is used as it's unique network id.
+    /// Returns the PublicKey of this node which is used as it's ID.
     ///
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
@@ -97,16 +120,16 @@ where
 
     /// Returns the direct addresses of this Node.
     ///
-    /// The direct addresses of the Node are those that could be used by other nodes
-    /// to establish direct connectivity, depending on the network situation. The yielded lists of
-    /// direct addresses contain both the locally-bound addresses and the Node's publicly
-    /// reachable addresses discovered through mechanisms such as STUN and port mapping. Hence
-    /// usually only a subset of these will be applicable to a certain remote node.
+    /// The direct addresses of the Node are those that could be used by other nodes to establish
+    /// direct connectivity, depending on the network situation. The yielded lists of direct
+    /// addresses contain both the locally-bound addresses and the Node's publicly reachable
+    /// addresses discovered through mechanisms such as STUN and port mapping. Hence usually only a
+    /// subset of these will be applicable to a certain remote node.
     pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
         self.network.direct_addresses().await
     }
 
-    /// Import a blob into the node's blob store and sync it with the `minio` backend.
+    /// Import a blob into the node's blob store and sync it with the MinIO database.
     pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash> {
         let hash = match import_path {
             // Import a file from the local filesystem
@@ -131,8 +154,8 @@ where
 
     /// Import a blob from the filesystem.
     ///
-    /// Add a blob from a path on the local filesystem to the dedicated blob store and
-    /// make it available on the network identified by it's Blake3 hash.
+    /// Add a blob from a path on the local filesystem to the dedicated blob store and make it
+    /// available on the network identified by it's BLAKE3 hash.
     async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -147,7 +170,7 @@ where
     /// Import a blob from a url.
     ///
     /// Download a blob from a url, move it into the dedicated blob store and make it available on
-    /// the network identified by it's Blake3 hash.
+    /// the network identified by it's BLAKE3 hash.
     async fn import_blob_url(&self, url: String) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -197,7 +220,8 @@ where
 
     /// Download a blob from the network.
     ///
-    /// Attempt to download a blob from peers on the network and place it into the nodes blob store.
+    /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
+    /// bucket.
     pub async fn download_blob(&self, hash: Hash) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.actor_tx
@@ -311,21 +335,18 @@ mod tests {
     use p2panda_net::network::OutEvent;
 
     use crate::config::Config;
-    use crate::logging::setup_tracing;
     use crate::private_key::generate_ephemeral_private_key;
 
     use super::Node;
 
     #[tokio::test]
     async fn join_gossip_overlay() {
-        setup_tracing();
-
         let private_key_1 = generate_ephemeral_private_key();
         let private_key_2 = generate_ephemeral_private_key();
 
         let config_1 = Config::default();
         let mut config_2 = Config::default();
-        config_2.network_config.bind_port = 2023;
+        config_2.node.bind_port = 2023;
 
         // Spawn the first node
         let node_1: Node<()> = Node::spawn(config_1, private_key_1).await.unwrap();

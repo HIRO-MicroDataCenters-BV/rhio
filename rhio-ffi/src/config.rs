@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use rhio::config::{parse_s3_credentials, parse_ticket, parse_url, Config as InnerConfig};
+use rhio::config::{parse_s3_credentials, Config as InnerConfig};
 
 use crate::error::RhioError;
 use crate::types::Path;
@@ -13,8 +13,6 @@ pub struct Cli {
     pub private_key: Option<Path>,
     #[uniffi(default = [])]
     pub ticket: Vec<String>,
-    #[uniffi(default = None)]
-    pub sync_dir: Option<String>,
     #[uniffi(default = None)]
     pub blobs_dir: Option<String>,
     #[uniffi(default = None)]
@@ -56,18 +54,10 @@ impl Config {
         let mut inner = InnerConfig::default();
 
         if let Some(bind_port) = cli.bind_port {
-            inner.network_config.bind_port = bind_port;
+            inner.node.bind_port = bind_port;
         }
 
-        inner.network_config.private_key = cli.private_key.map(PathBuf::from);
-
-        inner.network_config.direct_node_addresses = cli
-            .ticket
-            .iter()
-            .map(|addr| parse_ticket(addr).map(Into::into))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        inner.sync_dir = cli.sync_dir.map(PathBuf::from);
+        inner.node.private_key = cli.private_key.map(PathBuf::from);
 
         inner.blobs_dir = cli.blobs_dir.map(PathBuf::from);
 
@@ -87,10 +77,6 @@ impl Config {
             inner.minio.credentials =
                 Some(parse_s3_credentials(&credentials_str).expect("invalid credentials"))
         };
-
-        inner.network_config.relay = cli
-            .relay
-            .map(|url_str| parse_url(&url_str).expect("invalid relay url"));
 
         Ok(Self { inner })
     }

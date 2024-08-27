@@ -3,10 +3,22 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-pub fn setup_tracing() {
+pub fn setup_tracing(filter: Option<String>) {
+    let default = "rhio=INFO"
+        .parse()
+        .expect("hard-coded default directive should be valid");
+
+    let builder = EnvFilter::builder().with_default_directive(default);
+
+    let filter = if let Some(filter) = filter {
+        builder.parse_lossy(filter)
+    } else {
+        builder.parse_lossy("")
+    };
+
     tracing_subscriber::registry()
         .with(Layer::default())
-        .with(EnvFilter::from_default_env())
+        .with(filter)
         .try_init()
         .ok();
 }

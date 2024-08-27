@@ -25,5 +25,5 @@ tokio = "1.39.2"
 futures = "0.3.30"
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 
-[dependencies-build]
+[build-dependencies]
 uniffi = { version = "0.28.0", features = ["build"] }

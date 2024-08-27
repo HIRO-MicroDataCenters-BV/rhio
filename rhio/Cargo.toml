@@ -2,28 +2,25 @@
 name = "rhio"
 version = "0.1.0"
 edition = "2021"
+default-run = "rhio"
 
 [lib]
 name = "rhio"
 
-[[example]]
-name = "hello"
-
-[[example]]
-name = "sync"
-
 [dependencies]
 anyhow = "1.0.86"
+async-nats = "0.35.1"
 async-stream = "0.3.5"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
-figment = { version = "0.10.19", features = ["env"] }
+directories = "5.0.1"
+figment = { version = "0.10.19", features = ["env", "toml"] }
 futures-lite = "2.3.0"
 hex = "0.4.3"
 iroh-blobs = { version = "0.22.0", features = ["fs-store"], default-features = false }
 p2panda-blobs = { path = "../p2panda-blobs" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", branch = "v2", default-features = false }
 p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 reqwest = { version = "0.12.5", features = ["stream"] }
 rust-s3 = "0.34.0"
@@ -36,4 +33,3 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"
-notify-debouncer-full = "0.3.1"
