@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use p2panda_core::{Body, Hash, Header, PublicKey};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::extensions::RhioExtensions;
 

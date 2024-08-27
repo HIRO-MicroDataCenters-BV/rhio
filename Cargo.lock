@@ -3983,6 +3983,7 @@ dependencies = [
  "directories",
  "figment",
  "futures-lite 2.3.0",
+ "futures-util",
  "hex",
  "iroh-blobs",
  "p2panda-blobs",

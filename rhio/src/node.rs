@@ -41,7 +41,6 @@ impl Node {
         }
 
         let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
-        let node_id = private_key.public_key();
 
         let (network, blobs) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
@@ -146,12 +145,15 @@ impl Node {
         stream_name: String,
         filter_subject: Option<String>,
     ) -> Result<()> {
-        // @TODO: Generate topic from stream name and filter subject
-        // let topic = [0; 32];
-        // let nats_consumer_rx = self.nats.subscribe(stream_name, filter_subject).await?;
-        // let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
-
-        Ok(())
+        let (reply, reply_rx) = oneshot::channel();
+        self.node_actor_tx
+            .send(ToNodeActor::Subscribe {
+                stream_name,
+                filter_subject,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
     }
 
     /// Shutdown the node.

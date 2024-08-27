@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
-use rhio::nats::ConsumerEvent;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-use tracing::{error, info};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -31,30 +30,6 @@ async fn main() -> Result<()> {
     info!("subscribe to NATS stream");
     node.subscribe("my_test".into(), Some("foo.test".into()))
         .await?;
-
-    // loop {
-    //     tokio::select! {
-    //         Ok(event) = rx.recv() => {
-    //             match event {
-    //                 ConsumerEvent::InitializationCompleted => {
-    //                     info!("initialization succeeded");
-    //                 },
-    //                 ConsumerEvent::InitializationFailed => {
-    //                     error!("initialization failed");
-    //                 },
-    //                 ConsumerEvent::StreamFailed => {
-    //                     error!("stream failed");
-    //                 },
-    //                 ConsumerEvent::Message { payload, .. } => {
-    //                     info!("message received {:?}", payload);
-    //                 },
-    //             }
-    //         },
-    //         Ok(_) = tokio::signal::ctrl_c() => {
-    //             break;
-    //         },
-    //     }
-    // }
 
     tokio::signal::ctrl_c().await?;
 
