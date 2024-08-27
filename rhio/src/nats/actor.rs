@@ -26,11 +26,12 @@ pub enum ToNatsActor {
         /// the ones we're interested in. This forms "filtered views" on top of streams.
         filter_subject: Option<String>,
 
-        /// Oneshot channel to propagate errors and "readyness" state.
+        /// Channel to receive all (old and new) messages from this subscription, errors and
+        /// "readyness" state.
         ///
         /// An initial downloading of all persisted data from the NATS server is required when
-        /// starting to subscribe to a subject. This method returns an oneshot receiver the user
-        /// can await to understand when the initialization has finished.
+        /// starting to subscribe to a subject. The channel will eventually send an event to the
+        /// user to signal when the initialization has finished.
         reply: oneshot::Sender<Result<broadcast::Receiver<ConsumerEvent>>>,
     },
     Shutdown {
