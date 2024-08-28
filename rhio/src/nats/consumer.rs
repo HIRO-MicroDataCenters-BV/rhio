@@ -29,25 +29,18 @@ pub enum ToConsumerActor {}
 #[derive(Debug, Clone)]
 pub enum JetStreamEvent {
     InitCompleted {
-        stream_name: StreamName,
-        filter_subject: FilterSubject,
         topic: TopicId,
     },
     InitFailed {
         stream_name: StreamName,
-        filter_subject: FilterSubject,
-        topic: TopicId,
         reason: String,
     },
     StreamFailed {
         stream_name: StreamName,
-        filter_subject: FilterSubject,
-        topic: TopicId,
         reason: String,
     },
     Message {
         payload: Vec<u8>,
-        subject: Subject,
         topic: TopicId,
     },
 }
@@ -76,7 +69,6 @@ pub struct ConsumerActor {
     initial_stream_height: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
-    filter_subject: FilterSubject,
     topic: TopicId,
 }
 
@@ -87,7 +79,6 @@ impl ConsumerActor {
         messages: Messages,
         initial_stream_height: u64,
         stream_name: StreamName,
-        filter_subject: FilterSubject,
         topic: TopicId,
     ) -> Self {
         Self {
@@ -97,7 +88,6 @@ impl ConsumerActor {
             initial_stream_height,
             status: ConsumerStatus::Initializing,
             stream_name,
-            filter_subject,
             topic,
         }
     }
@@ -130,16 +120,12 @@ impl ConsumerActor {
                 ConsumerStatus::Initializing => {
                     self.subscribers_tx.send(JetStreamEvent::InitFailed {
                         stream_name: self.stream_name.clone(),
-                        filter_subject: self.filter_subject.clone(),
-                        topic: self.topic.clone(),
                         reason: err.to_string(),
                     })?;
                 }
                 ConsumerStatus::Streaming => {
                     self.subscribers_tx.send(JetStreamEvent::StreamFailed {
                         stream_name: self.stream_name.clone(),
-                        filter_subject: self.filter_subject.clone(),
-                        topic: self.topic.clone(),
                         reason: err.to_string(),
                     })?;
                 }
@@ -160,7 +146,6 @@ impl ConsumerActor {
 
         self.subscribers_tx.send(JetStreamEvent::Message {
             payload: message.payload.to_bytes(),
-            subject: message.subject.to_string(),
             topic: self.topic.clone(),
         })?;
 
@@ -169,8 +154,6 @@ impl ConsumerActor {
             if info.stream_sequence >= self.initial_stream_height {
                 self.status = ConsumerStatus::Streaming;
                 self.subscribers_tx.send(JetStreamEvent::InitCompleted {
-                    filter_subject: self.filter_subject.clone(),
-                    stream_name: self.stream_name.clone(),
                     topic: self.topic.clone(),
                 })?;
             }
@@ -266,7 +249,6 @@ impl Consumer {
             messages,
             initial_stream_height,
             stream_name,
-            filter_subject,
             topic,
         );
 
