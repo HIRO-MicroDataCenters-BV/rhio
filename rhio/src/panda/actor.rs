@@ -24,7 +24,7 @@ pub type SubscribeResult = Result<(
 )>;
 
 pub enum ToPandaActor {
-    Store {
+    Ingest {
         topic: TopicId,
         operation: Operation<RhioExtensions>,
         reply: oneshot::Sender<Result<()>>,
@@ -126,12 +126,12 @@ impl PandaActor {
 
     async fn on_actor_message(&mut self, msg: ToPandaActor) -> Result<bool> {
         match msg {
-            ToPandaActor::Store {
+            ToPandaActor::Ingest {
                 topic,
                 operation,
                 reply,
             } => {
-                let result = self.on_store(topic, operation).await;
+                let result = self.on_ingest(topic, operation).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe { topic, reply } => {
@@ -200,7 +200,7 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    async fn on_store(
+    async fn on_ingest(
         &mut self,
         topic: TopicId,
         operation: Operation<RhioExtensions>,
