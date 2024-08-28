@@ -1,4 +1,7 @@
 mod actor;
+mod extensions;
+mod messages;
+mod operations;
 mod topic_id;
 
 use std::future::Future;
@@ -9,8 +12,8 @@ use p2panda_net::{Network, SharedAbortingJoinHandle};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::messages::{Message, MessageMeta};
 use crate::panda::actor::{PandaActor, ToPandaActor};
+pub use crate::panda::messages::{Message, MessageMeta};
 pub use crate::panda::topic_id::TopicId;
 
 #[derive(Debug)]

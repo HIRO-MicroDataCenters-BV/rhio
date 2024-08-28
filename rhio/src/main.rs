@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rhio::config::load_config;
-use rhio::logging::setup_tracing;
-use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
+use rhio::tracing::setup_tracing;
+use rhio::Node;
 use tracing::info;
 
 #[tokio::main]

@@ -2,7 +2,7 @@ use anyhow::Result;
 use p2panda_core::{validate_backlink, validate_operation, Body, Extension, Header, Operation};
 use p2panda_store::{LogStore, OperationStore};
 
-use crate::extensions::{LogId, RhioExtensions};
+use crate::panda::extensions::{LogId, RhioExtensions};
 
 pub fn ingest<S>(
     store: &mut S,

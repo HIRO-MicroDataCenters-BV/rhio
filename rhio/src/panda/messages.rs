@@ -5,7 +5,7 @@ use p2panda_core::{Body, Hash, Header, PublicKey};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::extensions::RhioExtensions;
+use crate::panda::extensions::RhioExtensions;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageMeta {

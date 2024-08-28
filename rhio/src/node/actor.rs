@@ -6,9 +6,8 @@ use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 use crate::blobs::Blobs;
-use crate::messages::{Message, MessageMeta};
 use crate::nats::{ConsumerEvent, Nats};
-use crate::panda::{Panda, TopicId};
+use crate::panda::{Message, MessageMeta, Panda, TopicId};
 
 pub enum ToNodeActor {
     Subscribe {

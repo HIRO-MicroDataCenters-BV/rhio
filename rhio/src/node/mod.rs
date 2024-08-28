@@ -1,3 +1,5 @@
+mod actor;
+
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
@@ -7,10 +9,10 @@ use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHan
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
-use crate::actor::{NodeActor, ToNodeActor};
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
+use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::panda::Panda;
 
 // @TODO: Give rhio a cool network id
