@@ -1,17 +1,18 @@
 use std::time::SystemTime;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use p2panda_core::{
     validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
 };
 use p2panda_store::{LogStore, OperationStore};
 
-use crate::extensions::{LogId, RhioExtensions};
+use crate::extensions::{RhioExtensions, Subject};
+use crate::log_id::LogId;
 
 pub fn create_operation<S>(
     store: &mut S,
     private_key: &PrivateKey,
-    log_id: &LogId,
+    subject: &str,
     body: &[u8],
 ) -> Result<Operation<RhioExtensions>>
 where
@@ -20,6 +21,8 @@ where
     let body = Body::new(body);
 
     let public_key = private_key.public_key();
+    let log_id = LogId::new(&public_key, &subject);
+
     let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
     let (seq_num, backlink) = match latest_operation {
@@ -32,7 +35,7 @@ where
         .as_secs();
 
     let extensions = RhioExtensions {
-        log_id: Some(log_id.clone()),
+        subject: Some(subject.to_owned()),
     };
 
     let mut header = Header {
@@ -55,7 +58,7 @@ where
         body: Some(body.clone()),
     };
 
-    store.insert_operation(operation.clone(), log_id.to_owned())?;
+    store.insert_operation(operation.clone(), log_id)?;
 
     Ok(operation)
 }
@@ -75,9 +78,12 @@ where
     };
     validate_operation(&operation)?;
 
-    let log_id: LogId = header
+    let subject: Subject = header
         .extract()
-        .unwrap_or_else(|| header.clone().public_key.to_string());
+        .ok_or(anyhow!("missing 'subject' field in header"))?;
+
+    let log_id = LogId::new(&header.public_key, &subject);
+
     let latest_operation = store
         .latest_operation(operation.header.public_key, log_id.clone())
         .context("critical store failure")?;
@@ -87,7 +93,7 @@ where
     }
 
     store
-        .insert_operation(operation.clone(), log_id.to_owned())
+        .insert_operation(operation.clone(), log_id)
         .context("critical store failure")?;
 
     Ok(operation)
@@ -103,4 +109,29 @@ pub fn encode_operation(header: Header<RhioExtensions>, body: Option<Body>) -> R
     let mut bytes = Vec::new();
     ciborium::ser::into_writer(&(header, body), &mut bytes)?;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda_core::PrivateKey;
+    use p2panda_store::MemoryStore;
+
+    use super::{create_operation, decode_operation, encode_operation};
+
+    #[test]
+    fn operation_roundtrips() {
+        let private_key = PrivateKey::new();
+        let mut store = MemoryStore::new();
+        let subject = "icecreams.vanilla.dropped".into();
+        for i in 0..16 {
+            let body = format!("Oh, no! {i}");
+            let operation =
+                create_operation(&mut store, &private_key, subject, body.as_bytes()).unwrap();
+            let encoded_operation =
+                encode_operation(operation.header.clone(), operation.body.clone()).unwrap();
+            let decoded_operation = decode_operation(&encoded_operation).unwrap();
+            assert_eq!(operation.header, decoded_operation.0);
+            assert_eq!(operation.body, decoded_operation.1);
+        }
+    }
 }
