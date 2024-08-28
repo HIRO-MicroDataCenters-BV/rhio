@@ -52,8 +52,7 @@ impl Panda {
         self.panda_actor_tx
             .send(ToPandaActor::Subscribe { topic, reply })
             .await?;
-        let result = reply_rx.await?;
-        result.map(|(rx, ready)| (rx, ready))
+        reply_rx.await?
     }
 
     /// Validates and stores a given operation in the in-memory cache.

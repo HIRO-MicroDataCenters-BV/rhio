@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
@@ -33,7 +35,7 @@ async fn main() -> Result<()> {
     node.subscribe(
         "my_test".into(),
         Some("test.*".into()),
-        TopicId::from_str("test"),
+        TopicId::from_str("test")?,
     )
     .await?;
 

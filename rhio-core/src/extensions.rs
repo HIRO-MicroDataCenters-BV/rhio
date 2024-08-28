@@ -30,6 +30,6 @@ impl Extension<Subject> for RhioExtensions {
 
 impl Extension<Hash> for RhioExtensions {
     fn extract(&self) -> Option<Hash> {
-        self.blob_hash.clone()
+        self.blob_hash
     }
 }

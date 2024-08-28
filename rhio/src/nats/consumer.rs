@@ -146,16 +146,15 @@ impl ConsumerActor {
 
         self.subscribers_tx.send(JetStreamEvent::Message {
             payload: message.payload.to_bytes(),
-            topic: self.topic.clone(),
+            topic: self.topic,
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
             let info = message.info().map_err(|err| anyhow!(err))?;
             if info.stream_sequence >= self.initial_stream_height {
                 self.status = ConsumerStatus::Streaming;
-                self.subscribers_tx.send(JetStreamEvent::InitCompleted {
-                    topic: self.topic.clone(),
-                })?;
+                self.subscribers_tx
+                    .send(JetStreamEvent::InitCompleted { topic: self.topic })?;
             }
         }
 

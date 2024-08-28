@@ -102,7 +102,7 @@ impl Node {
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
     pub fn id(&self) -> PublicKey {
-        self.node_id.clone()
+        self.node_id
     }
 
     /// Returns the direct addresses of this Node.

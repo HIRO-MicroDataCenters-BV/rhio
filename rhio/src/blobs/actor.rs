@@ -1,10 +1,7 @@
-use std::io;
-use std::path::{Path, PathBuf};
-
 use anyhow::{anyhow, Result};
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
-use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
+use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent};
 use p2panda_core::Hash;
 use s3::creds::Credentials;
 use s3::{Bucket, BucketConfiguration, Region};
@@ -13,19 +10,6 @@ use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 pub enum ToBlobsActor {
-    ImportFile {
-        path: PathBuf,
-        reply: oneshot::Sender<Result<Hash>>,
-    },
-    ImportUrl {
-        url: String,
-        reply: oneshot::Sender<Result<Hash>>,
-    },
-    ExportBlobFilesystem {
-        hash: Hash,
-        path: PathBuf,
-        reply: oneshot::Sender<Result<()>>,
-    },
     ExportBlobMinio {
         hash: Hash,
         bucket_name: String,
@@ -102,27 +86,6 @@ where
 
     async fn on_actor_message(&mut self, msg: ToBlobsActor) -> Result<()> {
         match msg {
-            ToBlobsActor::ImportUrl { url, reply } => {
-                let result = self.on_import_url(&url).await;
-                if let Ok(hash) = result {
-                    info!("imported blob: {hash} {url}");
-                }
-                reply.send(result).ok();
-            }
-            ToBlobsActor::ImportFile { path, reply } => {
-                let result = self.on_import_blob(&path).await;
-                if let Ok(hash) = result {
-                    info!("imported blob: {hash} {path:?}");
-                }
-                reply.send(result).ok();
-            }
-            ToBlobsActor::ExportBlobFilesystem { path, reply, hash } => {
-                let result = self.on_export_blob_filesystem(hash, &path).await;
-                if result.is_ok() {
-                    info!("exported blob to filesystem: {hash} {path:?}");
-                }
-                reply.send(result).ok();
-            }
             ToBlobsActor::DownloadBlob { hash, reply } => {
                 let result = self.on_download_blob(hash).await;
                 if result.is_ok() {
@@ -153,42 +116,6 @@ where
         Ok(())
     }
 
-    async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
-        let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
-
-        let event = stream
-            .next()
-            .await
-            .expect("no event arrived on blob import stream");
-
-        let hash = match event {
-            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
-            ImportBlobEvent::Done(hash) => Ok(hash),
-        }?;
-
-        Ok(hash)
-    }
-
-    async fn on_import_url(&mut self, url: &String) -> Result<Hash> {
-        let stream = reqwest::get(url)
-            .await?
-            .bytes_stream()
-            .map(|result| result.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
-        let mut stream = Box::pin(self.blobs.import_blob_from_stream(stream).await);
-
-        let event = stream
-            .next()
-            .await
-            .expect("no event arrived on blob import stream");
-
-        let hash = match event {
-            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
-            ImportBlobEvent::Done(hash) => Ok(hash),
-        }?;
-
-        Ok(hash)
-    }
-
     async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
         let mut stream = Box::pin(self.blobs.download_blob(hash).await);
         while let Some(event) = stream.next().await {
@@ -200,10 +127,6 @@ where
             }
         }
         Ok(())
-    }
-
-    async fn on_export_blob_filesystem(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
-        self.blobs.export_blob(hash, path).await
     }
 
     async fn on_export_blob_minio(

@@ -1,7 +1,5 @@
-use std::fmt::Display;
 use std::net::SocketAddr;
-use std::path::{absolute, PathBuf};
-use std::str::FromStr;
+use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -84,15 +82,6 @@ struct Cli {
     #[arg(short = 'l', long, value_name = "LEVEL")]
     #[serde(skip_serializing_if = "Option::is_none")]
     log_level: Option<String>,
-}
-
-pub fn parse_import_path(value: &str) -> Result<ImportPath> {
-    if value.starts_with("http:") || value.starts_with("https:") {
-        Ok(ImportPath::Url(value.to_string()))
-    } else {
-        let absolute_path = absolute(PathBuf::from(value))?;
-        Ok(ImportPath::File(absolute_path))
-    }
 }
 
 pub fn parse_s3_credentials(value: &str) -> Result<Credentials> {
@@ -217,27 +206,4 @@ impl Default for NodeConfig {
 pub struct KnownNode {
     pub public_key: PublicKey,
     pub direct_addresses: Vec<SocketAddr>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum ImportPath {
-    File(PathBuf),
-    Url(String),
-}
-
-impl FromStr for ImportPath {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        parse_import_path(s)
-    }
-}
-
-impl Display for ImportPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ImportPath::File(path) => write!(f, "{}", path.to_string_lossy()),
-            ImportPath::Url(url) => write!(f, "{url}"),
-        }
-    }
 }

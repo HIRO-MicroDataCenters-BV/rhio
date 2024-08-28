@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
@@ -8,10 +10,14 @@ impl TopicId {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
+}
 
-    pub fn from_str(value: &str) -> Self {
+impl FromStr for TopicId {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let hash = Hash::new(value);
-        Self(*hash.as_bytes())
+        Ok(Self(*hash.as_bytes()))
     }
 }
 
