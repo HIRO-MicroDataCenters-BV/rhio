@@ -8,7 +8,7 @@ pub mod messages;
 pub mod nats;
 pub mod node;
 pub mod operations;
-pub mod p2panda;
+pub mod panda;
 pub mod private_key;
 
 pub const BLOB_ANNOUNCE_TOPIC: &str = "rhio/blob_announce";

@@ -11,7 +11,7 @@ use crate::actor::{NodeActor, ToNodeActor};
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
-use crate::p2panda::Panda;
+use crate::panda::Panda;
 
 // @TODO: Give rhio a cool network id
 const RHIO_NETWORK_ID: [u8; 32] = [0; 32];

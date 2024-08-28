@@ -16,7 +16,7 @@ use tracing::{debug, error};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::ingest;
-use crate::p2panda::topic_id::TopicId;
+use crate::panda::topic_id::TopicId;
 
 pub type SubscribeResult = Result<(
     broadcast::Receiver<(Message, MessageMeta)>,

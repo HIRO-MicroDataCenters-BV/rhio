@@ -10,8 +10,8 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
 use crate::messages::{Message, MessageMeta};
-use crate::p2panda::actor::{PandaActor, ToPandaActor};
-use crate::p2panda::topic_id::TopicId;
+use crate::panda::actor::{PandaActor, ToPandaActor};
+use crate::panda::topic_id::TopicId;
 
 #[derive(Debug)]
 pub struct Panda {

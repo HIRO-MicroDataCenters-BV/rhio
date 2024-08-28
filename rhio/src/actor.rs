@@ -7,7 +7,7 @@ use tracing::{error, info};
 
 use crate::blobs::Blobs;
 use crate::nats::{ConsumerEvent, Nats};
-use crate::p2panda::Panda;
+use crate::panda::Panda;
 
 pub enum ToNodeActor {
     Subscribe {
