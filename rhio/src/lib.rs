@@ -3,7 +3,6 @@ pub mod config;
 mod nats;
 mod node;
 mod panda;
-pub mod private_key;
 pub mod tracing;
 
 pub const BLOB_ANNOUNCE_TOPIC: &str = "rhio/blob_announce";
