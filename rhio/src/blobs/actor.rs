@@ -9,7 +9,7 @@ use p2panda_core::Hash;
 use s3::creds::Credentials;
 use s3::{Bucket, BucketConfiguration, Region};
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::{Stream, StreamExt, StreamMap};
+use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 pub enum ToBlobsActor {

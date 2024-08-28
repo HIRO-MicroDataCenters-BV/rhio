@@ -74,8 +74,6 @@ impl PandaActor {
             error!(?err, "error during shutdown");
         }
 
-        drop(self);
-
         match shutdown_completed_signal {
             Ok(reply_tx) => {
                 reply_tx.send(()).ok();
@@ -274,7 +272,8 @@ impl PandaActor {
         }
     }
 
-    async fn shutdown(&mut self) -> Result<()> {
+    async fn shutdown(self) -> Result<()> {
+        self.network.shutdown().await?;
         Ok(())
     }
 }

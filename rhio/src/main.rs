@@ -20,11 +20,13 @@ async fn main() -> Result<()> {
 
     let node = Node::spawn(config.clone(), private_key.clone()).await?;
 
-    if let Some(addresses) = node.direct_addresses().await {
-        let addresses: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
-        info!("‣ node public key: {}", node.id());
-        info!("‣ node addresses: {}", addresses.join(", "));
-    }
+    let addresses: Vec<String> = node
+        .direct_addresses()
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect();
+    info!("‣ node public key: {}", node.id());
+    info!("‣ node addresses: {}", addresses.join(", "));
 
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
