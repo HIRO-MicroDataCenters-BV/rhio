@@ -1,25 +1,22 @@
 use std::collections::{hash_map, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
-use std::time::{self, SystemTime};
 
 use anyhow::Result;
 use futures_lite::FutureExt;
 use p2panda_core::Operation;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
-use p2panda_store::{MemoryStore, OperationStore};
+use p2panda_store::MemoryStore;
+use rhio_core::{
+    decode_operation, encode_operation, ingest_operation, LogId, RhioExtensions, TopicId,
+};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error};
 
-use crate::panda::extensions::{LogId, RhioExtensions};
-use crate::panda::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
-use crate::panda::operations::ingest_operation;
-use crate::panda::topic_id::TopicId;
-
 pub type SubscribeResult = Result<(
-    broadcast::Receiver<(Message, MessageMeta)>,
+    broadcast::Receiver<Operation<RhioExtensions>>,
     Pin<Box<dyn Future<Output = ()> + Send>>,
 )>;
 
@@ -43,7 +40,7 @@ pub struct PandaActor {
     store: MemoryStore<LogId, RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<(Message, MessageMeta)>>,
+    topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
     broadcast_join: broadcast::Sender<TopicId>,
     joined_topics: HashSet<TopicId>,
     inbox: mpsc::Receiver<ToPandaActor>,
@@ -107,13 +104,15 @@ impl PandaActor {
         }
     }
 
-    async fn send_operation(&mut self, topic: TopicId, operation: GossipOperation) -> Result<()> {
+    async fn send_operation(
+        &mut self,
+        topic: TopicId,
+        operation: Operation<RhioExtensions>,
+    ) -> Result<()> {
         match self.topic_gossip_tx.get_mut(&topic) {
             Some(tx) => {
-                tx.send(InEvent::Message {
-                    bytes: operation.to_bytes(),
-                })
-                .await
+                let bytes = encode_operation(operation.header, operation.body)?;
+                tx.send(InEvent::Message { bytes }).await
             }
             None => {
                 return Err(anyhow::anyhow!(
@@ -150,7 +149,7 @@ impl PandaActor {
         &mut self,
         topic: TopicId,
     ) -> Result<(
-        broadcast::Receiver<(Message, MessageMeta)>,
+        broadcast::Receiver<Operation<RhioExtensions>>,
         Pin<Box<dyn Future<Output = ()> + Send>>,
     )> {
         let (topic_tx, mut topic_rx) = self.network.subscribe(topic.into()).await?;
@@ -202,13 +201,10 @@ impl PandaActor {
 
     async fn on_ingest(
         &mut self,
-        topic: TopicId,
+        _topic: TopicId,
         operation: Operation<RhioExtensions>,
     ) -> Result<()> {
-        // The log id is {PUBLIC_KEY}/{TOPIC_ID} string.
-        let log_id = format!("{}/{}", operation.header.public_key.to_hex(), topic);
-        self.store
-            .insert_operation(operation.clone(), log_id.to_owned())?;
+        ingest_operation(&mut self.store, operation.header, operation.body)?;
         Ok(())
     }
 
@@ -224,7 +220,7 @@ impl PandaActor {
                 bytes,
                 delivered_from,
             } => {
-                let operation = match GossipOperation::from_bytes(&bytes) {
+                let (header, body) = match decode_operation(&bytes) {
                     Ok(operation) => operation,
                     Err(err) => {
                         error!("failed to decode gossip operation: {err}");
@@ -232,11 +228,7 @@ impl PandaActor {
                     }
                 };
 
-                match ingest_operation(
-                    &mut self.store,
-                    operation.header.clone(),
-                    Some(operation.body()),
-                ) {
+                match ingest_operation(&mut self.store, header.clone(), body.clone()) {
                     Ok(result) => result,
                     Err(err) => {
                         error!("failed to ingest operation from {delivered_from}: {err}");
@@ -244,29 +236,19 @@ impl PandaActor {
                     }
                 };
 
+                let hash = header.hash();
+
                 debug!(
                     "Received operation: {} {} {} {}",
-                    operation.header.public_key,
-                    operation.header.seq_num,
-                    operation.header.timestamp,
-                    operation.header.hash(),
+                    header.public_key, header.seq_num, header.timestamp, hash,
                 );
-
-                let message_context = MessageMeta {
-                    operation_timestamp: operation.header.timestamp,
-                    delivered_from,
-                    received_at: time::SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .expect("can calculate duration since UNIX_EPOCH")
-                        .as_secs(),
-                };
 
                 let tx = self
                     .topic_subscribers_tx
                     .get(&topic)
                     .expect("topic is known");
 
-                let _ = tx.send((operation.message.clone(), message_context));
+                let _ = tx.send(Operation { header, body, hash });
             }
         }
     }

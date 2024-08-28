@@ -3991,6 +3991,7 @@ dependencies = [
  "p2panda-net",
  "p2panda-store",
  "reqwest",
+ "rhio-core",
  "rust-s3",
  "serde",
  "tempfile",

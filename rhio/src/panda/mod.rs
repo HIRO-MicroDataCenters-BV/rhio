@@ -1,20 +1,16 @@
 mod actor;
-mod extensions;
-mod messages;
-mod operations;
-mod topic_id;
 
 use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
+use p2panda_core::Operation;
 use p2panda_net::{Network, SharedAbortingJoinHandle};
+use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
 use crate::panda::actor::{PandaActor, ToPandaActor};
-pub use crate::panda::messages::{Message, MessageMeta};
-pub use crate::panda::topic_id::TopicId;
 
 #[derive(Debug)]
 pub struct Panda {
@@ -49,7 +45,7 @@ impl Panda {
         &self,
         topic: TopicId,
     ) -> Result<(
-        broadcast::Receiver<(Message, MessageMeta)>,
+        broadcast::Receiver<Operation<RhioExtensions>>,
         Pin<Box<dyn Future<Output = ()> + Send>>,
     )> {
         let (reply, reply_rx) = oneshot::channel();
