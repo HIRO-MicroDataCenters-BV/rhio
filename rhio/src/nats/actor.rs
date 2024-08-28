@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Context, Result};
+use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
-use async_nats::{jetstream::Context as JetstreamContext, Subject};
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::nats::consumer::{Consumer, ConsumerEvent, ConsumerId};
+use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent};
 
 pub enum ToNatsActor {
     Publish {
@@ -30,7 +31,7 @@ pub enum ToNatsActor {
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. The channel will eventually send an event to the
         /// user to signal when the initialization has finished.
-        reply: oneshot::Sender<Result<broadcast::Receiver<ConsumerEvent>>>,
+        reply: oneshot::Sender<Result<broadcast::Receiver<JetStreamEvent>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -137,7 +138,7 @@ impl NatsActor {
         &mut self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
+    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
         if self.consumers.contains_key(&consumer_id) {
             bail!(

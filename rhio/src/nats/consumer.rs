@@ -5,15 +5,15 @@ use async_nats::jetstream::consumer::push::{
 };
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
-use async_nats::Subject;
 use p2panda_net::{SharedAbortingJoinHandle, ToBytes};
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tracing::error;
 
 pub type StreamName = String;
 
-pub type FilterSubject = Option<String>;
+pub type FilterSubject = Option<Subject>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConsumerId(StreamName, FilterSubject);
@@ -27,11 +27,25 @@ impl ConsumerId {
 pub enum ToConsumerActor {}
 
 #[derive(Debug, Clone)]
-pub enum ConsumerEvent {
-    InitializationCompleted,
-    InitializationFailed,
-    StreamFailed,
-    Message { payload: Vec<u8>, subject: Subject },
+pub enum JetStreamEvent {
+    InitCompleted {
+        stream_name: StreamName,
+        filter_subject: FilterSubject,
+    },
+    InitFailed {
+        stream_name: StreamName,
+        filter_subject: FilterSubject,
+        reason: String,
+    },
+    StreamFailed {
+        stream_name: StreamName,
+        filter_subject: FilterSubject,
+        reason: String,
+    },
+    Message {
+        payload: Vec<u8>,
+        subject: Subject,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -51,20 +65,24 @@ enum ConsumerStatus {
 /// permament storage: messages are kept forever (for now). Streams consume normal NATS subjects,
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor {
-    subscribers_tx: broadcast::Sender<ConsumerEvent>,
+    subscribers_tx: broadcast::Sender<JetStreamEvent>,
     #[allow(dead_code)]
     inbox: mpsc::Receiver<ToConsumerActor>,
     messages: Messages,
     initial_stream_height: u64,
     status: ConsumerStatus,
+    stream_name: StreamName,
+    filter_subject: FilterSubject,
 }
 
 impl ConsumerActor {
     pub fn new(
-        subscribers_tx: broadcast::Sender<ConsumerEvent>,
+        subscribers_tx: broadcast::Sender<JetStreamEvent>,
         inbox: mpsc::Receiver<ToConsumerActor>,
         messages: Messages,
         initial_stream_height: u64,
+        stream_name: StreamName,
+        filter_subject: FilterSubject,
     ) -> Self {
         Self {
             subscribers_tx,
@@ -72,6 +90,8 @@ impl ConsumerActor {
             messages,
             initial_stream_height,
             status: ConsumerStatus::Initializing,
+            stream_name,
+            filter_subject,
         }
     }
 
@@ -98,14 +118,21 @@ impl ConsumerActor {
         &mut self,
         message: Result<Message, Error<MessagesErrorKind>>,
     ) -> Result<()> {
-        if let Err(_) = self.on_message_inner(message).await {
+        if let Err(err) = self.on_message_inner(message).await {
             match self.status {
                 ConsumerStatus::Initializing => {
-                    self.subscribers_tx
-                        .send(ConsumerEvent::InitializationFailed)?;
+                    self.subscribers_tx.send(JetStreamEvent::InitFailed {
+                        stream_name: self.stream_name.clone(),
+                        filter_subject: self.filter_subject.clone(),
+                        reason: err.to_string(),
+                    })?;
                 }
                 ConsumerStatus::Streaming => {
-                    self.subscribers_tx.send(ConsumerEvent::StreamFailed)?;
+                    self.subscribers_tx.send(JetStreamEvent::StreamFailed {
+                        stream_name: self.stream_name.clone(),
+                        filter_subject: self.filter_subject.clone(),
+                        reason: err.to_string(),
+                    })?;
                 }
                 ConsumerStatus::Failed => (),
             }
@@ -122,17 +149,19 @@ impl ConsumerActor {
     ) -> Result<()> {
         let message = message?;
 
-        self.subscribers_tx.send(ConsumerEvent::Message {
+        self.subscribers_tx.send(JetStreamEvent::Message {
             payload: message.payload.to_bytes(),
-            subject: message.subject.clone(),
+            subject: message.subject.to_string(),
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
             let info = message.info().map_err(|err| anyhow!(err))?;
             if info.stream_sequence >= self.initial_stream_height {
                 self.status = ConsumerStatus::Streaming;
-                self.subscribers_tx
-                    .send(ConsumerEvent::InitializationCompleted)?;
+                self.subscribers_tx.send(JetStreamEvent::InitCompleted {
+                    filter_subject: self.filter_subject.clone(),
+                    stream_name: self.stream_name.clone(),
+                })?;
             }
         }
 
@@ -142,7 +171,7 @@ impl ConsumerActor {
 
 #[derive(Debug, Clone)]
 pub struct Consumer {
-    subscribers_tx: broadcast::Sender<ConsumerEvent>,
+    subscribers_tx: broadcast::Sender<JetStreamEvent>,
     #[allow(dead_code)]
     consumer_actor_tx: mpsc::Sender<ToConsumerActor>,
     #[allow(dead_code)]
@@ -224,6 +253,8 @@ impl Consumer {
             consumer_actor_rx,
             messages,
             initial_stream_height,
+            stream_name,
+            filter_subject,
         );
 
         let actor_handle = tokio::task::spawn(async move {
@@ -241,7 +272,7 @@ impl Consumer {
         Ok(consumer)
     }
 
-    pub fn subscribe(&mut self) -> broadcast::Receiver<ConsumerEvent> {
+    pub fn subscribe(&mut self) -> broadcast::Receiver<JetStreamEvent> {
         self.subscribers_tx.subscribe()
     }
 }

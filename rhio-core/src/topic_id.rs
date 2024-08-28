@@ -9,6 +9,8 @@ impl TopicId {
         Self(bytes)
     }
 
+    // @TODO(adz): We probably only want to form the topic over the "filter subject", as stream
+    // names can be different from cluster to cluster, while the subjects stay the same?
     pub fn from_nats_stream(stream_name: &str, filter_subject: &Option<String>) -> Self {
         let filter_value = match filter_subject {
             Some(filter) => filter.clone(),

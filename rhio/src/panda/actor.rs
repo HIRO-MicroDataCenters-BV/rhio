@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use futures_lite::FutureExt;
-use p2panda_core::Operation;
+use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
@@ -22,8 +22,14 @@ pub type SubscribeResult = Result<(
 
 pub enum ToPandaActor {
     Ingest {
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    Broadcast {
         topic: TopicId,
-        operation: Operation<RhioExtensions>,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
@@ -104,33 +110,23 @@ impl PandaActor {
         }
     }
 
-    async fn send_operation(
-        &mut self,
-        topic: TopicId,
-        operation: Operation<RhioExtensions>,
-    ) -> Result<()> {
-        match self.topic_gossip_tx.get_mut(&topic) {
-            Some(tx) => {
-                let bytes = encode_operation(operation.header, operation.body)?;
-                tx.send(InEvent::Message { bytes }).await
-            }
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Attempted to send operation on unknown topic {topic:?}"
-                ))
-            }
-        }?;
-        Ok(())
-    }
-
     async fn on_actor_message(&mut self, msg: ToPandaActor) -> Result<bool> {
         match msg {
             ToPandaActor::Ingest {
-                topic,
-                operation,
+                header,
+                body,
                 reply,
             } => {
-                let result = self.on_ingest(topic, operation).await;
+                let result = self.on_ingest(header, body);
+                reply.send(result).ok();
+            }
+            ToPandaActor::Broadcast {
+                header,
+                body,
+                topic,
+                reply,
+            } => {
+                let result = self.on_broadcast(header, body, topic).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe { topic, reply } => {
@@ -143,6 +139,26 @@ impl PandaActor {
         }
 
         Ok(true)
+    }
+
+    async fn on_broadcast(
+        &mut self,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+        topic: TopicId,
+    ) -> Result<()> {
+        match self.topic_gossip_tx.get_mut(&topic) {
+            Some(tx) => {
+                let bytes = encode_operation(header, body)?;
+                tx.send(InEvent::Message { bytes }).await
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Attempted to send operation on unknown topic {topic:?}"
+                ))
+            }
+        }?;
+        Ok(())
     }
 
     async fn on_subscribe(
@@ -199,12 +215,8 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    async fn on_ingest(
-        &mut self,
-        _topic: TopicId,
-        operation: Operation<RhioExtensions>,
-    ) -> Result<()> {
-        ingest_operation(&mut self.store, operation.header, operation.body)?;
+    fn on_ingest(&mut self, header: Header<RhioExtensions>, body: Option<Body>) -> Result<()> {
+        ingest_operation(&mut self.store, header, body)?;
         Ok(())
     }
 
@@ -239,7 +251,7 @@ impl PandaActor {
                 let hash = header.hash();
 
                 debug!(
-                    "Received operation: {} {} {} {}",
+                    "received operation: {} {} {} {}",
                     header.public_key, header.seq_num, header.timestamp, hash,
                 );
 

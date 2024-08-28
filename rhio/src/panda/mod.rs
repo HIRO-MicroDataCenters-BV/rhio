@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
-use p2panda_core::Operation;
+use p2panda_core::{Body, Header, Operation};
 use p2panda_net::{Network, SharedAbortingJoinHandle};
 use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -56,14 +56,39 @@ impl Panda {
         result.map(|(rx, ready)| (rx, ready))
     }
 
-    pub async fn store(&self) -> Result<()> {
-        // @TODO
-        // let (reply, reply_rx) = oneshot::channel();
-        // self.panda_actor_tx
-        //     .send(ToPandaActor::Store { reply })
-        //     .await?;
-        // reply_rx.await?;
-        Ok(())
+    /// Validates and stores a given operation in the in-memory cache.
+    pub async fn ingest(&self, header: Header<RhioExtensions>, body: Option<Body>) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.panda_actor_tx
+            .send(ToPandaActor::Ingest {
+                header,
+                body,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
+    }
+
+    /// Broadcasts an operation in the gossip overlay-network scoped by topic.
+    // @TODO(adz): This should eventually be replaced with another logic when `p2panda-sync` is in
+    // place, some connection mananger will pick up other peers, replicate with them and then move
+    // into gossip mode
+    pub async fn broadcast(
+        &self,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+        topic: TopicId,
+    ) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.panda_actor_tx
+            .send(ToPandaActor::Broadcast {
+                header,
+                body,
+                topic,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
     }
 
     pub async fn shutdown(&self) -> Result<()> {

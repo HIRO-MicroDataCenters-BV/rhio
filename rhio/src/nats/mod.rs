@@ -4,12 +4,13 @@ mod consumer;
 use anyhow::{Context, Result};
 use async_nats::ConnectOptions;
 use p2panda_net::SharedAbortingJoinHandle;
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::ConsumerEvent;
+pub use crate::nats::consumer::JetStreamEvent;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -59,13 +60,25 @@ impl Nats {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
+    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
                 reply,
                 stream_name,
                 filter_subject,
+            })
+            .await?;
+        reply_rx.await?
+    }
+
+    pub async fn publish(&self, subject: Subject, payload: Vec<u8>) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.nats_actor_tx
+            .send(ToNatsActor::Publish {
+                subject,
+                payload,
+                reply,
             })
             .await?;
         reply_rx.await?

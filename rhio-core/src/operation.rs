@@ -54,8 +54,8 @@ where
 
     let operation = Operation {
         hash: header.hash(),
-        header: header.clone(),
-        body: Some(body.clone()),
+        header,
+        body: Some(body),
     };
 
     store.insert_operation(operation.clone(), log_id)?;
@@ -73,12 +73,13 @@ where
 {
     let operation = Operation {
         hash: header.hash(),
-        header: header.clone(),
+        header,
         body,
     };
     validate_operation(&operation)?;
 
-    let subject: Subject = header
+    let subject: Subject = operation
+        .header
         .extract()
         .ok_or(anyhow!("missing 'subject' field in header"))?;
 
