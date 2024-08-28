@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
-use rhio_core::Subject;
+use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -24,6 +24,12 @@ pub enum ToNatsActor {
         /// Streams can hold different subjects. By using a "subject filter" we're able to select only
         /// the ones we're interested in. This forms "filtered views" on top of streams.
         filter_subject: Option<String>,
+
+        /// p2panda topic used to exchange the "filtered" NATS stream with external nodes.
+        ///
+        /// While this is not strictly required for NATS JetStream we keep it here to inform other
+        /// parts of rhio about which topic is used for this stream.
+        topic: TopicId,
 
         /// Channel to receive all messages (old and new) from this subscription, including
         /// errors and "readiness" state.
@@ -108,9 +114,10 @@ impl NatsActor {
             ToNatsActor::Subscribe {
                 stream_name,
                 filter_subject,
+                topic,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject).await;
+                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
                 reply.send(result).ok();
             }
             ToNatsActor::Shutdown { .. } => {
@@ -138,6 +145,7 @@ impl NatsActor {
         &mut self,
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
         if self.consumers.contains_key(&consumer_id) {
@@ -148,7 +156,8 @@ impl NatsActor {
             );
         }
 
-        let mut consumer = Consumer::new(&self.nats_jetstream, stream_name, filter_subject).await?;
+        let mut consumer =
+            Consumer::new(&self.nats_jetstream, stream_name, filter_subject, topic).await?;
         let rx = consumer.subscribe();
 
         self.consumers.insert(consumer_id, consumer);

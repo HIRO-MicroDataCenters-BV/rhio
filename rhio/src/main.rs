@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
 use rhio::Node;
-use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key};
+use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key, TopicId};
 use tracing::info;
 
 #[tokio::main]
@@ -30,8 +30,12 @@ async fn main() -> Result<()> {
 
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
-    node.subscribe("my_test".into(), Some("test.*".into()))
-        .await?;
+    node.subscribe(
+        "my_test".into(),
+        Some("test.*".into()),
+        TopicId::from_str("test"),
+    )
+    .await?;
 
     tokio::signal::ctrl_c().await?;
 

@@ -6,7 +6,7 @@ use async_nats::jetstream::consumer::push::{
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
 use p2panda_net::{SharedAbortingJoinHandle, ToBytes};
-use rhio_core::Subject;
+use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tracing::error;
@@ -31,20 +31,24 @@ pub enum JetStreamEvent {
     InitCompleted {
         stream_name: StreamName,
         filter_subject: FilterSubject,
+        topic: TopicId,
     },
     InitFailed {
         stream_name: StreamName,
         filter_subject: FilterSubject,
+        topic: TopicId,
         reason: String,
     },
     StreamFailed {
         stream_name: StreamName,
         filter_subject: FilterSubject,
+        topic: TopicId,
         reason: String,
     },
     Message {
         payload: Vec<u8>,
         subject: Subject,
+        topic: TopicId,
     },
 }
 
@@ -73,6 +77,7 @@ pub struct ConsumerActor {
     status: ConsumerStatus,
     stream_name: StreamName,
     filter_subject: FilterSubject,
+    topic: TopicId,
 }
 
 impl ConsumerActor {
@@ -83,6 +88,7 @@ impl ConsumerActor {
         initial_stream_height: u64,
         stream_name: StreamName,
         filter_subject: FilterSubject,
+        topic: TopicId,
     ) -> Self {
         Self {
             subscribers_tx,
@@ -92,6 +98,7 @@ impl ConsumerActor {
             status: ConsumerStatus::Initializing,
             stream_name,
             filter_subject,
+            topic,
         }
     }
 
@@ -124,6 +131,7 @@ impl ConsumerActor {
                     self.subscribers_tx.send(JetStreamEvent::InitFailed {
                         stream_name: self.stream_name.clone(),
                         filter_subject: self.filter_subject.clone(),
+                        topic: self.topic.clone(),
                         reason: err.to_string(),
                     })?;
                 }
@@ -131,6 +139,7 @@ impl ConsumerActor {
                     self.subscribers_tx.send(JetStreamEvent::StreamFailed {
                         stream_name: self.stream_name.clone(),
                         filter_subject: self.filter_subject.clone(),
+                        topic: self.topic.clone(),
                         reason: err.to_string(),
                     })?;
                 }
@@ -152,6 +161,7 @@ impl ConsumerActor {
         self.subscribers_tx.send(JetStreamEvent::Message {
             payload: message.payload.to_bytes(),
             subject: message.subject.to_string(),
+            topic: self.topic.clone(),
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
@@ -161,6 +171,7 @@ impl ConsumerActor {
                 self.subscribers_tx.send(JetStreamEvent::InitCompleted {
                     filter_subject: self.filter_subject.clone(),
                     stream_name: self.stream_name.clone(),
+                    topic: self.topic.clone(),
                 })?;
             }
         }
@@ -195,6 +206,7 @@ impl Consumer {
         context: &JetstreamContext,
         stream_name: StreamName,
         filter_subject: FilterSubject,
+        topic: TopicId,
     ) -> Result<Self> {
         let mut consumer: PushConsumer = context
             // Streams need to already be created on the server, if not, this method will fail
@@ -255,6 +267,7 @@ impl Consumer {
             initial_stream_height,
             stream_name,
             filter_subject,
+            topic,
         );
 
         let actor_handle = tokio::task::spawn(async move {

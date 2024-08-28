@@ -4,7 +4,7 @@ mod consumer;
 use anyhow::{Context, Result};
 use async_nats::ConnectOptions;
 use p2panda_net::SharedAbortingJoinHandle;
-use rhio_core::Subject;
+use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -60,13 +60,15 @@ impl Nats {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
-                reply,
                 stream_name,
                 filter_subject,
+                topic,
+                reply,
             })
             .await?;
         reply_rx.await?

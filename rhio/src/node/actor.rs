@@ -15,6 +15,7 @@ pub enum ToNodeActor {
     Subscribe {
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -103,9 +104,10 @@ impl NodeActor {
             ToNodeActor::Subscribe {
                 stream_name,
                 filter_subject,
+                topic,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject).await;
+                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
                 reply.send(result).ok();
             }
             ToNodeActor::Shutdown { .. } => {
@@ -124,8 +126,12 @@ impl NodeActor {
         &mut self,
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
     ) -> Result<()> {
-        let nats_rx = self.nats.subscribe(stream_name, filter_subject).await?;
+        let nats_rx = self
+            .nats
+            .subscribe(stream_name, filter_subject, topic)
+            .await?;
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`
         self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
@@ -135,12 +141,8 @@ impl NodeActor {
     /// Handler for incoming events from the NATS stream consumer.
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
-            JetStreamEvent::InitCompleted {
-                stream_name,
-                filter_subject,
-            } => {
-                self.on_nats_init_complete(stream_name, filter_subject)
-                    .await?;
+            JetStreamEvent::InitCompleted { topic, .. } => {
+                self.on_nats_init_complete(topic).await?;
             }
             JetStreamEvent::InitFailed {
                 stream_name,
@@ -160,8 +162,8 @@ impl NodeActor {
             } => {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
-            JetStreamEvent::Message { subject, payload } => {
-                self.on_nats_message(subject, payload).await?;
+            JetStreamEvent::Message { topic, payload, .. } => {
+                self.on_nats_message(topic, payload).await?;
             }
         }
 
@@ -175,12 +177,7 @@ impl NodeActor {
     ///
     /// p2panda will now find other nodes being interested in the same "topic" and sync up with
     /// them.
-    async fn on_nats_init_complete(
-        &mut self,
-        stream_name: String,
-        filter_subject: Option<String>,
-    ) -> Result<()> {
-        let topic = TopicId::from_nats_stream(&stream_name, &filter_subject);
+    async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
         let (panda_rx, _) = self.panda.subscribe(topic).await?;
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`
@@ -195,17 +192,14 @@ impl NodeActor {
     ///
     /// From here these operations are replicated further to other nodes via the sync protocol and
     /// gossip broadcast.
-    async fn on_nats_message(&mut self, _subject: Subject, payload: Vec<u8>) -> Result<()> {
+    async fn on_nats_message(&mut self, topic: TopicId, payload: Vec<u8>) -> Result<()> {
         let (header, body) = decode_operation(&payload)?;
         let operation = self.panda.ingest(header.clone(), body.clone()).await?;
 
         // @TODO(adz): For now we're naively just broadcasting the message further to other nodes,
         // without checking if nodes came in late. This should be changed as soon as `p2panda-sync`
         // is in place.
-        //
-        // @TODO: Oupsi, how to do that:
-        // let topic = TopicId::from_nats_stream(stream_name, filter_subject);
-        // self.panda.broadcast(header, body, topic).await?;
+        self.panda.broadcast(header, body, topic).await?;
 
         // Check if operation contains interesting information for rhio, for example blob
         // announcements

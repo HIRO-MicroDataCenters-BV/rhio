@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
+use rhio_core::TopicId;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
@@ -158,12 +159,14 @@ impl Node {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx
             .send(ToNodeActor::Subscribe {
                 stream_name,
                 filter_subject,
+                topic,
                 reply,
             })
             .await?;
