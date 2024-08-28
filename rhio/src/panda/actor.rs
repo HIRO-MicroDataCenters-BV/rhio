@@ -15,7 +15,7 @@ use tracing::{debug, error};
 
 use crate::panda::extensions::{LogId, RhioExtensions};
 use crate::panda::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
-use crate::panda::operations::ingest;
+use crate::panda::operations::ingest_operation;
 use crate::panda::topic_id::TopicId;
 
 pub type SubscribeResult = Result<(
@@ -224,23 +224,22 @@ impl PandaActor {
                 bytes,
                 delivered_from,
             } => {
-                // Ingest the operation, this performs all expected validation.
                 let operation = match GossipOperation::from_bytes(&bytes) {
                     Ok(operation) => operation,
                     Err(err) => {
-                        error!("Failed to decode gossip operation: {err}");
+                        error!("failed to decode gossip operation: {err}");
                         return;
                     }
                 };
 
-                match ingest(
+                match ingest_operation(
                     &mut self.store,
                     operation.header.clone(),
                     Some(operation.body()),
                 ) {
                     Ok(result) => result,
                     Err(err) => {
-                        error!("Failed to ingest operation from {delivered_from}: {err}");
+                        error!("failed to ingest operation from {delivered_from}: {err}");
                         return;
                     }
                 };
