@@ -198,6 +198,7 @@ impl Default for NatsConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub bind_port: u16,
+    #[serde(rename = "nodes")]
     pub known_nodes: Vec<KnownNode>,
     pub private_key: Option<PathBuf>,
 }
