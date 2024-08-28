@@ -4008,6 +4008,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-nats",
+ "clap",
  "p2panda-core",
  "p2panda-store",
  "rhio-core",
