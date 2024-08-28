@@ -11,6 +11,11 @@
 #   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2223",
 # ]
 
+# [[streams]]
+# nats_stream_name = "my_test"
+# nats_filter_subject = "test.*"
+# external_topic = "test"
+
 # [minio]
 # bucket_name = "rhio"
 # endpoint = "http://localhost:9000"

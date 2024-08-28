@@ -35,6 +35,7 @@ pub struct Config {
     #[serde(flatten)]
     pub node: NodeConfig,
     pub log_level: Option<String>,
+    pub streams: Option<Vec<StreamConfig>>,
 }
 
 #[derive(Parser, Serialize, Debug)]
@@ -206,4 +207,11 @@ impl Default for NodeConfig {
 pub struct KnownNode {
     pub public_key: PublicKey,
     pub direct_addresses: Vec<SocketAddr>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StreamConfig {
+    pub nats_stream_name: String,
+    pub nats_filter_subject: Option<String>,
+    pub external_topic: String,
 }
