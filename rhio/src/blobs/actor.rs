@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
@@ -59,7 +59,7 @@ where
     }
 
     pub async fn run(mut self) -> Result<()> {
-        // Take oneshot sender from outside API awaited by `shutdown` call and fire it as soon as
+        // Take oneshot sender from external API awaited by `shutdown` call and fire it as soon as
         // shutdown completed
         let shutdown_completed_signal = self.run_inner().await;
         if let Err(err) = self.shutdown().await {
@@ -90,6 +90,12 @@ where
                         }
                     }
                 },
+                else => {
+                    // Error occurred outside of actor and our select! loop got disabled. We exit
+                    // here with an error which will probably be overriden by the external error
+                    // which caused the problem in first hand.
+                    break Err(anyhow!("all select! branches are disabled"));
+                }
             }
         }
     }

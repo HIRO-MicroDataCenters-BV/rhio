@@ -40,12 +40,14 @@ impl NodeActor {
     }
 
     pub async fn run(mut self) -> Result<()> {
-        // Take oneshot sender from outside API awaited by `shutdown` call and fire it as soon as
-        // shutdown completed
+        // Take oneshot sender from external API awaited by `shutdown` call and fire it as soon as
+        // shutdown completed to signal
         let shutdown_completed_signal = self.run_inner().await;
         if let Err(err) = self.shutdown().await {
             error!(?err, "error during shutdown");
         }
+
+        drop(self);
 
         match shutdown_completed_signal {
             Ok(reply_tx) => {
@@ -77,9 +79,10 @@ impl NodeActor {
                     }
                 },
                 else => {
-                    // Error occurred outside of actor and our loop got disabled. We exit here
-                    // silently, the application will probably be exited with an error message.
-                    return Err(anyhow!("error outside of actor occurred"));
+                    // Error occurred outside of actor and our select! loop got disabled. We exit
+                    // here with an error which will probably be overriden by the external error
+                    // which caused the problem in first hand.
+                    break Err(anyhow!("all select! branches are disabled"));
                 }
             }
         }
