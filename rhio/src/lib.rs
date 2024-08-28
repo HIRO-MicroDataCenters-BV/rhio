@@ -10,7 +10,6 @@ pub mod node;
 pub mod operations;
 pub mod p2panda;
 pub mod private_key;
-pub mod topic_id;
 
 pub const BLOB_ANNOUNCE_TOPIC: &str = "rhio/blob_announce";
 pub const FILE_SYSTEM_EVENT_TOPIC: &str = "rhio/file_system_sync";

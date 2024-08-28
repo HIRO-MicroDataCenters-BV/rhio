@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
-use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
+use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
@@ -18,7 +18,8 @@ const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
 
 pub struct Node {
     pub config: Config,
-    network: Network,
+    node_id: PublicKey,
+    direct_addresses: Vec<SocketAddr>,
     node_actor_tx: mpsc::Sender<ToNodeActor>,
     actor_handle: SharedAbortingJoinHandle<()>,
 }
@@ -26,6 +27,7 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
+        // 1. Configure rhio network
         let mut network_config = NetworkConfig {
             bind_port: config.node.bind_port,
             network_id: RHIO_NETWORK_ID,
@@ -42,6 +44,7 @@ impl Node {
 
         let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
 
+        // 2. Configure and set up blob store and connection handlers for blob replication
         let (network, blobs) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
             let blob_store = FilesystemStore::load(blobs_dir).await?;
@@ -56,17 +59,24 @@ impl Node {
             (network, blobs)
         };
 
-        let panda = Panda::new();
+        // 3. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
+        //    p2panda data replication and gossipping
+        let node_id = network.node_id();
+        let direct_addresses = network
+            .direct_addresses()
+            .await
+            .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
+        let panda = Panda::new(network);
 
-        // Connect with NATS client to server and consume streams over "subjects" we're interested
-        // in. The NATS jetstream is the p2panda persistance and transport layer and holds all past
-        // and future operations.
+        // 4. Connect with NATS client to server and consume streams over "subjects" we're
+        //    interested in. The NATS jetstream is the p2panda persistance and transport layer and
+        //    holds all past and future operations
         let nats = Nats::new(config.clone()).await?;
 
+        // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
+        //    and NATS JetStream consumers
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
-
         let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx);
-
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = node_actor.run().await {
                 error!("node actor failed: {err:?}");
@@ -75,7 +85,8 @@ impl Node {
 
         let node = Node {
             config,
-            network,
+            node_id,
+            direct_addresses,
             node_actor_tx,
             actor_handle: actor_handle.into(),
         };
@@ -88,7 +99,7 @@ impl Node {
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
     pub fn id(&self) -> PublicKey {
-        self.network.node_id()
+        self.node_id.clone()
     }
 
     /// Returns the direct addresses of this Node.
@@ -98,8 +109,8 @@ impl Node {
     /// addresses contain both the locally-bound addresses and the Node's publicly reachable
     /// addresses discovered through mechanisms such as STUN and port mapping. Hence usually only a
     /// subset of these will be applicable to a certain remote node.
-    pub async fn direct_addresses(&self) -> Option<Vec<SocketAddr>> {
-        self.network.direct_addresses().await
+    pub fn direct_addresses(&self) -> Vec<SocketAddr> {
+        self.direct_addresses.clone()
     }
 
     /// Subscribe to a NATS subject over a NATS stream.
@@ -163,47 +174,7 @@ impl Node {
             .send(ToNodeActor::Shutdown { reply })
             .await?;
         reply_rx.await?;
-
-        self.network.shutdown().await?;
         self.actor_handle.await.map_err(|err| anyhow!("{err}"))?;
-
         Ok(())
     }
 }
-
-// pub struct TopicSender {
-//     topic_id: TopicId,
-//     tx: mpsc::Sender<ToRhioActor>,
-// }
-//
-// impl TopicSender {
-//     pub fn new(topic_id: TopicId, tx: mpsc::Sender<ToRhioActor>) -> TopicSender {
-//         TopicSender { topic_id, tx }
-//     }
-//
-//     /// Broadcast a message to all peers subscribing to the same topic.
-//     pub async fn send(&self, message: Message) -> Result<MessageMeta> {
-//         let (reply, reply_rx) = oneshot::channel();
-//         self.tx
-//             .send(ToRhioActor::PublishEvent {
-//                 topic: self.topic_id,
-//                 message,
-//                 reply,
-//             })
-//             .await?;
-//         reply_rx.await?
-//     }
-//
-//     /// Broadcast a blob announcement message to all peers subscribing to the same topic.
-//     pub async fn announce_blob(&self, hash: Hash) -> Result<MessageMeta> {
-//         let (reply, reply_rx) = oneshot::channel();
-//         self.tx
-//             .send(ToRhioActor::PublishEvent {
-//                 topic: self.topic_id,
-//                 message: Message::BlobAnnouncement(hash),
-//                 reply,
-//             })
-//             .await?;
-//         reply_rx.await?
-//     }
-// }

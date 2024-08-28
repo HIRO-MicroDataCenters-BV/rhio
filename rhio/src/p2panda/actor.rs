@@ -7,6 +7,7 @@ use anyhow::Result;
 use futures_lite::FutureExt;
 use p2panda_core::Operation;
 use p2panda_net::network::{InEvent, OutEvent};
+use p2panda_net::Network;
 use p2panda_store::{MemoryStore, OperationStore};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
@@ -15,7 +16,7 @@ use tracing::{debug, error};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{FromBytes, GossipOperation, Message, MessageMeta, ToBytes};
 use crate::operations::ingest;
-use crate::topic_id::TopicId;
+use crate::p2panda::topic_id::TopicId;
 
 pub type SubscribeResult = Result<(
     broadcast::Receiver<(Message, MessageMeta)>,
@@ -30,8 +31,6 @@ pub enum ToPandaActor {
     },
     Subscribe {
         topic: TopicId,
-        topic_tx: mpsc::Sender<InEvent>,
-        topic_rx: broadcast::Receiver<OutEvent>,
         reply: oneshot::Sender<SubscribeResult>,
     },
     Shutdown {
@@ -40,6 +39,7 @@ pub enum ToPandaActor {
 }
 
 pub struct PandaActor {
+    network: Network,
     store: MemoryStore<LogId, RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
@@ -50,11 +50,12 @@ pub struct PandaActor {
 }
 
 impl PandaActor {
-    pub fn new(inbox: mpsc::Receiver<ToPandaActor>) -> Self {
+    pub fn new(network: Network, inbox: mpsc::Receiver<ToPandaActor>) -> Self {
         let store: MemoryStore<LogId, RhioExtensions> = MemoryStore::new();
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
 
         Self {
+            network,
             store,
             topic_gossip_tx: HashMap::default(),
             topic_topic_rx: StreamMap::default(),
@@ -135,13 +136,8 @@ impl PandaActor {
                 let result = self.on_store(topic, operation).await;
                 reply.send(result).ok();
             }
-            ToPandaActor::Subscribe {
-                topic,
-                topic_tx,
-                topic_rx,
-                reply,
-            } => {
-                let result = self.on_subscribe(topic, topic_tx, topic_rx).await;
+            ToPandaActor::Subscribe { topic, reply } => {
+                let result = self.on_subscribe(topic).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Shutdown { .. } => {
@@ -155,12 +151,12 @@ impl PandaActor {
     async fn on_subscribe(
         &mut self,
         topic: TopicId,
-        topic_tx: mpsc::Sender<InEvent>,
-        mut topic_rx: broadcast::Receiver<OutEvent>,
     ) -> Result<(
         broadcast::Receiver<(Message, MessageMeta)>,
         Pin<Box<dyn Future<Output = ()> + Send>>,
     )> {
+        let (topic_tx, mut topic_rx) = self.network.subscribe(topic.into()).await?;
+
         // If we didn't already subscribe to this topic, then add the topic gossip channels to our
         // sender and receiver maps
         if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx.entry(topic) {
