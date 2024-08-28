@@ -141,12 +141,13 @@ impl Node {
     /// 2. When creating the subscription, all past data is initially downloaded and moved into an
     ///    in-memory cache. This process might take a while, depending on the number of past
     ///    messages in the stream.
-    /// 3. Simultaneously rhio establishes a p2panda gossip overlay with other clusters over that
-    ///    topic (hashed subject string) to already receive new data. On receipt it'll be moved
-    ///    into the in-memory cache and for persistence published to the NATS server.
-    /// 4. When the initial download from the NATS server has finished, we're continuing with
+    /// 3. When the initial download from the NATS server has finished, we're continuing with
     ///    syncing past state from external clusters using the p2panda sync protocol. Again, this
     ///    data is cached in-memory and persisted on the NATS server.
+    /// 4. At the same time as step 3. rhio establishes a p2panda gossip overlay with other
+    ///    clusters over that topic (hashed subject string) to already receive new data. On receipt
+    ///    it'll be moved into the in-memory cache and for persistence published to the NATS
+    ///    server.
     /// 5. Finally, when all internal and external cluster data over this "subject" has been
     ///    loaded, we still continue gossiping over future data.
     ///
