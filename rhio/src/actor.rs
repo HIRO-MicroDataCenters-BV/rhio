@@ -6,8 +6,9 @@ use tokio_stream::StreamExt;
 use tracing::{error, info};
 
 use crate::blobs::Blobs;
+use crate::messages::{Message, MessageMeta};
 use crate::nats::{ConsumerEvent, Nats};
-use crate::panda::Panda;
+use crate::panda::{Panda, TopicId};
 
 pub enum ToNodeActor {
     Subscribe {
@@ -23,6 +24,7 @@ pub enum ToNodeActor {
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
     nats_consumer_rx: SelectAll<BroadcastStream<ConsumerEvent>>,
+    p2panda_topic_rx: SelectAll<BroadcastStream<(Message, MessageMeta)>>,
     nats: Nats,
     panda: Panda,
     blobs: Blobs,
@@ -33,6 +35,7 @@ impl NodeActor {
         Self {
             nats,
             nats_consumer_rx: SelectAll::new(),
+            p2panda_topic_rx: SelectAll::new(),
             panda,
             blobs,
             inbox,
@@ -140,10 +143,17 @@ impl NodeActor {
         stream_name: String,
         filter_subject: Option<String>,
     ) -> Result<()> {
-        let rx = self.nats.subscribe(stream_name, filter_subject).await?;
+        let topic = TopicId::from_nats_stream(&stream_name, &filter_subject);
+        let (panda_rx, panda_ready) = self.panda.subscribe(topic).await?;
+        panda_ready.await;
+
+        let nats_rx = self.nats.subscribe(stream_name, filter_subject).await?;
+
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`
-        self.nats_consumer_rx.push(BroadcastStream::new(rx));
+        self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+        self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
+
         Ok(())
     }
 

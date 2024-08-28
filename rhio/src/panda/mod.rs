@@ -11,7 +11,7 @@ use tracing::error;
 
 use crate::messages::{Message, MessageMeta};
 use crate::panda::actor::{PandaActor, ToPandaActor};
-use crate::panda::topic_id::TopicId;
+pub use crate::panda::topic_id::TopicId;
 
 #[derive(Debug)]
 pub struct Panda {
