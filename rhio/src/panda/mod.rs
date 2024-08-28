@@ -57,7 +57,11 @@ impl Panda {
     }
 
     /// Validates and stores a given operation in the in-memory cache.
-    pub async fn ingest(&self, header: Header<RhioExtensions>, body: Option<Body>) -> Result<()> {
+    pub async fn ingest(
+        &self,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+    ) -> Result<Operation<RhioExtensions>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
             .send(ToPandaActor::Ingest {

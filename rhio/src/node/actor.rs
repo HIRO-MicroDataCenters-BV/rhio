@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::stream::SelectAll;
-use p2panda_core::{Extension, Operation};
+use p2panda_core::{Extension, Hash, Operation};
 use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -197,7 +197,7 @@ impl NodeActor {
     /// gossip broadcast.
     async fn on_nats_message(&mut self, _subject: Subject, payload: Vec<u8>) -> Result<()> {
         let (header, body) = decode_operation(&payload)?;
-        self.panda.ingest(header.clone(), body.clone()).await?;
+        let operation = self.panda.ingest(header.clone(), body.clone()).await?;
 
         // @TODO(adz): For now we're naively just broadcasting the message further to other nodes,
         // without checking if nodes came in late. This should be changed as soon as `p2panda-sync`
@@ -206,6 +206,10 @@ impl NodeActor {
         // @TODO: Oupsi, how to do that:
         // let topic = TopicId::from_nats_stream(stream_name, filter_subject);
         // self.panda.broadcast(header, body, topic).await?;
+
+        // Check if operation contains interesting information for rhio, for example blob
+        // announcements
+        self.process_operation(&operation).await?;
 
         Ok(())
     }
@@ -216,12 +220,32 @@ impl NodeActor {
     /// method they get forwarded to the NATS server for persistance and communication to other
     /// processes.
     async fn on_operation(&mut self, operation: Operation<RhioExtensions>) -> Result<()> {
+        // Check if operation contains interesting information for rhio, for example blob
+        // announcements
+        self.process_operation(&operation).await?;
+
+        // Forward operation to NATS server for persistance and communication to other processes
+        // subscribed to the same subject
         let subject: Subject = operation
             .header
             .extract()
             .ok_or(anyhow!("missing 'subject' field in header"))?;
         let payload = encode_operation(operation.header, operation.body)?;
         self.nats.publish(subject, payload).await?;
+
+        Ok(())
+    }
+
+    /// Looks at operation to identify if it causes any side-effects in rhio, for example
+    /// announcing new blobs.
+    ///
+    /// Every operation which passes rhio from either the NATS JetStream or p2panda network gets
+    /// processed at least once.
+    async fn process_operation(&mut self, operation: &Operation<RhioExtensions>) -> Result<()> {
+        let blob: Option<Hash> = operation.header.extract();
+        if let Some(hash) = blob {
+            self.blobs.download_blob(hash).await?;
+        }
         Ok(())
     }
 

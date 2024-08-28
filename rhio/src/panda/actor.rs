@@ -24,7 +24,7 @@ pub enum ToPandaActor {
     Ingest {
         header: Header<RhioExtensions>,
         body: Option<Body>,
-        reply: oneshot::Sender<Result<()>>,
+        reply: oneshot::Sender<Result<Operation<RhioExtensions>>>,
     },
     Broadcast {
         topic: TopicId,
@@ -215,9 +215,12 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    fn on_ingest(&mut self, header: Header<RhioExtensions>, body: Option<Body>) -> Result<()> {
-        ingest_operation(&mut self.store, header, body)?;
-        Ok(())
+    fn on_ingest(
+        &mut self,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+    ) -> Result<Operation<RhioExtensions>> {
+        ingest_operation(&mut self.store, header, body)
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {

@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
 
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
-    node.subscribe("my_test".into(), Some("foo.test".into()))
+    node.subscribe("my_test".into(), Some("test.*".into()))
         .await?;
 
     tokio::signal::ctrl_c().await?;
