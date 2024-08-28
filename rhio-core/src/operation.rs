@@ -1,8 +1,64 @@
+use std::time::SystemTime;
+
 use anyhow::{Context, Result};
-use p2panda_core::{validate_backlink, validate_operation, Body, Extension, Header, Operation};
+use p2panda_core::{
+    validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
+};
 use p2panda_store::{LogStore, OperationStore};
 
 use crate::extensions::{LogId, RhioExtensions};
+
+pub fn create_operation<S>(
+    store: &mut S,
+    private_key: &PrivateKey,
+    log_id: &LogId,
+    body: &[u8],
+) -> Result<Operation<RhioExtensions>>
+where
+    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+{
+    let body = Body::new(body);
+
+    let public_key = private_key.public_key();
+    let latest_operation = store.latest_operation(public_key, log_id.clone())?;
+
+    let (seq_num, backlink) = match latest_operation {
+        Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
+        None => (0, None),
+    };
+
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
+
+    let extensions = RhioExtensions {
+        log_id: Some(log_id.clone()),
+    };
+
+    let mut header = Header {
+        version: 1,
+        public_key,
+        signature: None,
+        payload_size: body.size(),
+        payload_hash: Some(body.hash()),
+        timestamp,
+        seq_num,
+        backlink,
+        previous: vec![],
+        extensions: Some(extensions),
+    };
+    header.sign(private_key);
+
+    let operation = Operation {
+        hash: header.hash(),
+        header: header.clone(),
+        body: Some(body.clone()),
+    };
+
+    store.insert_operation(operation.clone(), log_id.to_owned())?;
+
+    Ok(operation)
+}
 
 pub fn ingest_operation<S>(
     store: &mut S,
