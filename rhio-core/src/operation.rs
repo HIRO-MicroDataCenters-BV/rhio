@@ -21,7 +21,7 @@ where
     let body = Body::new(body);
 
     let public_key = private_key.public_key();
-    let log_id = LogId::new(&public_key, &subject);
+    let log_id = LogId::new(&subject);
 
     let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
@@ -82,7 +82,7 @@ where
         .extract()
         .ok_or(anyhow!("missing 'subject' field in header"))?;
 
-    let log_id = LogId::new(&header.public_key, &subject);
+    let log_id = LogId::new(&subject);
 
     let latest_operation = store
         .latest_operation(operation.header.public_key, log_id.clone())
