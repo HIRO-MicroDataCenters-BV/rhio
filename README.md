@@ -36,7 +36,7 @@ Similar to NATS JetStream, any number of streams can be subscribed to and filter
 
 ## Usage
 
-1. Copy the configuration file and adjust it to your setup: `$ cp config.example.toml config.toml`
+1. Copy the [configuration file](/rhio/config.example.toml) and adjust it to your setup: `$ cp config.example.toml config.toml`
 2. Run the `rhio` process via `rhio -c config.toml`
 3. The process can be further configured via ENV vars or command line arguments:
 
@@ -95,7 +95,7 @@ $ cargo run --bin rhio-client -- --subject foo.bar --endpoint localhost:4222
 # Type: any message which should be received by all nodes ..
 ```
 
-## Blobs
+### Blobs
 
 Large files of any size can be imported into the local MinIO database and then announced on the network for other nodes to download them into their regarding MinIO databases. For this to take place in an efficient manner, the blob needs to be first encoded in the bao format. The resulting hash of this process can be used as an unique identifier to announce the blob on the network.
 

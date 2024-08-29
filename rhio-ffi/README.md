@@ -1,8 +1,12 @@
 # rhio-ffi
 
+> :warning: `rhio` has been undergoing some major changes and `rhio-ffi` needs
+> to be updated to properly function again. See related issue:
+> https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/63
+
 Use `uniffi` and `maturin` to build ffi bindings for `rhio` and compile a `Python` package.
 
-## `Python` development
+## Python development
 
 ```bash
 # Create and activate a virtual env
@@ -16,7 +20,7 @@ maturin develop
 python python/hello.py
 ```
 
-## `minio` container
+## MinIO container
 
 Run a local `minio` instance for testing purposes.
 
@@ -25,7 +29,7 @@ Run a local `minio` instance for testing purposes.
 docker-compose up
 ```
 
-## `Python` usage
+## Python usage
 
 ### CLI
 
@@ -35,7 +39,7 @@ python python/main.py -c "rhio:rhio_password"
 ```
 
 ```shell
-python python/main.py --help                                                      
+python python/main.py --help
 usage: main.py [-h] [-p PORT] [-t TICKET] [-k PRIVATE_KEY] [-s SYNC_DIR] [-b BLOBS_DIR] [-n MINIO_BUCKET_NAME] [-e MINIO_ENDPOINT] [-g MINIO_REGION] [-c MINIO_CREDENTIALS]
                [-r RELAY]
 
@@ -64,7 +68,7 @@ options:
                         relay addresses
 ```
 
-### examples
+### Examples
 
 There are two example python scripts in the `python` directory. 
 
