@@ -1,4 +1,5 @@
 mod actor;
+mod control;
 
 use std::net::SocketAddr;
 
@@ -14,6 +15,7 @@ use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
 use crate::node::actor::{NodeActor, ToNodeActor};
+pub use crate::node::control::NodeControl;
 use crate::panda::Panda;
 
 // @TODO: Give rhio a cool network id
@@ -73,13 +75,17 @@ impl Node {
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
         //    interested in. The NATS jetstream is the p2panda persistance and transport layer and
-        //    holds all past and future operations
-        let nats = Nats::new(config.clone()).await?;
+        //    holds all past and future operations.
+        //
+        //    Additionally we keep an "control channel" open via NATS Core, to receive internal
+        //    messages on handling MinIO blob imports, etc.
+        let (node_control_tx, node_control_rx) = mpsc::channel(32);
+        let nats = Nats::new(config.clone(), node_control_tx).await?;
 
         // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
         //    and NATS JetStream consumers
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
-        let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx);
+        let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx, node_control_rx);
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = node_actor.run().await {
                 error!("node actor failed: {err:?}");

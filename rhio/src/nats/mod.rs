@@ -1,16 +1,20 @@
 mod actor;
 mod consumer;
 
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
-use async_nats::ConnectOptions;
-use p2panda_net::SharedAbortingJoinHandle;
+use async_nats::{Client, ConnectOptions};
+use p2panda_net::{FromBytes, SharedAbortingJoinHandle};
 use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::error;
+use tokio_stream::StreamExt;
+use tracing::{error, warn};
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::JetStreamEvent;
+use crate::node::NodeControl;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -20,7 +24,7 @@ pub struct Nats {
 }
 
 impl Nats {
-    pub async fn new(config: Config) -> Result<Self> {
+    pub async fn new(config: Config, node_control_tx: mpsc::Sender<NodeControl>) -> Result<Self> {
         // @TODO: Add auth options to NATS client config
         let nats_client =
             async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
@@ -30,6 +34,11 @@ impl Nats {
                     config.nats.endpoint
                 ))?;
 
+        // Start a "standard" NATS Core subscription (at-most-once delivery) to receive "live"
+        // control commands for `rhio`
+        spawn_control_handler(nats_client.clone(), node_control_tx);
+
+        // Start the main NATS JetStream actor to dynamically maintain "stream consumers"
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
@@ -94,4 +103,40 @@ impl Nats {
         reply_rx.await?;
         Ok(())
     }
+}
+
+// @TODO(adz): This might not be the ideal flow or place for it and serves as a "workaround". We
+// can keep it here until we've finished the full MinIO store backend implementation, even though
+// _some_ import control needs to be given in any case?
+fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<NodeControl>) {
+    tokio::spawn(async move {
+        let Ok(mut subscription) = nats_client.subscribe("rhio.*").await else {
+            error!("failed subscribing to minio control messages");
+            return;
+        };
+
+        while let Some(message) = subscription.next().await {
+            if message.subject.as_str() != "rhio.import" {
+                continue;
+            }
+
+            match PathBuf::from_bytes(&message.payload) {
+                Ok(file_path) => {
+                    if let Err(err) = node_control_tx
+                        .send(NodeControl::ImportBlob {
+                            file_path,
+                            reply_subject: message.reply,
+                        })
+                        .await
+                    {
+                        error!("failed handling minio control message: {err}");
+                        break;
+                    }
+                }
+                Err(err) => {
+                    warn!("failed parsing minio control message: {err}");
+                }
+            };
+        }
+    });
 }

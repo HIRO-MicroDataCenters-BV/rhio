@@ -1,5 +1,7 @@
 mod actor;
 
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Result};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
@@ -38,6 +40,32 @@ impl Blobs {
             blobs_actor_tx,
             actor_handle: actor_handle.into(),
         }
+    }
+
+    /// Import a file into the node's blob store on the file system and sync it with the internal
+    /// MinIO database.
+    // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
+    // for the file. This is the only way to retrieve the blob hash right now. In the future we
+    // want to do all of this inside of MinIO and skip loading the file onto the file-system
+    // first.
+    pub async fn import_file(&self, file_path: PathBuf) -> Result<Hash> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::ImportFile { file_path, reply })
+            .await?;
+        let hash = reply_rx.await??;
+
+        if self.config.credentials.is_some() {
+            self.export_blob_minio(
+                hash,
+                self.config.region.clone(),
+                self.config.endpoint.clone(),
+                self.config.bucket_name.clone(),
+            )
+            .await?;
+        }
+
+        Ok(hash)
     }
 
     /// Export a blob to a minio bucket.

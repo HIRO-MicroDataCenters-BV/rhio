@@ -1,14 +1,16 @@
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::stream::SelectAll;
 use p2panda_core::{Extension, Hash, Operation};
+use p2panda_net::ToBytes;
 use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
+use crate::node::NodeControl;
 use crate::panda::Panda;
 
 pub enum ToNodeActor {
@@ -25,6 +27,7 @@ pub enum ToNodeActor {
 
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
+    node_control_rx: mpsc::Receiver<NodeControl>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<Operation<RhioExtensions>>>,
     nats: Nats,
@@ -33,9 +36,16 @@ pub struct NodeActor {
 }
 
 impl NodeActor {
-    pub fn new(nats: Nats, panda: Panda, blobs: Blobs, inbox: mpsc::Receiver<ToNodeActor>) -> Self {
+    pub fn new(
+        nats: Nats,
+        panda: Panda,
+        blobs: Blobs,
+        inbox: mpsc::Receiver<ToNodeActor>,
+        node_control_rx: mpsc::Receiver<NodeControl>,
+    ) -> Self {
         Self {
             nats,
+            node_control_rx,
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             panda,
@@ -77,6 +87,11 @@ impl NodeActor {
                                 break Err(err);
                             }
                         }
+                    }
+                },
+                Some(command) = self.node_control_rx.recv() => {
+                    if let Err(err) = self.on_control_command(command).await {
+                        break Err(err);
                     }
                 },
                 Some(Ok(event)) = self.nats_consumer_rx.next() => {
@@ -272,6 +287,32 @@ impl NodeActor {
         if let Some(hash) = blob {
             self.blobs.download_blob(hash).await?;
         }
+        Ok(())
+    }
+
+    async fn on_control_command(&self, command: NodeControl) -> Result<()> {
+        match command {
+            NodeControl::ImportBlob {
+                file_path,
+                reply_subject,
+            } => {
+                debug!("received control command to import {}", file_path.display());
+                let hash = self.blobs.import_file(file_path.clone()).await?;
+                info!(
+                    "import file {} completed, the resulting hash is: {}",
+                    file_path.display(),
+                    hash
+                );
+
+                // If the control command requested an reply via NATS Core, we will provide it!
+                if let Some(subject) = reply_subject {
+                    self.nats
+                        .publish(subject.to_string(), hash.to_bytes())
+                        .await?;
+                }
+            }
+        }
+
         Ok(())
     }
 

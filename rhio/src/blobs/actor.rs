@@ -1,15 +1,21 @@
+use std::path::PathBuf;
+
 use anyhow::{anyhow, Result};
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
-use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent};
+use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
 use s3::creds::Credentials;
 use s3::{Bucket, BucketConfiguration, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
-use tracing::{error, info};
+use tracing::error;
 
 pub enum ToBlobsActor {
+    ImportFile {
+        file_path: PathBuf,
+        reply: oneshot::Sender<Result<Hash>>,
+    },
     ExportBlobMinio {
         hash: Hash,
         bucket_name: String,
@@ -86,11 +92,12 @@ where
 
     async fn on_actor_message(&mut self, msg: ToBlobsActor) -> Result<()> {
         match msg {
+            ToBlobsActor::ImportFile { file_path, reply } => {
+                let result = self.on_import_file(file_path).await;
+                reply.send(result).ok();
+            }
             ToBlobsActor::DownloadBlob { hash, reply } => {
                 let result = self.on_download_blob(hash).await;
-                if result.is_ok() {
-                    info!("downloaded blob {hash}");
-                }
                 reply.send(result).ok();
             }
             ToBlobsActor::ExportBlobMinio {
@@ -103,9 +110,6 @@ where
                 let result = self
                     .on_export_blob_minio(hash, bucket_name.clone(), region, credentials)
                     .await;
-                if result.is_ok() {
-                    info!("exported blob to minio: {hash} {bucket_name}");
-                }
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {
@@ -114,6 +118,30 @@ where
         }
 
         Ok(())
+    }
+
+    async fn on_import_file(&mut self, path: PathBuf) -> Result<Hash> {
+        // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
+        // for the file. This is the only way to retrieve the blob hash right now. In the future we
+        // want to do all of this inside of MinIO and skip loading the file onto the file-system
+        // first.
+        let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
+
+        let hash = loop {
+            match stream.next().await {
+                Some(ImportBlobEvent::Done(hash)) => {
+                    break Ok(hash);
+                }
+                Some(ImportBlobEvent::Abort(err)) => {
+                    break Err(anyhow!("failed importing blob: {err}"));
+                }
+                None => {
+                    break Err(anyhow!("failed importing blob"));
+                }
+            }
+        }?;
+
+        Ok(hash)
     }
 
     async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
@@ -185,6 +213,7 @@ where
             error!("{response}");
             return Err(anyhow::anyhow!(response));
         }
+
         Ok(())
     }
 
