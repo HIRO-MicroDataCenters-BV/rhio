@@ -14,9 +14,9 @@ use tracing::error;
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
+use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 pub use crate::node::control::NodeControl;
-use crate::panda::Panda;
 
 // @TODO: Give rhio a cool network id
 const RHIO_NETWORK_ID: [u8; 32] = [0; 32];

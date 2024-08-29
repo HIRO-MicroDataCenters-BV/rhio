@@ -10,8 +10,8 @@ use tracing::{debug, error, info};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
+use crate::network::Panda;
 use crate::node::NodeControl;
-use crate::panda::Panda;
 
 pub enum ToNodeActor {
     Subscribe {

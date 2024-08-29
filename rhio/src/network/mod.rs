@@ -10,7 +10,7 @@ use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::panda::actor::{PandaActor, ToPandaActor};
+use crate::network::actor::{PandaActor, ToPandaActor};
 
 #[derive(Debug)]
 pub struct Panda {
