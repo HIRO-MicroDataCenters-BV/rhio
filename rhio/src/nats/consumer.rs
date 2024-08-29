@@ -145,7 +145,7 @@ impl ConsumerActor {
         let message = message?;
 
         self.subscribers_tx.send(JetStreamEvent::Message {
-            payload: message.payload.to_bytes(),
+            payload: message.payload.to_vec(),
             topic: self.topic,
         })?;
 
