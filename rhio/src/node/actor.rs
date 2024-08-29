@@ -285,7 +285,16 @@ impl NodeActor {
     async fn process_operation(&mut self, operation: &Operation<RhioExtensions>) -> Result<()> {
         let blob: Option<Hash> = operation.header.extract();
         if let Some(hash) = blob {
-            self.blobs.download_blob(hash).await?;
+            match self.blobs.download_blob(hash).await {
+                // @TODO(adz): Would be nice here to identify if we already had that blob at this
+                // stage. This message will also pop up if no download happened (we had it
+                // already).
+                Ok(_) => debug!("syncing blob {} completed", hash),
+                Err(err) => {
+                    error!("failed syncing storing blob {}", hash);
+                    return Err(err);
+                }
+            }
         }
         Ok(())
     }
