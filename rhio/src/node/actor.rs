@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_util::stream::SelectAll;
 use p2panda_core::{Extension, Hash, Operation};
 use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, TopicId};
@@ -193,17 +193,27 @@ impl NodeActor {
     /// From here these operations are replicated further to other nodes via the sync protocol and
     /// gossip broadcast.
     async fn on_nats_message(&mut self, topic: TopicId, payload: Vec<u8>) -> Result<()> {
-        let (header, body) = decode_operation(&payload)?;
-        let operation = self.panda.ingest(header.clone(), body.clone()).await?;
+        let (header, body) =
+            decode_operation(&payload).context("decode incoming operation via nats")?;
+        let operation = self
+            .panda
+            .ingest(header.clone(), body.clone())
+            .await
+            .context("ingest incoming operation via nats")?;
 
         // @TODO(adz): For now we're naively just broadcasting the message further to other nodes,
         // without checking if nodes came in late. This should be changed as soon as `p2panda-sync`
         // is in place.
-        self.panda.broadcast(header, body, topic).await?;
+        self.panda
+            .broadcast(header, body, topic)
+            .await
+            .context("broadcast incoming operation from nats")?;
 
         // Check if operation contains interesting information for rhio, for example blob
         // announcements
-        self.process_operation(&operation).await?;
+        self.process_operation(&operation)
+            .await
+            .context("process incoming operation from nats")?;
 
         Ok(())
     }

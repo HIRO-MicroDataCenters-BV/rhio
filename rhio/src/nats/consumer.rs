@@ -5,7 +5,7 @@ use async_nats::jetstream::consumer::push::{
 };
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
-use p2panda_net::{SharedAbortingJoinHandle, ToBytes};
+use p2panda_net::SharedAbortingJoinHandle;
 use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
