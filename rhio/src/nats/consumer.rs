@@ -248,7 +248,6 @@ impl Consumer {
         // first before we can continue
         let initial_stream_height = {
             let consumer_info = consumer.info().await?;
-            // @TODO: Is this correct or does it need to be +1 or another field?
             consumer_info.num_pending
         };
 
