@@ -296,10 +296,13 @@ impl NodeActor {
                 file_path,
                 reply_subject,
             } => {
-                debug!("received control command to import {}", file_path.display());
+                debug!(
+                    "received control command to import '{}'",
+                    file_path.display()
+                );
                 let hash = self.blobs.import_file(file_path.clone()).await?;
                 info!(
-                    "import file {} completed, the resulting hash is: {}",
+                    "file import '{}' completed, the resulting hash is: {}",
                     file_path.display(),
                     hash
                 );

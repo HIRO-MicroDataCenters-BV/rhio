@@ -55,15 +55,13 @@ impl Blobs {
             .await?;
         let hash = reply_rx.await??;
 
-        if self.config.credentials.is_some() {
-            self.export_blob_minio(
-                hash,
-                self.config.region.clone(),
-                self.config.endpoint.clone(),
-                self.config.bucket_name.clone(),
-            )
-            .await?;
-        }
+        self.export_blob_minio(
+            hash,
+            self.config.region.clone(),
+            self.config.endpoint.clone(),
+            self.config.bucket_name.clone(),
+        )
+        .await?;
 
         Ok(hash)
     }
@@ -108,15 +106,13 @@ impl Blobs {
         let result = reply_rx.await?;
         result?;
 
-        if self.config.credentials.is_some() {
-            self.export_blob_minio(
-                hash,
-                self.config.region.clone(),
-                self.config.endpoint.clone(),
-                self.config.bucket_name.clone(),
-            )
-            .await?;
-        }
+        self.export_blob_minio(
+            hash,
+            self.config.region.clone(),
+            self.config.endpoint.clone(),
+            self.config.bucket_name.clone(),
+        )
+        .await?;
 
         Ok(())
     }
