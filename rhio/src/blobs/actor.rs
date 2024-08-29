@@ -121,14 +121,10 @@ where
     }
 
     async fn on_import_file(&mut self, path: PathBuf) -> Result<Hash> {
-        // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
-        // for the file. This is the only way to retrieve the blob hash right now. In the future we
-        // want to do all of this inside of MinIO and skip loading the file onto the file-system
-        // first.
         let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
 
         // @TODO(adz): Yes, we know this never loops as all enum cases are currently terminating,
-        // but as soon as we're adding more this code becomes crucial
+        // but as soon as we're adding more to `p2panda-blobs` this code becomes crucial.
         #[allow(clippy::never_loop)]
         let hash = loop {
             match stream.next().await {

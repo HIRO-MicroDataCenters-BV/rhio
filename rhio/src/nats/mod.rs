@@ -26,7 +26,8 @@ pub struct Nats {
 
 impl Nats {
     pub async fn new(config: Config, node_control_tx: mpsc::Sender<NodeControl>) -> Result<Self> {
-        // @TODO: Add auth options to NATS client config
+        // @TODO: Add auth options to NATS client config.
+        // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/62
         let nats_client =
             async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
                 .await
@@ -109,6 +110,7 @@ impl Nats {
 // @TODO(adz): This might not be the ideal flow or place for it and serves as a "workaround". We
 // can keep it here until we've finished the full MinIO store backend implementation, even though
 // _some_ import control needs to be given in any case?
+// See related discussion: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/60
 fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<NodeControl>) {
     tokio::spawn(async move {
         let Ok(mut subscription) = nats_client.subscribe("rhio.*").await else {

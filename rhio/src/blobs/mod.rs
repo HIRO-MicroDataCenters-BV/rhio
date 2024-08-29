@@ -48,6 +48,7 @@ impl Blobs {
     // for the file. This is the only way to retrieve the blob hash right now. In the future we
     // want to do all of this inside of MinIO and skip loading the file onto the file-system
     // first.
+    // Related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
     pub async fn import_file(&self, file_path: PathBuf) -> Result<Hash> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx

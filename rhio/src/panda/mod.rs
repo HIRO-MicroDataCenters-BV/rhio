@@ -75,7 +75,8 @@ impl Panda {
     /// Broadcasts an operation in the gossip overlay-network scoped by topic.
     // @TODO(adz): This should eventually be replaced with another logic when `p2panda-sync` is in
     // place, some connection mananger will pick up other peers, replicate with them and then move
-    // into gossip mode
+    // into gossip mode.
+    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/61
     pub async fn broadcast(
         &self,
         header: Header<RhioExtensions>,

@@ -28,7 +28,6 @@ pub const NATS_ENDPOINT: &str = "localhost:4222";
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Config {
-    // @TODO: Remove this as soon as we've implemented full MinIO storage.
     pub blobs_dir: Option<PathBuf>,
     pub minio: MinioConfig,
     pub nats: NatsConfig,
@@ -41,12 +40,12 @@ pub struct Config {
 #[derive(Parser, Serialize, Debug)]
 #[command(
     name = "rhio",
-    about = "Peer-to-peer message and blob streaming with MinIO and NATS Jetstream support",
+    about = "Peer-to-peer message and blob streaming with MinIO and NATS JetStream support",
     long_about = None,
     version
 )]
 struct Cli {
-    /// Path to an optional "config.toml" file for further configuration.
+    /// Path to "config.toml" file for further configuration.
     ///
     /// When not set the program will try to find a `config.toml` file in the same folder the
     /// program is executed in and otherwise in the regarding operation systems XDG config
@@ -55,7 +54,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     config: Option<PathBuf>,
 
-    /// Bind port of Node.
+    /// Bind port of rhio node.
     #[arg(short = 'p', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
@@ -67,8 +66,13 @@ struct Cli {
 
     /// Path to file-system blob store to temporarily load blobs into when importing to MinIO
     /// database.
+    ///
+    /// WARNING: When left empty, an in-memory blob store is used instead which might lead to data
+    /// corruption as blob hashes are not kept between restarts. Use the in-memory store only for
+    /// testing purposes.
     // @TODO: This will be removed as soon as we've implemented a full MinIO storage backend. We
     // currently need it to generate all bao-tree hashes before moving the data further to MinIO.
+    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,
@@ -83,20 +87,6 @@ struct Cli {
     #[arg(short = 'l', long, value_name = "LEVEL")]
     #[serde(skip_serializing_if = "Option::is_none")]
     log_level: Option<String>,
-}
-
-pub fn parse_s3_credentials(value: &str) -> Result<Credentials> {
-    let mut value_iter = value.split(":");
-    let access_key = value_iter
-        .next()
-        .ok_or(anyhow::anyhow!("no access key provided"))?;
-
-    let secret_key = value_iter
-        .next()
-        .ok_or(anyhow::anyhow!("no secret key provided"))?;
-
-    let credentials = Credentials::new(Some(access_key), Some(secret_key), None, None, None)?;
-    Ok(credentials)
 }
 
 /// Get configuration from 1. .toml file, 2. environment variables and 3. command line arguments
@@ -156,6 +146,7 @@ fn try_determine_config_file_path() -> Option<PathBuf> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MinioConfig {
     // @TODO(adz): We probably want to load this from some secure store / file instead?
+    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/59
     pub credentials: Option<Credentials>,
     pub bucket_name: String,
     pub endpoint: String,

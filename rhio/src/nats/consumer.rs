@@ -243,8 +243,9 @@ impl Consumer {
                 stream_name
             ))?;
 
-        // Retreive info about the consumer to learn how many messages are currently persisted on
-        // the server (number of "pending messages") and we need to download first
+        // Retrieve info about the consumer to learn how many messages are currently persisted on
+        // the server (number of "pending messages"). These are the messages we need to download
+        // first before we can continue
         let initial_stream_height = {
             let consumer_info = consumer.info().await?;
             // @TODO: Is this correct or does it need to be +1 or another field?
