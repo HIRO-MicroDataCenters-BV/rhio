@@ -127,6 +127,9 @@ where
         // first.
         let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
 
+        // @TODO(adz): Yes, we know this never loops as all enum cases are currently terminating,
+        // but as soon as we're adding more this code becomes crucial
+        #[allow(clippy::never_loop)]
         let hash = loop {
             match stream.next().await {
                 Some(ImportBlobEvent::Done(hash)) => {

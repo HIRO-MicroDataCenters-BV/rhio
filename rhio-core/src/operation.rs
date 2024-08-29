@@ -46,7 +46,7 @@ where
     let body = body.map(Body::new);
 
     let public_key = private_key.public_key();
-    let log_id = LogId::new(&subject);
+    let log_id = LogId::new(subject);
 
     let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
