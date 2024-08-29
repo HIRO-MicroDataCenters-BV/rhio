@@ -99,7 +99,7 @@ $ cargo run --bin rhio-client -- --subject foo.bar --endpoint localhost:4222
 
 Large files of any size can be imported into the local MinIO database and then announced on the network for other nodes to download them into their regarding MinIO databases. For this to take place in an efficient manner, the blob needs to be first encoded in the bao format. The resulting hash of this process can be used as an unique identifier to announce the blob on the network.
 
-1. Inform rhio to import and encode a file from the file system into the MinIO database by sending it's path by publishing to the NATS Core subject `rhio.import`. The resulting hash is displayed in the server's logs, a [reply subject](https://docs.nats.io/nats-concepts/core-nats/reqreply) can also be specified where the resulting hash will be received from.
+1. Inform rhio to import and encode a file from the file system into the MinIO database. Send it's path by publishing to the NATS Core subject `rhio.import`. The resulting hash is displayed in the server's logs, a [reply subject](https://docs.nats.io/nats-concepts/core-nats/reqreply) can also be specified where the resulting hash will be sent to.
    ```
    $ nats request rhio.import /home/user/images/sloth.jpg
    ```
@@ -111,4 +111,4 @@ Large files of any size can be imported into the local MinIO database and then a
 
 ## Stream
 
-rhio does not offer any direct APIs to subscribe to message streams. To consume data the regular NATS JetStream API is used.
+rhio does not offer any direct APIs to subscribe to message streams. To consume data the regular NATS JetStream API is used and messages need to be validated as they are encoded in the p2panda Operation format.
