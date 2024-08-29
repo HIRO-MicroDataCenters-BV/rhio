@@ -20,7 +20,7 @@ pub enum ToNatsActor {
 
         /// NATS subject filter.
         ///
-        /// Streams can hold different subjects, with a "subject filter" we're able to only select
+        /// Streams can hold different subjects. By using a "subject filter" we're able to select only
         /// the ones we're interested in. This forms "filtered views" on top of streams.
         filter_subject: Option<String>,
 
