@@ -4,6 +4,8 @@ members = [
   "p2panda-blobs",
   "p2panda-sync",
   "rhio",
+  "rhio-client",
+  "rhio-core",
   "rhio-ffi"
 ]
 

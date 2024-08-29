@@ -1,5 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use futures_util::stream::SelectAll;
+use p2panda_core::Operation;
+use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -7,7 +9,7 @@ use tracing::{error, info};
 
 use crate::blobs::Blobs;
 use crate::nats::{ConsumerEvent, Nats};
-use crate::panda::{Message, MessageMeta, Panda, TopicId};
+use crate::panda::Panda;
 
 pub enum ToNodeActor {
     Subscribe {
@@ -23,7 +25,7 @@ pub enum ToNodeActor {
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
     nats_consumer_rx: SelectAll<BroadcastStream<ConsumerEvent>>,
-    p2panda_topic_rx: SelectAll<BroadcastStream<(Message, MessageMeta)>>,
+    p2panda_topic_rx: SelectAll<BroadcastStream<Operation<RhioExtensions>>>,
     nats: Nats,
     panda: Panda,
     blobs: Blobs,

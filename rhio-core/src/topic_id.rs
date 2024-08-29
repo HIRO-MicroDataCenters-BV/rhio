@@ -2,7 +2,7 @@ use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct TopicId(pub p2panda_net::TopicId);
+pub struct TopicId(pub [u8; 32]);
 
 impl TopicId {
     pub fn new(bytes: [u8; 32]) -> Self {
@@ -24,7 +24,7 @@ impl TopicId {
     }
 }
 
-impl From<TopicId> for p2panda_net::TopicId {
+impl From<TopicId> for [u8; 32] {
     fn from(val: TopicId) -> Self {
         val.0
     }
