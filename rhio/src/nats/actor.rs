@@ -24,8 +24,8 @@ pub enum ToNatsActor {
         /// the ones we're interested in. This forms "filtered views" on top of streams.
         filter_subject: Option<String>,
 
-        /// Channel to receive all (old and new) messages from this subscription, errors and
-        /// "readyness" state.
+        /// Channel to receive all messages (old and new) from this subscription, including
+        /// errors and "readiness" state.
         ///
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. The channel will eventually send an event to the
