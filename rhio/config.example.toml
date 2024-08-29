@@ -1,25 +1,101 @@
-# bind_port = 2022
+# rhio configuration file
+#
+# 1. Copy this file to the location where a) rhio will run b) in an XDG
+# compliant config directory (for example "$HOME/.config/rhio/config.toml"
+# on Linux) or c) refer to it using the -c command line argument when running
+# rhio.
+# 2. Replace the example values with your own desired configuration. All values
+# in this template resemble the defaults
 
+# ﾟ･｡+☆
+# PORTS
+# ﾟ･｡+☆
+
+# Port for node-node communication and data replication. Defaults to 2022.
+#
+# When port is taken the node will automatically pick a random, free port.
+#
+bind_port = 2022
+
+# ﾟ･｡+☆+｡･
+# IDENTITY
+# ﾟ･｡+☆+｡･
+
+# Path to persist the node's ed25519 private key file. The key is used to
+# identify the ndoe towards other nodes during network discovery and
+# replication. This key is _not_ used to create and sign data.
+#
+# If a path is set, a key will be generated newly and stored under this path
+# when node starts for the first time.
+#
+# When comment out or no path is set, your node will generate an ephemeral
+# private key on every start up and _not_ persist it.
+#
 # private_key = "private-key.txt"
 
-# blobs_dir = "blobs"
+# ﾟ･｡+☆
+# NODES
+# ﾟ･｡+☆
 
+# List of known node addresses we want to connect to direct. Addresses have to
+# be IP addresses and must include a port number.
+#
+# NOTE: Make sure that nodes mentioned in this list are directly reachable
+# (they need to be hosted with a static IP Address).
+#
 # [[nodes]]
 # public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
 # direct_addresses = [
-#   "192.168.178.100:2222",
-#   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2223",
+#   "192.168.178.100:2022",
+#   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023",
 # ]
 
-# [[streams]]
-# nats_stream_name = "my_test"
-# nats_filter_subject = "test.*"
-# external_topic = "test"
+# ﾟ･｡+☆+｡
+# STREAMS
+# ﾟ･｡+☆+｡
 
+# Connect your NATS JetStreams to external nodes by specifying the name of the
+# stream and optionally filtering the stream by subject (wildcards are
+# allowed).
+#
+# Multiple streams can be defined here, make sure that the stream is already
+# created on your server and follows the right configuration.
+#
+# The "external_topic" is required to discover other nodes on the network who
+# are interested in the same messages from this stream. Make sure that these
+# topic identifiers match among nodes to be able to exchange data.
+#
+# [[streams]]
+# nats_stream_name = "icecreams"
+# nats_filter_subject = "icecreams.*.dropped"
+# external_topic = "dropped-icecreams"
+
+# ﾟ･｡+☆
+# MINIO
+# ﾟ･｡+☆
+
+# Endpoint of the local MinIO S3 Database.
+#
 # [minio]
 # bucket_name = "rhio"
 # endpoint = "http://localhost:9000"
 # region = "eu-central-1"
+# credentials = { access_key = "rhio", secret_key = "rhio_password" }
 
+# Path to file-system blob store to temporarily load blobs into when importing
+# to MinIO database.
+#
+# WARNING: When left empty, an in-memory blob store is used instead which might
+# lead to data corruption as blob hashes are not kept between restarts. Use the
+# in-memory store only for testing purposes.
+#
+# blobs_dir = "blobs"
+
+# ﾟ･｡+
+# NATS
+# ﾟ･｡+
+
+# Endpoint of the local NATS Server with JetStreams enabled.
+#
 # [nats]
-# endpoint = "localhost:4333"
+# endpoint = "localhost:4222"
