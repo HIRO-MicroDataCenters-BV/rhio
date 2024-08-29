@@ -13,12 +13,12 @@ pub fn create_blob_announcement<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
-    blob_hash: Option<Hash>,
+    blob_hash: Hash,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    create_operation(store, private_key, subject, blob_hash, None)
+    create_operation(store, private_key, subject, Some(blob_hash), None)
 }
 
 pub fn create_message<S>(
