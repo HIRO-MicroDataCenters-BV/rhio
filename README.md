@@ -14,7 +14,7 @@ Similar to NATS JetStream, any number of streams can be subscribed to and filter
 
 ### Messages
 
-rhio does not create or publish any messages by itself and serves merely as an "router" coordinating streams inside and outside the cluster. To publish messages into the stream the regular NATS JetStream API is used: Other processes inside the cluster can independently publish messages to the NATS Server which will then be automatically picked up and processed by rhio.
+rhio does not create or publish any messages by itself and serves merely as an "router" coordinating streams inside and outside the cluster. To publish messages into the stream the regular NATS JetStream API is used. Other processes inside the cluster can independently publish messages to the NATS Server which will then be automatically picked up and processed by rhio.
 
 ## Blobs
 
