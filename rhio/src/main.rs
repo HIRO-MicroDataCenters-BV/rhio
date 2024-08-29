@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
 use rhio::config::load_config;
-use rhio::logging::setup_tracing;
-use rhio::nats::ConsumerEvent;
-use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-use tracing::{error, info};
+use rhio::tracing::setup_tracing;
+use rhio::Node;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,43 +18,22 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node: Node<()> = Node::spawn(config.clone(), private_key.clone()).await?;
+    let node = Node::spawn(config.clone(), private_key.clone()).await?;
 
-    if let Some(addresses) = node.direct_addresses().await {
-        let addresses: Vec<String> = addresses.iter().map(|addr| addr.to_string()).collect();
-        info!("‣ node public key: {}", node.id());
-        info!("‣ node addresses: {}", addresses.join(", "));
-    }
+    let addresses: Vec<String> = node
+        .direct_addresses()
+        .iter()
+        .map(|addr| addr.to_string())
+        .collect();
+    info!("‣ node public key: {}", node.id());
+    info!("‣ node addresses: {}", addresses.join(", "));
 
     // @TODO: Subscribe to streams based on config file instead
     info!("subscribe to NATS stream");
-    let mut rx = node
-        .subscribe("my_test".into(), Some("foo.test".into()))
+    node.subscribe("my_test".into(), Some("foo.test".into()))
         .await?;
 
-    loop {
-        tokio::select! {
-            Ok(event) = rx.recv() => {
-                match event {
-                    ConsumerEvent::InitializationCompleted => {
-                        info!("initialization succeeded");
-                    },
-                    ConsumerEvent::InitializationFailed => {
-                        error!("initialization failed");
-                    },
-                    ConsumerEvent::StreamFailed => {
-                        error!("stream failed");
-                    },
-                    ConsumerEvent::Message { payload, .. } => {
-                        info!("message received {:?}", payload);
-                    },
-                }
-            },
-            Ok(_) = tokio::signal::ctrl_c() => {
-                break;
-            },
-        }
-    }
+    tokio::signal::ctrl_c().await?;
 
     info!("");
     info!("shutting down");

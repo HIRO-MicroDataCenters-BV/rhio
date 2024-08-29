@@ -1,13 +1,21 @@
-use p2panda_core::hash::Hash;
-use p2panda_net::TopicId as InnerTopicId;
+use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct TopicId(pub InnerTopicId);
+pub struct TopicId(pub p2panda_net::TopicId);
 
 impl TopicId {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    pub fn from_nats_stream(stream_name: &str, filter_subject: &Option<String>) -> Self {
+        let filter_value = match filter_subject {
+            Some(filter) => filter.clone(),
+            None => "".to_owned(),
+        };
+        let value = format!("{}{}", stream_name, filter_value);
+        Self::from_str(&value)
     }
 
     pub fn from_str(value: &str) -> Self {
@@ -16,7 +24,7 @@ impl TopicId {
     }
 }
 
-impl From<TopicId> for InnerTopicId {
+impl From<TopicId> for p2panda_net::TopicId {
     fn from(val: TopicId) -> Self {
         val.0
     }

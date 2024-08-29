@@ -16,6 +16,7 @@ clap = { version = "4.5.8", features = ["derive"] }
 directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "toml"] }
 futures-lite = "2.3.0"
+futures-util = "0.3.30"
 hex = "0.4.3"
 iroh-blobs = { version = "0.22.0", features = ["fs-store"], default-features = false }
 p2panda-blobs = { path = "../p2panda-blobs" }

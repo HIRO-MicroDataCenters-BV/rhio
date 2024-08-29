@@ -1,1 +1,3 @@
-config.toml
+!config.example.toml
+config*.toml
+private-key*

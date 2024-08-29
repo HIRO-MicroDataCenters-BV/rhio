@@ -38,7 +38,7 @@ pub fn generate_ephemeral_private_key() -> PrivateKey {
 #[cfg(target_os = "linux")]
 fn save_private_key_to_file(private_key: &PrivateKey, path: PathBuf) -> Result<()> {
     let mut file = File::create(&path)?;
-    file.write_all(private_key.as_bytes())?;
+    file.write_all(private_key.to_hex().as_bytes())?;
     file.sync_all()?;
 
     // Set permission for sensitive information
