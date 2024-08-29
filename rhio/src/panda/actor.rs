@@ -13,7 +13,7 @@ use rhio_core::{
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 pub type SubscribeResult = Result<(
     broadcast::Receiver<Operation<RhioExtensions>>,
@@ -220,6 +220,11 @@ impl PandaActor {
         header: Header<RhioExtensions>,
         body: Option<Body>,
     ) -> Result<Operation<RhioExtensions>> {
+        trace!(
+            "ingest operation from {} @ {}",
+            header.public_key,
+            header.seq_num
+        );
         ingest_operation(&mut self.store, header, body)
     }
 

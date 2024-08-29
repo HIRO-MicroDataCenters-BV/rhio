@@ -104,24 +104,27 @@ where
     };
     validate_operation(&operation)?;
 
-    let subject: Subject = operation
-        .header
-        .extract()
-        .ok_or(anyhow!("missing 'subject' field in header"))?;
+    let already_exists = store.get_operation(operation.hash)?.is_some();
+    if !already_exists {
+        let subject: Subject = operation
+            .header
+            .extract()
+            .ok_or(anyhow!("missing 'subject' field in header"))?;
 
-    let log_id = LogId::new(&subject);
+        let log_id = LogId::new(&subject);
 
-    let latest_operation = store
-        .latest_operation(operation.header.public_key, log_id.clone())
-        .context("critical store failure")?;
+        let latest_operation = store
+            .latest_operation(operation.header.public_key, log_id.clone())
+            .context("critical store failure")?;
 
-    if let Some(latest_operation) = latest_operation {
-        validate_backlink(&latest_operation.header, &operation.header)?;
+        if let Some(latest_operation) = latest_operation {
+            validate_backlink(&latest_operation.header, &operation.header)?;
+        }
+
+        store
+            .insert_operation(operation.clone(), log_id)
+            .context("critical store failure")?;
     }
-
-    store
-        .insert_operation(operation.clone(), log_id)
-        .context("critical store failure")?;
 
     Ok(operation)
 }
