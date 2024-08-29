@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::logging::setup_tracing;
+use rhio::nats::ConsumerEvent;
 use rhio::node::Node;
 use rhio::private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,16 +27,35 @@ async fn main() -> Result<()> {
         info!("‣ node addresses: {}", addresses.join(", "));
     }
 
-    // Join gossip overlay for `BLOB_ANNOUNCE_TOPIC` topic
-    // println!("joining gossip overlay ..");
-    // let topic = TopicId::new_from_str(BLOB_ANNOUNCE_TOPIC);
-    // let (topic_tx, mut topic_rx, topic_ready) = node.subscribe(topic).await?;
-    //
-    // // Wait for the gossip topic to be ready
-    // topic_ready.await;
-    // println!("gossip overlay joined");
+    // @TODO: Subscribe to streams based on config file instead
+    info!("subscribe to NATS stream");
+    let mut rx = node
+        .subscribe("my_test".into(), Some("foo.test".into()))
+        .await?;
 
-    tokio::signal::ctrl_c().await?;
+    loop {
+        tokio::select! {
+            Ok(event) = rx.recv() => {
+                match event {
+                    ConsumerEvent::InitializationCompleted => {
+                        info!("initialization succeeded");
+                    },
+                    ConsumerEvent::InitializationFailed => {
+                        error!("initialization failed");
+                    },
+                    ConsumerEvent::StreamFailed => {
+                        error!("stream failed");
+                    },
+                    ConsumerEvent::Message { payload, .. } => {
+                        info!("message received {:?}", payload);
+                    },
+                }
+            },
+            Ok(_) = tokio::signal::ctrl_c() => {
+                break;
+            },
+        }
+    }
 
     info!("");
     info!("shutting down");

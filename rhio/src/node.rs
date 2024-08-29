@@ -1,12 +1,8 @@
-use std::future::Future;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::pin::Pin;
 
-use anyhow::{anyhow, Context, Result};
-use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::{Client as NatsClient, ConnectOptions};
+use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, Network, NetworkBuilder, SharedAbortingJoinHandle};
@@ -21,6 +17,7 @@ use crate::actor::{RhioActor, ToRhioActor};
 use crate::config::{Config, ImportPath};
 use crate::extensions::{LogId, RhioExtensions};
 use crate::messages::{Message, MessageMeta};
+use crate::nats::{ConsumerEvent, Nats};
 use crate::topic_id::TopicId;
 
 // @TODO: Give rhio a cool network id
@@ -28,14 +25,12 @@ const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
 
 /// p2panda network node which handles connecting to other peers, syncing operations over topics
 /// and blobs using the bao protocol.
-#[derive(Clone)]
 pub struct Node<T = Vec<u8>> {
     pub config: Config,
     network: Network,
+    nats: Nats,
     actor_tx: mpsc::Sender<ToRhioActor<T>>,
     actor_handle: SharedAbortingJoinHandle<()>,
-    nats_client: NatsClient,
-    nats_jetstream: JetstreamContext,
 }
 
 impl<T> Node<T>
@@ -91,20 +86,17 @@ where
             (network, actor_handle)
         };
 
-        // @TODO: Add auth options to NATS server config
-        let nats_client =
-            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
-                .await
-                .context("connecting to NATS server")?;
-        let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
+        // Connect with NATS client to server and consume streams over "subjects" we're interested
+        // in. The NATS jetstream is the p2panda persistance and transport layer and holds all past
+        // and future operations.
+        let nats = Nats::new(config.clone()).await?;
 
         let node = Node {
             config,
             network,
+            nats,
             actor_tx,
             actor_handle: actor_handle.into(),
-            nats_client,
-            nats_jetstream,
         };
 
         Ok(node)
@@ -243,32 +235,50 @@ where
         Ok(())
     }
 
-    /// Subscribe to a gossip topic.
+    /// Subscribe to a NATS subject over a NATS stream.
     ///
-    /// Returns a sender for broadcasting messages to all peers subscribed to this topic, a
-    /// receiver where messages can be awaited, and future which resolves once the gossip overlay
-    /// is ready.
+    /// It is possible to subscribe to multiple different subjects over the same stream. Subjects
+    /// form "filtered views" on top of streams.
+    ///
+    /// rhio connects to other clusters in the network and maintains data streams among them per
+    /// NATS subject. With the help of p2panda, rhio can maintain streams fully p2p without any
+    /// central coordination required. Towards the inner cluster though a central NATS Jetstream
+    /// server is used which persists the received data. Jetstream is also used to create new data;
+    /// other processes within the cluster publish directly to the NATS Server and rhio will pick
+    /// the data up and delegate it further to external clusters.
+    ///
+    /// Within a cluster we handle everything based on NATS subjects (with their hierarchical
+    /// design). Between rhio nodes, using the p2panda protocol, data streams are identified by
+    /// p2panda "topics" (non-hierarchical, similar to Kafka topics). While being different in
+    /// design and terminology during cross-cluster communication, the general nature of NATS
+    /// subjects is preserved from the perspective within each cluster. This is why this high-level
+    /// API only refers to NATS "subjects".
+    ///
+    /// When subscribing to a NATS subject the following steps are taking place:
+    ///
+    /// 1. An ephemeral, non-acking, push-based Jetstream consumer is created, streaming
+    ///    subject-filtered data to rhio.
+    /// 2. When creating the subscription, all past data is initially downloaded and moved into an
+    ///    in-memory cache. This process might take a while, depending on the number of past
+    ///    messages in the stream.
+    /// 3. Simultaneously rhio establishes a p2panda gossip overlay with other clusters over that
+    ///    topic (hashed subject string) to already receive new data. On receipt it'll be moved
+    ///    into the in-memory cache and for persistence published to the NATS server.
+    /// 4. When the initial download from the NATS server has finished, we're continuing with
+    ///    syncing past state from external clusters using the p2panda sync protocol. Again, this
+    ///    data is cached in-memory and persisted on the NATS server.
+    /// 5. Finally, when all internal and external cluster data over this "subject" has been
+    ///    loaded, we still continue gossiping over future data.
+    ///
+    /// Since step 2 might take a while (downloading all persisted data from the database) and
+    /// blocks all subsequent steps (except entering gossip mode), this method returns an oneshot
+    /// receiver the user can await to understand when the initialization has finished.
     pub async fn subscribe(
         &self,
-        topic: TopicId,
-    ) -> Result<(
-        TopicSender<T>,
-        broadcast::Receiver<(Message<T>, MessageMeta)>,
-        Pin<Box<dyn Future<Output = ()> + Send>>,
-    )> {
-        let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
-        let (reply, reply_rx) = oneshot::channel();
-        self.actor_tx
-            .send(ToRhioActor::Subscribe {
-                topic,
-                topic_tx,
-                topic_rx,
-                reply,
-            })
-            .await?;
-        let result = reply_rx.await?;
-        let tx = TopicSender::new(topic, self.actor_tx.clone());
-        result.map(|(rx, ready)| (tx, rx, ready))
+        stream_name: String,
+        filter_subject: Option<String>,
+    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
+        self.nats.subscribe(stream_name, filter_subject).await
     }
 
     /// Shutdown the node.
@@ -276,6 +286,7 @@ where
         // Trigger shutdown of the main run task by activating the cancel token
         self.actor_tx.send(ToRhioActor::Shutdown).await?;
         self.network.shutdown().await?;
+        self.nats.shutdown().await?;
         self.actor_handle
             .await
             .map_err(|err| anyhow::anyhow!("{err}"))?;

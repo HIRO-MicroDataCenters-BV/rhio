@@ -2,15 +2,16 @@ use p2panda_core::hash::Hash;
 use p2panda_net::TopicId as InnerTopicId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct TopicId(pub InnerTopicId);
 
 impl TopicId {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
-    pub fn new_from_str(str: &str) -> Self {
-        let hash = Hash::new(str);
+
+    pub fn from_str(value: &str) -> Self {
+        let hash = Hash::new(value);
         Self(*hash.as_bytes())
     }
 }

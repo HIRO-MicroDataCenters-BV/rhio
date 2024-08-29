@@ -237,7 +237,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let topic = TopicId::new_from_str("test");
+        let topic = TopicId::from_str("test");
 
         let (sender0, _receiver0) = mpsc::channel(8);
         let cb0 = Cb { channel: sender0 };

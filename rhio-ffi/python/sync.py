@@ -132,7 +132,7 @@ async def main():
 
     # subscribe to a topic, providing a callback method which will be run on each
     # topic event we receive
-    topic = TopicId.new_from_str("rhio/file_system_sync")
+    topic = TopicId.from_str("rhio/file_system_sync")
     file_system_aggregate = FileSystemSync(node, sync_dir)
 
     logger.info("subscribing to gossip topic: {}", topic)
