@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Result;
-use futures_lite::FutureExt;
+use futures_util::FutureExt;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
