@@ -1,3 +1,6 @@
+use std::str::FromStr;
+
+use tracing::Level;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -11,6 +14,10 @@ pub fn setup_tracing(filter: Option<String>) {
     let builder = EnvFilter::builder().with_default_directive(default);
 
     let filter = if let Some(filter) = filter {
+        let filter = match Level::from_str(&filter) {
+            Ok(level) => format!("rhio={level}"),
+            Err(_) => filter,
+        };
         builder.parse_lossy(filter)
     } else {
         builder.parse_lossy("")
