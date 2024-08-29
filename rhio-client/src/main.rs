@@ -37,18 +37,19 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            Some(payload) = line_rx.recv() => {
+            Some(line) = line_rx.recv() => {
                 // If user writes a string, starting with "blob" (4 characters), followed by a
                 // space (1 character) and then ending with an hex-encoded BLAKE3 hash (64
-                // characters), then we interpret this as a blob announcement!
-                if payload.len() == 4 + 1 + 64 && payload.to_lowercase().starts_with("blob") {
-                    let file_name = &payload[5..];
+                // characters) and 1 control character (CR), then we interpret this as a blob
+                // announcement!
+                if line.len() == 4 + 1 + 64 + 1 && line.to_lowercase().starts_with("blob") {
+                    let hash = Hash::from_str(&line[5..69])?;
                     client
-                        .announce_blob(args.subject.clone(), file_name)
+                        .announce_blob(args.subject.clone(), hash)
                         .await?;
                 } else {
                     client
-                        .publish(args.subject.clone(), payload.as_bytes())
+                        .publish(args.subject.clone(), line.as_bytes())
                         .await?;
                 }
             }
