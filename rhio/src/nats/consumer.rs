@@ -40,6 +40,7 @@ pub enum JetStreamEvent {
         reason: String,
     },
     Message {
+        is_init: bool,
         payload: Vec<u8>,
         topic: TopicId,
     },
@@ -99,6 +100,11 @@ impl ConsumerActor {
     }
 
     async fn run_inner(&mut self) -> Result<()> {
+        // Do not wait for incoming messages for initialization if there is none
+        if self.initial_stream_height == 0 {
+            self.on_init_complete()?;
+        }
+
         loop {
             tokio::select! {
                 biased;
@@ -116,6 +122,8 @@ impl ConsumerActor {
         message: Result<Message, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         if let Err(err) = self.on_message_inner(message).await {
+            error!("consuming nats stream failed: {err}");
+
             match self.status {
                 ConsumerStatus::Initializing => {
                     self.subscribers_tx.send(JetStreamEvent::InitFailed {
@@ -123,13 +131,12 @@ impl ConsumerActor {
                         reason: err.to_string(),
                     })?;
                 }
-                ConsumerStatus::Streaming => {
+                _ => {
                     self.subscribers_tx.send(JetStreamEvent::StreamFailed {
                         stream_name: self.stream_name.clone(),
                         reason: err.to_string(),
                     })?;
                 }
-                ConsumerStatus::Failed => (),
             }
 
             self.status = ConsumerStatus::Failed;
@@ -145,6 +152,7 @@ impl ConsumerActor {
         let message = message?;
 
         self.subscribers_tx.send(JetStreamEvent::Message {
+            is_init: matches!(self.status, ConsumerStatus::Initializing),
             payload: message.payload.to_vec(),
             topic: self.topic,
         })?;
@@ -152,12 +160,17 @@ impl ConsumerActor {
         if matches!(self.status, ConsumerStatus::Initializing) {
             let info = message.info().map_err(|err| anyhow!(err))?;
             if info.stream_sequence >= self.initial_stream_height {
-                self.status = ConsumerStatus::Streaming;
-                self.subscribers_tx
-                    .send(JetStreamEvent::InitCompleted { topic: self.topic })?;
+                self.on_init_complete()?;
             }
         }
 
+        Ok(())
+    }
+
+    fn on_init_complete(&mut self) -> Result<()> {
+        self.status = ConsumerStatus::Streaming;
+        self.subscribers_tx
+            .send(JetStreamEvent::InitCompleted { topic: self.topic })?;
         Ok(())
     }
 }
@@ -234,7 +247,8 @@ impl Consumer {
         // the server (number of "pending messages") and we need to download first
         let initial_stream_height = {
             let consumer_info = consumer.info().await?;
-            consumer_info.num_pending + 1 // sequence numbers start with 1 in NATS JetStream
+            // @TODO: Is this correct or does it need to be +1 or another field?
+            consumer_info.num_pending
         };
 
         let messages = consumer.messages().await.context("get message stream")?;

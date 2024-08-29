@@ -5,7 +5,7 @@ use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, Top
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
@@ -128,6 +128,7 @@ impl NodeActor {
         filter_subject: Option<String>,
         topic: TopicId,
     ) -> Result<()> {
+        debug!("subscribe to nats stream {} ..", stream_name);
         let nats_rx = self
             .nats
             .subscribe(stream_name, filter_subject, topic)
@@ -142,6 +143,7 @@ impl NodeActor {
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
             JetStreamEvent::InitCompleted { topic, .. } => {
+                debug!("completed initialisation of stream");
                 self.on_nats_init_complete(topic).await?;
             }
             JetStreamEvent::InitFailed {
@@ -162,8 +164,13 @@ impl NodeActor {
             } => {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
-            JetStreamEvent::Message { topic, payload, .. } => {
-                self.on_nats_message(topic, payload).await?;
+            JetStreamEvent::Message {
+                is_init,
+                topic,
+                payload,
+                ..
+            } => {
+                self.on_nats_message(is_init, topic, payload).await?;
             }
         }
 
@@ -178,7 +185,13 @@ impl NodeActor {
     /// p2panda will now find other nodes being interested in the same "topic" and sync up with
     /// them.
     async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
-        let (panda_rx, _) = self.panda.subscribe(topic).await?;
+        debug!("join gossip on topic {topic} ..");
+        let (panda_rx, panda_ready) = self.panda.subscribe(topic).await?;
+        tokio::spawn(async move {
+            panda_ready.await;
+            debug!("successfully joined p2panda gossip on topic {topic}");
+        });
+
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`
         self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
@@ -192,7 +205,12 @@ impl NodeActor {
     ///
     /// From here these operations are replicated further to other nodes via the sync protocol and
     /// gossip broadcast.
-    async fn on_nats_message(&mut self, topic: TopicId, payload: Vec<u8>) -> Result<()> {
+    async fn on_nats_message(
+        &mut self,
+        is_init: bool,
+        topic: TopicId,
+        payload: Vec<u8>,
+    ) -> Result<()> {
         let (header, body) =
             decode_operation(&payload).context("decode incoming operation via nats")?;
         let operation = self
@@ -201,13 +219,17 @@ impl NodeActor {
             .await
             .context("ingest incoming operation via nats")?;
 
-        // @TODO(adz): For now we're naively just broadcasting the message further to other nodes,
-        // without checking if nodes came in late. This should be changed as soon as `p2panda-sync`
-        // is in place.
-        self.panda
-            .broadcast(header, body, topic)
-            .await
-            .context("broadcast incoming operation from nats")?;
+        // Do only forward the messages to external nodes _after_ initialisation (that is,
+        // downloading all persisted, past messages first)
+        if !is_init {
+            // @TODO(adz): For now we're naively just broadcasting the message further to other
+            // nodes, without checking if nodes came in late. This should be changed as soon as
+            // `p2panda-sync` is in place.
+            self.panda
+                .broadcast(header, body, topic)
+                .await
+                .context("broadcast incoming operation from nats")?;
+        }
 
         // Check if operation contains interesting information for rhio, for example blob
         // announcements
