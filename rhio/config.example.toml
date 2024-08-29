@@ -22,7 +22,7 @@ bind_port = 2022
 # ﾟ･｡+☆+｡･
 
 # Path to persist the node's ed25519 private key file. The key is used to
-# identify the ndoe towards other nodes during network discovery and
+# identify the node towards other nodes during network discovery and
 # replication. This key is _not_ used to create and sign data.
 #
 # If a path is set, a key will be generated newly and stored under this path
