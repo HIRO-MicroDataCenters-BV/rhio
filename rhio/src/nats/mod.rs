@@ -2,10 +2,11 @@ mod actor;
 mod consumer;
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use async_nats::{Client, ConnectOptions};
-use p2panda_net::{FromBytes, SharedAbortingJoinHandle};
+use p2panda_net::SharedAbortingJoinHandle;
 use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::StreamExt;
@@ -120,23 +121,26 @@ fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<Node
                 continue;
             }
 
-            match PathBuf::from_bytes(&message.payload) {
-                Ok(file_path) => {
-                    if let Err(err) = node_control_tx
-                        .send(NodeControl::ImportBlob {
-                            file_path,
-                            reply_subject: message.reply,
-                        })
-                        .await
-                    {
-                        error!("failed handling minio control message: {err}");
-                        break;
-                    }
-                }
-                Err(err) => {
-                    warn!("failed parsing minio control message: {err}");
-                }
+            let Ok(file_path_str) = std::str::from_utf8(&message.payload) else {
+                warn!("failed parsing minio control message");
+                continue;
             };
+
+            let Ok(file_path) = PathBuf::from_str(file_path_str) else {
+                warn!("failed parsing minio control message");
+                continue;
+            };
+
+            if let Err(err) = node_control_tx
+                .send(NodeControl::ImportBlob {
+                    file_path,
+                    reply_subject: message.reply,
+                })
+                .await
+            {
+                error!("failed handling minio control message: {err}");
+                break;
+            }
         }
     });
 }
