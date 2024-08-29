@@ -18,7 +18,7 @@ pub struct RhioExtensions {
 
     /// Optional field for messages which announce new blobs in the network, identified by this
     /// hash. p2panda peers will connect to other nodes and replicate the blob on receipt.
-    #[serde(rename = "b")]
+    #[serde(rename = "b", skip_serializing_if = "Option::is_none")]
     pub blob_hash: Option<Hash>,
 }
 
