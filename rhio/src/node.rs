@@ -243,7 +243,7 @@ where
     /// rhio connects to other clusters in the network and maintains data streams among them per
     /// NATS subject. With the help of p2panda, rhio can maintain streams fully p2p without any
     /// central coordination required. Towards the inner cluster though a central NATS Jetstream
-    /// server is used which persists the received data. Jetstream is also used to create new data,
+    /// server is used which persists the received data. Jetstream is also used to create new data;
     /// other processes within the cluster publish directly to the NATS Server and rhio will pick
     /// the data up and delegate it further to external clusters.
     ///
