@@ -164,12 +164,15 @@ where
         region: Region,
         credentials: Credentials,
     ) -> Result<()> {
-        let entry = self.blobs.get(hash).await?.expect("entry exists");
+        let entry = self
+            .blobs
+            .get(hash)
+            .await?
+            .ok_or(anyhow!("requested blob hash was not found in blob store"))?;
 
         // Initiate the minio bucket
         let mut bucket =
             Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
-
         if !bucket.exists().await? {
             bucket = Bucket::create_with_path_style(
                 &bucket_name,
@@ -210,8 +213,8 @@ where
             .await?;
 
         if response.status_code() != 200 {
-            error!("{response}");
-            return Err(anyhow::anyhow!(response));
+            error!("uploading blob to minio bucket failed with: {response}");
+            return Err(anyhow!(response));
         }
 
         Ok(())

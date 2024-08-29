@@ -155,6 +155,7 @@ fn try_determine_config_file_path() -> Option<PathBuf> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MinioConfig {
+    // @TODO(adz): We probably want to load this from some secure store / file instead?
     pub credentials: Option<Credentials>,
     pub bucket_name: String,
     pub endpoint: String,

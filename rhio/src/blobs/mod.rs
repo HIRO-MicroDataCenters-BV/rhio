@@ -77,7 +77,7 @@ impl Blobs {
         bucket_name: String,
     ) -> Result<()> {
         let Some(credentials) = &self.config.credentials else {
-            return Err(anyhow!("No minio credentials provided"));
+            return Err(anyhow!("no minio credentials provided"));
         };
 
         // Get the blobs entry from the blob store
