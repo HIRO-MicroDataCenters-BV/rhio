@@ -6,9 +6,7 @@ use async_nats::{jetstream::Context as JetstreamContext, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::nats::consumer::{Consumer, ConsumerId};
-
-use super::consumer::ConsumerEvent;
+use crate::nats::consumer::{Consumer, ConsumerEvent, ConsumerId};
 
 pub enum ToNatsActor {
     Publish {
