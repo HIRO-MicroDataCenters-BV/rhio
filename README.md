@@ -159,3 +159,7 @@ cargo fmt
 ```bash
 cargo build --release
 ```
+
+## License
+
+[MIT](LICENSE)
