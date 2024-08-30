@@ -82,7 +82,7 @@ bind_port = 2022
 # region = "eu-central-1"
 # credentials = { access_key = "rhio", secret_key = "rhio_password" }
 
-# Path to file-system blob store to temporarily load blobs into when importing
+# Path to file-system blob store to load blobs into when importing
 # to MinIO database.
 #
 # WARNING: When left empty, an in-memory blob store is used instead which might
