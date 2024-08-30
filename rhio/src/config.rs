@@ -83,7 +83,7 @@ struct Cli {
     /// default.
     ///
     /// If you want to adjust the scope for deeper inspection use a filter value, for example
-    /// "=TRACE" for logging _everything_ or "rhio=INFO,async-nats=DEBUG" etc.
+    /// "=TRACE" for logging _everything_ or "rhio=INFO,async_nats=DEBUG" etc.
     #[arg(short = 'l', long, value_name = "LEVEL")]
     #[serde(skip_serializing_if = "Option::is_none")]
     log_level: Option<String>,
