@@ -34,7 +34,7 @@ pub fn setup_tracing(filter: Option<String>) {
             }
         }
     } else {
-        "".to_string()
+        String::default()
     };
     let filter = builder.parse_lossy(filter);
 

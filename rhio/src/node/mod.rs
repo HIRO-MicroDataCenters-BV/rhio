@@ -74,10 +74,10 @@ impl Node {
         let panda = Panda::new(network);
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
-        //    interested in. The NATS jetstream is the p2panda persistance and transport layer and
+        //    interested in. The NATS jetstream is the p2panda persistence and transport layer and
         //    holds all past and future operations.
         //
-        //    Additionally we keep an "control channel" open via NATS Core, to receive internal
+        //    Additionally we keep a "control channel" open via NATS Core, to receive internal
         //    messages on handling MinIO blob imports, etc.
         let (node_control_tx, node_control_rx) = mpsc::channel(32);
         let nats = Nats::new(config.clone(), node_control_tx).await?;

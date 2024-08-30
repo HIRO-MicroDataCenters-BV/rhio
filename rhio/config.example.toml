@@ -25,11 +25,11 @@ bind_port = 2022
 # identify the node towards other nodes during network discovery and
 # replication. This key is _not_ used to create and sign data.
 #
-# If a path is set, a key will be generated newly and stored under this path
-# when node starts for the first time.
+# If a path is set, a new key will be generated and stored under this path when
+# node starts for the first time.
 #
-# When comment out or no path is set, your node will generate an ephemeral
-# private key on every start up and _not_ persist it.
+# When no path is set, your node will generate an ephemeral private key on
+# every start up and _not_ persist it.
 #
 # private_key = "private-key.txt"
 
@@ -37,11 +37,11 @@ bind_port = 2022
 # NODES
 # ﾟ･｡+☆
 
-# List of known node addresses we want to connect to direct. Addresses have to
-# be IP addresses and must include a port number.
+# List of known node addresses we want to connect to directly. Addresses have
+# to be IP addresses and must include a port number.
 #
 # NOTE: Make sure that nodes mentioned in this list are directly reachable
-# (they need to be hosted with a static IP Address).
+# (they need to be hosted with a static IP address).
 #
 # [[nodes]]
 # public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
@@ -58,7 +58,7 @@ bind_port = 2022
 # stream and optionally filtering the stream by subject (wildcards are
 # allowed).
 #
-# Multiple streams can be defined here, make sure that the stream is already
+# Multiple streams can be defined here. Make sure that the stream is already
 # created on your server and follows the right configuration.
 #
 # The "external_topic" is required to discover other nodes on the network who

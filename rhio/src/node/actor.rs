@@ -197,8 +197,7 @@ impl NodeActor {
     /// From this point on we can join the p2panda gossip overlay for that given (filtered) subject
     /// in this stream.
     ///
-    /// p2panda will now find other nodes being interested in the same "topic" and sync up with
-    /// them.
+    /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
     async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
         debug!("join gossip on topic {topic} ..");
         let (panda_rx, panda_ready) = self.panda.subscribe(topic).await?;
@@ -234,8 +233,8 @@ impl NodeActor {
             .await
             .context("ingest incoming operation via nats")?;
 
-        // Do only forward the messages to external nodes _after_ initialisation (that is,
-        // downloading all persisted, past messages first)
+        // Only forward the messages to external nodes _after_ initialisation (that is, downloading
+        // all persisted, past messages first)
         if !is_init {
             // @TODO(adz): For now we're naively just broadcasting the message further to other
             // nodes, without checking if nodes came in late. This should be changed as soon as
@@ -258,14 +257,14 @@ impl NodeActor {
     /// Handler for incoming p2panda operations from the p2p network.
     ///
     /// Operations at this stage are already validated and stored in the in-memory cache. In this
-    /// method they get forwarded to the NATS server for persistance and communication to other
+    /// method they get forwarded to the NATS server for persistence and communication to other
     /// processes.
     async fn on_operation(&mut self, operation: Operation<RhioExtensions>) -> Result<()> {
         // Check if operation contains interesting information for rhio, for example blob
         // announcements
         self.process_operation(&operation).await?;
 
-        // Forward operation to NATS server for persistance and communication to other processes
+        // Forward operation to NATS server for persistence and communication to other processes
         // subscribed to the same subject
         let subject: Subject = operation
             .header
@@ -316,7 +315,7 @@ impl NodeActor {
                     hash
                 );
 
-                // If the control command requested an reply via NATS Core, we will provide it!
+                // If the control command requested a response via NATS Core, we will provide it!
                 if let Some(subject) = reply_subject {
                     self.nats
                         .publish(subject.to_string(), hash.to_bytes())

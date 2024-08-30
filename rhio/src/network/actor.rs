@@ -2,7 +2,7 @@ use std::collections::{hash_map, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures_util::FutureExt;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::{InEvent, OutEvent};
@@ -153,8 +153,8 @@ impl PandaActor {
                 tx.send(InEvent::Message { bytes }).await
             }
             None => {
-                return Err(anyhow::anyhow!(
-                    "Attempted to send operation on unknown topic {topic:?}"
+                return Err(anyhow!(
+                    "attempted to send operation on unknown topic {topic:?}"
                 ))
             }
         }?;

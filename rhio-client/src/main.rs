@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
         tokio::select! {
             Some(line) = line_rx.recv() => {
                 // If user writes a string, starting with "blob" (4 characters), followed by a
-                // space (1 character) and then ending with an hex-encoded BLAKE3 hash (64
+                // space (1 character) and then ending with a hex-encoded BLAKE3 hash (64
                 // characters) and 1 control character (CR), then we interpret this as a blob
                 // announcement!
                 if line.len() == 4 + 1 + 64 + 1 && line.to_lowercase().starts_with("blob") {
