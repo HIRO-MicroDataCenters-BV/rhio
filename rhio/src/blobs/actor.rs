@@ -1,5 +1,4 @@
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
 use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
@@ -10,21 +9,12 @@ use s3::creds::Credentials;
 use s3::{Bucket, BucketConfiguration, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
-use tracing::{error, info};
+use tracing::error;
 
 pub enum ToBlobsActor {
     ImportFile {
-        path: PathBuf,
+        file_path: PathBuf,
         reply: oneshot::Sender<Result<Hash>>,
-    },
-    ImportUrl {
-        url: String,
-        reply: oneshot::Sender<Result<Hash>>,
-    },
-    ExportBlobFilesystem {
-        hash: Hash,
-        path: PathBuf,
-        reply: oneshot::Sender<Result<()>>,
     },
     ExportBlobMinio {
         hash: Hash,
@@ -102,32 +92,12 @@ where
 
     async fn on_actor_message(&mut self, msg: ToBlobsActor) -> Result<()> {
         match msg {
-            ToBlobsActor::ImportUrl { url, reply } => {
-                let result = self.on_import_url(&url).await;
-                if let Ok(hash) = result {
-                    info!("imported blob: {hash} {url}");
-                }
-                reply.send(result).ok();
-            }
-            ToBlobsActor::ImportFile { path, reply } => {
-                let result = self.on_import_blob(&path).await;
-                if let Ok(hash) = result {
-                    info!("imported blob: {hash} {path:?}");
-                }
-                reply.send(result).ok();
-            }
-            ToBlobsActor::ExportBlobFilesystem { path, reply, hash } => {
-                let result = self.on_export_blob_filesystem(hash, &path).await;
-                if result.is_ok() {
-                    info!("exported blob to filesystem: {hash} {path:?}");
-                }
+            ToBlobsActor::ImportFile { file_path, reply } => {
+                let result = self.on_import_file(file_path).await;
                 reply.send(result).ok();
             }
             ToBlobsActor::DownloadBlob { hash, reply } => {
                 let result = self.on_download_blob(hash).await;
-                if result.is_ok() {
-                    info!("downloaded blob {hash}");
-                }
                 reply.send(result).ok();
             }
             ToBlobsActor::ExportBlobMinio {
@@ -140,9 +110,6 @@ where
                 let result = self
                     .on_export_blob_minio(hash, bucket_name.clone(), region, credentials)
                     .await;
-                if result.is_ok() {
-                    info!("exported blob to minio: {hash} {bucket_name}");
-                }
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {
@@ -153,37 +120,24 @@ where
         Ok(())
     }
 
-    async fn on_import_blob(&mut self, path: &Path) -> Result<Hash> {
+    async fn on_import_file(&mut self, path: PathBuf) -> Result<Hash> {
         let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
 
-        let event = stream
-            .next()
-            .await
-            .expect("no event arrived on blob import stream");
-
-        let hash = match event {
-            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
-            ImportBlobEvent::Done(hash) => Ok(hash),
-        }?;
-
-        Ok(hash)
-    }
-
-    async fn on_import_url(&mut self, url: &String) -> Result<Hash> {
-        let stream = reqwest::get(url)
-            .await?
-            .bytes_stream()
-            .map(|result| result.map_err(|err| io::Error::new(io::ErrorKind::Other, err)));
-        let mut stream = Box::pin(self.blobs.import_blob_from_stream(stream).await);
-
-        let event = stream
-            .next()
-            .await
-            .expect("no event arrived on blob import stream");
-
-        let hash = match event {
-            ImportBlobEvent::Abort(err) => Err(anyhow::anyhow!("failed importing blob: {err}")),
-            ImportBlobEvent::Done(hash) => Ok(hash),
+        // @TODO(adz): Yes, we know this never loops as all enum cases are currently terminating,
+        // but as soon as we're adding more to `p2panda-blobs` this code becomes crucial.
+        #[allow(clippy::never_loop)]
+        let hash = loop {
+            match stream.next().await {
+                Some(ImportBlobEvent::Done(hash)) => {
+                    break Ok(hash);
+                }
+                Some(ImportBlobEvent::Abort(err)) => {
+                    break Err(anyhow!("failed importing blob: {err}"));
+                }
+                None => {
+                    break Err(anyhow!("failed importing blob"));
+                }
+            }
         }?;
 
         Ok(hash)
@@ -202,10 +156,6 @@ where
         Ok(())
     }
 
-    async fn on_export_blob_filesystem(&mut self, hash: Hash, path: &PathBuf) -> Result<()> {
-        self.blobs.export_blob(hash, path).await
-    }
-
     async fn on_export_blob_minio(
         &mut self,
         hash: Hash,
@@ -213,12 +163,15 @@ where
         region: Region,
         credentials: Credentials,
     ) -> Result<()> {
-        let entry = self.blobs.get(hash).await?.expect("entry exists");
+        let entry = self
+            .blobs
+            .get(hash)
+            .await?
+            .ok_or(anyhow!("requested blob hash was not found in blob store"))?;
 
         // Initiate the minio bucket
         let mut bucket =
             Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
-
         if !bucket.exists().await? {
             bucket = Bucket::create_with_path_style(
                 &bucket_name,
@@ -259,9 +212,10 @@ where
             .await?;
 
         if response.status_code() != 200 {
-            error!("{response}");
-            return Err(anyhow::anyhow!(response));
+            error!("uploading blob to minio bucket failed with: {response}");
+            return Err(anyhow!(response));
         }
+
         Ok(())
     }
 

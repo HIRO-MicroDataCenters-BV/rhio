@@ -13,7 +13,7 @@ use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
-use crate::config::{ImportPath, MinioConfig};
+use crate::config::MinioConfig;
 
 #[derive(Debug)]
 pub struct Blobs {
@@ -42,65 +42,29 @@ impl Blobs {
         }
     }
 
-    /// Import a blob into the node's blob store and sync it with the MinIO database.
-    pub async fn import_blob(&self, import_path: ImportPath) -> Result<Hash> {
-        let hash = match import_path {
-            // Import a file from the local filesystem
-            ImportPath::File(path) => self.import_blob_filesystem(path.clone()).await?,
-            // Import a file from the given url
-            ImportPath::Url(url) => self.import_blob_url(url.clone()).await?,
-        };
-
-        // Export the blob data from the blob store to a minio bucket
-        if self.config.credentials.is_some() {
-            self.export_blob_minio(
-                hash,
-                self.config.region.clone(),
-                self.config.endpoint.clone(),
-                self.config.bucket_name.clone(),
-            )
+    /// Import a file into the node's blob store on the file system and sync it with the internal
+    /// MinIO database.
+    // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
+    // for the file. This is the only way to retrieve the blob hash right now. In the future we
+    // want to do all of this inside of MinIO and skip loading the file onto the file-system
+    // first.
+    // Related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
+    pub async fn import_file(&self, file_path: PathBuf) -> Result<Hash> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::ImportFile { file_path, reply })
             .await?;
-        }
+        let hash = reply_rx.await??;
+
+        self.export_blob_minio(
+            hash,
+            self.config.region.clone(),
+            self.config.endpoint.clone(),
+            self.config.bucket_name.clone(),
+        )
+        .await?;
 
         Ok(hash)
-    }
-
-    /// Import a blob from the filesystem.
-    ///
-    /// Add a blob from a path on the local filesystem to the dedicated blob store and make it
-    /// available on the network identified by it's BLAKE3 hash.
-    async fn import_blob_filesystem(&self, path: PathBuf) -> Result<Hash> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ImportFile {
-                path: path.clone(),
-                reply,
-            })
-            .await?;
-        reply_rx.await?
-    }
-
-    /// Import a blob from a url.
-    ///
-    /// Download a blob from a url, move it into the dedicated blob store and make it available on
-    /// the network identified by it's BLAKE3 hash.
-    async fn import_blob_url(&self, url: String) -> Result<Hash> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ImportUrl { url, reply })
-            .await?;
-        reply_rx.await?
-    }
-
-    /// Export a blob to the filesystem.
-    ///
-    /// Copies an existing blob from the blob store to a location on the filesystem.
-    pub async fn export_blob_filesystem(&self, hash: Hash, path: PathBuf) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ExportBlobFilesystem { hash, path, reply })
-            .await?;
-        reply_rx.await?
     }
 
     /// Export a blob to a minio bucket.
@@ -114,7 +78,7 @@ impl Blobs {
         bucket_name: String,
     ) -> Result<()> {
         let Some(credentials) = &self.config.credentials else {
-            return Err(anyhow!("No minio credentials provided"));
+            return Err(anyhow!("no minio credentials provided"));
         };
 
         // Get the blobs entry from the blob store
@@ -143,15 +107,13 @@ impl Blobs {
         let result = reply_rx.await?;
         result?;
 
-        if self.config.credentials.is_some() {
-            self.export_blob_minio(
-                hash,
-                self.config.region.clone(),
-                self.config.endpoint.clone(),
-                self.config.bucket_name.clone(),
-            )
-            .await?;
-        }
+        self.export_blob_minio(
+            hash,
+            self.config.region.clone(),
+            self.config.endpoint.clone(),
+            self.config.bucket_name.clone(),
+        )
+        .await?;
 
         Ok(())
     }

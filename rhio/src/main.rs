@@ -1,9 +1,11 @@
+use std::str::FromStr;
+
 use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
 use rhio::Node;
-use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key};
-use tracing::info;
+use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key, TopicId};
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,13 +27,41 @@ async fn main() -> Result<()> {
         .iter()
         .map(|addr| addr.to_string())
         .collect();
-    info!("‣ node public key: {}", node.id());
-    info!("‣ node addresses: {}", addresses.join(", "));
+    info!("‣ node public key:");
+    info!("  - {}", node.id());
+    info!("‣ node addresses:");
+    for address in addresses {
+        info!("  - {}", address);
+    }
 
-    // @TODO: Subscribe to streams based on config file instead
-    info!("subscribe to NATS stream");
-    node.subscribe("my_test".into(), Some("foo.test".into()))
-        .await?;
+    match config.streams {
+        Some(streams) => {
+            info!("‣ streams:");
+            streams.iter().for_each(|stream| {
+                info!(
+                    "  - \"{}\"{} [internal] <-> \"{}\" [external]",
+                    stream.nats_stream_name,
+                    stream
+                        .nats_filter_subject
+                        .clone()
+                        .map_or_else(|| "".into(), |value| format!(" (\"{value}\")")),
+                    stream.external_topic,
+                )
+            });
+
+            for stream in streams {
+                node.subscribe(
+                    stream.nats_stream_name,
+                    stream.nats_filter_subject,
+                    TopicId::from_str(&stream.external_topic)?,
+                )
+                .await?;
+            }
+        }
+        None => {
+            warn!("no streams defined in config file to subscribe to!");
+        }
+    }
 
     tokio::signal::ctrl_c().await?;
 

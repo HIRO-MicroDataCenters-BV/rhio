@@ -1,4 +1,5 @@
 mod actor;
+mod control;
 
 use std::net::SocketAddr;
 
@@ -6,14 +7,16 @@ use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
+use rhio_core::TopicId;
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
+use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
-use crate::panda::Panda;
+pub use crate::node::control::NodeControl;
 
 // @TODO: Give rhio a cool network id
 const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
@@ -71,14 +74,18 @@ impl Node {
         let panda = Panda::new(network);
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
-        //    interested in. The NATS jetstream is the p2panda persistance and transport layer and
-        //    holds all past and future operations
-        let nats = Nats::new(config.clone()).await?;
+        //    interested in. The NATS jetstream is the p2panda persistence and transport layer and
+        //    holds all past and future operations.
+        //
+        //    Additionally we keep a "control channel" open via NATS Core, to receive internal
+        //    messages on handling MinIO blob imports, etc.
+        let (node_control_tx, node_control_rx) = mpsc::channel(32);
+        let nats = Nats::new(config.clone(), node_control_tx).await?;
 
         // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
         //    and NATS JetStream consumers
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
-        let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx);
+        let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx, node_control_rx);
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = node_actor.run().await {
                 error!("node actor failed: {err:?}");
@@ -101,7 +108,7 @@ impl Node {
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
     pub fn id(&self) -> PublicKey {
-        self.node_id.clone()
+        self.node_id
     }
 
     /// Returns the direct addresses of this Node.
@@ -141,12 +148,13 @@ impl Node {
     /// 2. When creating the subscription, all past data is initially downloaded and moved into an
     ///    in-memory cache. This process might take a while, depending on the number of past
     ///    messages in the stream.
-    /// 3. Simultaneously rhio establishes a p2panda gossip overlay with other clusters over that
-    ///    topic (hashed subject string) to already receive new data. On receipt it'll be moved
-    ///    into the in-memory cache and for persistence published to the NATS server.
-    /// 4. When the initial download from the NATS server has finished, we're continuing with
+    /// 3. When the initial download from the NATS server has finished, we're continuing with
     ///    syncing past state from external clusters using the p2panda sync protocol. Again, this
     ///    data is cached in-memory and persisted on the NATS server.
+    /// 4. At the same time as step 3. rhio establishes a p2panda gossip overlay with other
+    ///    clusters over that topic (hashed subject string) to already receive new data. On receipt
+    ///    it'll be moved into the in-memory cache and for persistence published to the NATS
+    ///    server.
     /// 5. Finally, when all internal and external cluster data over this "subject" has been
     ///    loaded, we still continue gossiping over future data.
     ///
@@ -157,12 +165,14 @@ impl Node {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
+        topic: TopicId,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx
             .send(ToNodeActor::Subscribe {
                 stream_name,
                 filter_subject,
+                topic,
                 reply,
             })
             .await?;

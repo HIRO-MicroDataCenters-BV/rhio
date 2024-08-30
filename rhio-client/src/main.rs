@@ -1,5 +1,8 @@
+use std::str::FromStr;
+
 use anyhow::{Context, Result};
 use clap::Parser;
+use p2panda_core::Hash;
 use rhio_client::Client;
 use tokio::sync::mpsc;
 
@@ -34,10 +37,21 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::select! {
-            Some(payload) = line_rx.recv() => {
-                client
-                    .publish(args.subject.clone(), payload.as_bytes())
-                    .await?;
+            Some(line) = line_rx.recv() => {
+                // If user writes a string, starting with "blob" (4 characters), followed by a
+                // space (1 character) and then ending with a hex-encoded BLAKE3 hash (64
+                // characters) and 1 control character (CR), then we interpret this as a blob
+                // announcement!
+                if line.len() == 4 + 1 + 64 + 1 && line.to_lowercase().starts_with("blob") {
+                    let hash = Hash::from_str(&line[5..69])?;
+                    client
+                        .announce_blob(args.subject.clone(), hash)
+                        .await?;
+                } else {
+                    client
+                        .publish(args.subject.clone(), line.as_bytes())
+                        .await?;
+                }
             }
             _ = tokio::signal::ctrl_c() => {
                 break;

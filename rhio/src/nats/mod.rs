@@ -1,15 +1,21 @@
 mod actor;
 mod consumer;
 
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use anyhow::{Context, Result};
-use async_nats::ConnectOptions;
+use async_nats::{Client, ConnectOptions};
 use p2panda_net::SharedAbortingJoinHandle;
+use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::error;
+use tokio_stream::StreamExt;
+use tracing::{error, warn};
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::ConsumerEvent;
+pub use crate::nats::consumer::JetStreamEvent;
+use crate::node::NodeControl;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -19,8 +25,9 @@ pub struct Nats {
 }
 
 impl Nats {
-    pub async fn new(config: Config) -> Result<Self> {
-        // @TODO: Add auth options to NATS client config
+    pub async fn new(config: Config, node_control_tx: mpsc::Sender<NodeControl>) -> Result<Self> {
+        // @TODO: Add auth options to NATS client config.
+        // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/62
         let nats_client =
             async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
                 .await
@@ -29,6 +36,11 @@ impl Nats {
                     config.nats.endpoint
                 ))?;
 
+        // Start a "standard" NATS Core subscription (at-most-once delivery) to receive "live"
+        // control commands for `rhio`
+        spawn_control_handler(nats_client.clone(), node_control_tx);
+
+        // Start the main NATS JetStream actor to dynamically maintain "stream consumers"
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
@@ -59,13 +71,33 @@ impl Nats {
         &self,
         stream_name: String,
         filter_subject: Option<String>,
-    ) -> Result<broadcast::Receiver<ConsumerEvent>> {
+        topic: TopicId,
+    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
-                reply,
                 stream_name,
                 filter_subject,
+                topic,
+                reply,
+            })
+            .await?;
+        reply_rx.await?
+    }
+
+    pub async fn publish(
+        &self,
+        wait_for_ack: bool,
+        subject: Subject,
+        payload: Vec<u8>,
+    ) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.nats_actor_tx
+            .send(ToNatsActor::Publish {
+                wait_for_ack,
+                subject,
+                payload,
+                reply,
             })
             .await?;
         reply_rx.await?
@@ -79,4 +111,44 @@ impl Nats {
         reply_rx.await?;
         Ok(())
     }
+}
+
+// @TODO(adz): This might not be the ideal flow or place for it and serves as a "workaround". We
+// can keep it here until we've finished the full MinIO store backend implementation, even though
+// _some_ import control needs to be given in any case?
+// See related discussion: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/60
+fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<NodeControl>) {
+    tokio::spawn(async move {
+        let Ok(mut subscription) = nats_client.subscribe("rhio.*").await else {
+            error!("failed subscribing to minio control messages");
+            return;
+        };
+
+        while let Some(message) = subscription.next().await {
+            if message.subject.as_str() != "rhio.import" {
+                continue;
+            }
+
+            let Ok(file_path_str) = std::str::from_utf8(&message.payload) else {
+                warn!("failed parsing minio control message");
+                continue;
+            };
+
+            let Ok(file_path) = PathBuf::from_str(file_path_str) else {
+                warn!("failed parsing minio control message");
+                continue;
+            };
+
+            if let Err(err) = node_control_tx
+                .send(NodeControl::ImportBlob {
+                    file_path,
+                    reply_subject: message.reply,
+                })
+                .await
+            {
+                error!("failed handling minio control message: {err}");
+                break;
+            }
+        }
+    });
 }

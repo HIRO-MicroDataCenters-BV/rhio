@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use p2panda_core::Hash;
 use serde::{Deserialize, Serialize};
 
@@ -8,19 +10,14 @@ impl TopicId {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
+}
 
-    pub fn from_nats_stream(stream_name: &str, filter_subject: &Option<String>) -> Self {
-        let filter_value = match filter_subject {
-            Some(filter) => filter.clone(),
-            None => "".to_owned(),
-        };
-        let value = format!("{}{}", stream_name, filter_value);
-        Self::from_str(&value)
-    }
+impl FromStr for TopicId {
+    type Err = anyhow::Error;
 
-    pub fn from_str(value: &str) -> Self {
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         let hash = Hash::new(value);
-        Self(*hash.as_bytes())
+        Ok(Self(*hash.as_bytes()))
     }
 }
 

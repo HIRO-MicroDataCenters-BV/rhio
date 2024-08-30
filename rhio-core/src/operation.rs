@@ -2,14 +2,26 @@ use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
 use p2panda_core::{
-    validate_backlink, validate_operation, Body, Extension, Header, Operation, PrivateKey,
+    validate_backlink, validate_operation, Body, Extension, Hash, Header, Operation, PrivateKey,
 };
 use p2panda_store::{LogStore, OperationStore};
 
 use crate::extensions::{RhioExtensions, Subject};
 use crate::log_id::LogId;
 
-pub fn create_operation<S>(
+pub fn create_blob_announcement<S>(
+    store: &mut S,
+    private_key: &PrivateKey,
+    subject: &str,
+    blob_hash: Hash,
+) -> Result<Operation<RhioExtensions>>
+where
+    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+{
+    create_operation(store, private_key, subject, Some(blob_hash), None)
+}
+
+pub fn create_message<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -18,10 +30,23 @@ pub fn create_operation<S>(
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    let body = Body::new(body);
+    create_operation(store, private_key, subject, None, Some(body))
+}
+
+pub fn create_operation<S>(
+    store: &mut S,
+    private_key: &PrivateKey,
+    subject: &str,
+    blob_hash: Option<Hash>,
+    body: Option<&[u8]>,
+) -> Result<Operation<RhioExtensions>>
+where
+    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+{
+    let body = body.map(Body::new);
 
     let public_key = private_key.public_key();
-    let log_id = LogId::new(&subject);
+    let log_id = LogId::new(subject);
 
     let latest_operation = store.latest_operation(public_key, log_id.clone())?;
 
@@ -36,14 +61,15 @@ where
 
     let extensions = RhioExtensions {
         subject: Some(subject.to_owned()),
+        blob_hash,
     };
 
     let mut header = Header {
         version: 1,
         public_key,
         signature: None,
-        payload_size: body.size(),
-        payload_hash: Some(body.hash()),
+        payload_size: body.as_ref().map_or(0, |body| body.size()),
+        payload_hash: body.as_ref().map(|body| body.hash()),
         timestamp,
         seq_num,
         backlink,
@@ -54,8 +80,8 @@ where
 
     let operation = Operation {
         hash: header.hash(),
-        header: header.clone(),
-        body: Some(body.clone()),
+        header,
+        body,
     };
 
     store.insert_operation(operation.clone(), log_id)?;
@@ -73,28 +99,32 @@ where
 {
     let operation = Operation {
         hash: header.hash(),
-        header: header.clone(),
+        header,
         body,
     };
     validate_operation(&operation)?;
 
-    let subject: Subject = header
-        .extract()
-        .ok_or(anyhow!("missing 'subject' field in header"))?;
+    let already_exists = store.get_operation(operation.hash)?.is_some();
+    if !already_exists {
+        let subject: Subject = operation
+            .header
+            .extract()
+            .ok_or(anyhow!("missing 'subject' field in header"))?;
 
-    let log_id = LogId::new(&subject);
+        let log_id = LogId::new(&subject);
 
-    let latest_operation = store
-        .latest_operation(operation.header.public_key, log_id.clone())
-        .context("critical store failure")?;
+        let latest_operation = store
+            .latest_operation(operation.header.public_key, log_id.clone())
+            .context("critical store failure")?;
 
-    if let Some(latest_operation) = latest_operation {
-        validate_backlink(&latest_operation.header, &operation.header)?;
+        if let Some(latest_operation) = latest_operation {
+            validate_backlink(&latest_operation.header, &operation.header)?;
+        }
+
+        store
+            .insert_operation(operation.clone(), log_id)
+            .context("critical store failure")?;
     }
-
-    store
-        .insert_operation(operation.clone(), log_id)
-        .context("critical store failure")?;
 
     Ok(operation)
 }
@@ -125,8 +155,14 @@ mod tests {
         let subject = "icecreams.vanilla.dropped".into();
         for i in 0..16 {
             let body = format!("Oh, no! {i}");
-            let operation =
-                create_operation(&mut store, &private_key, subject, body.as_bytes()).unwrap();
+            let operation = create_operation(
+                &mut store,
+                &private_key,
+                subject,
+                None,
+                Some(body.as_bytes()),
+            )
+            .unwrap();
             let encoded_operation =
                 encode_operation(operation.header.clone(), operation.body.clone()).unwrap();
             let decoded_operation = decode_operation(&encoded_operation).unwrap();

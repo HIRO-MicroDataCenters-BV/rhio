@@ -2,9 +2,9 @@ use std::collections::{hash_map, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 
-use anyhow::Result;
-use futures_lite::FutureExt;
-use p2panda_core::Operation;
+use anyhow::{anyhow, Result};
+use futures_util::FutureExt;
+use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
@@ -13,7 +13,7 @@ use rhio_core::{
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 pub type SubscribeResult = Result<(
     broadcast::Receiver<Operation<RhioExtensions>>,
@@ -22,8 +22,14 @@ pub type SubscribeResult = Result<(
 
 pub enum ToPandaActor {
     Ingest {
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+        reply: oneshot::Sender<Result<Operation<RhioExtensions>>>,
+    },
+    Broadcast {
         topic: TopicId,
-        operation: Operation<RhioExtensions>,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
@@ -104,33 +110,23 @@ impl PandaActor {
         }
     }
 
-    async fn send_operation(
-        &mut self,
-        topic: TopicId,
-        operation: Operation<RhioExtensions>,
-    ) -> Result<()> {
-        match self.topic_gossip_tx.get_mut(&topic) {
-            Some(tx) => {
-                let bytes = encode_operation(operation.header, operation.body)?;
-                tx.send(InEvent::Message { bytes }).await
-            }
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Attempted to send operation on unknown topic {topic:?}"
-                ))
-            }
-        }?;
-        Ok(())
-    }
-
     async fn on_actor_message(&mut self, msg: ToPandaActor) -> Result<bool> {
         match msg {
             ToPandaActor::Ingest {
-                topic,
-                operation,
+                header,
+                body,
                 reply,
             } => {
-                let result = self.on_ingest(topic, operation).await;
+                let result = self.on_ingest(header, body);
+                reply.send(result).ok();
+            }
+            ToPandaActor::Broadcast {
+                header,
+                body,
+                topic,
+                reply,
+            } => {
+                let result = self.on_broadcast(header, body, topic).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe { topic, reply } => {
@@ -143,6 +139,26 @@ impl PandaActor {
         }
 
         Ok(true)
+    }
+
+    async fn on_broadcast(
+        &mut self,
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+        topic: TopicId,
+    ) -> Result<()> {
+        match self.topic_gossip_tx.get_mut(&topic) {
+            Some(tx) => {
+                let bytes = encode_operation(header, body)?;
+                tx.send(InEvent::Message { bytes }).await
+            }
+            None => {
+                return Err(anyhow!(
+                    "attempted to send operation on unknown topic {topic:?}"
+                ))
+            }
+        }?;
+        Ok(())
     }
 
     async fn on_subscribe(
@@ -188,8 +204,7 @@ impl PandaActor {
             if has_joined {
                 return;
             }
-            loop {
-                let joined_topic = joined_rx.recv().await.expect("channel is not dropped");
+            while let Ok(joined_topic) = joined_rx.recv().await {
                 if joined_topic == topic {
                     return;
                 }
@@ -199,13 +214,17 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    async fn on_ingest(
+    fn on_ingest(
         &mut self,
-        _topic: TopicId,
-        operation: Operation<RhioExtensions>,
-    ) -> Result<()> {
-        ingest_operation(&mut self.store, operation.header, operation.body)?;
-        Ok(())
+        header: Header<RhioExtensions>,
+        body: Option<Body>,
+    ) -> Result<Operation<RhioExtensions>> {
+        trace!(
+            "ingest operation from {} @ {}",
+            header.public_key,
+            header.seq_num
+        );
+        ingest_operation(&mut self.store, header, body)
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
@@ -239,7 +258,7 @@ impl PandaActor {
                 let hash = header.hash();
 
                 debug!(
-                    "Received operation: {} {} {} {}",
+                    "received operation: {} {} {} {}",
                     header.public_key, header.seq_num, header.timestamp, hash,
                 );
 
