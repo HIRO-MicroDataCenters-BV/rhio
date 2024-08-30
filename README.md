@@ -8,6 +8,8 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 
 Similar to NATS JetStream, any number of streams can be subscribed to and filtered by "subjects".
 
+Follow the steps in the rhio [walkthrough](WALKTHROUGH.md) if you want to try it out.
+
 <details>
 <summary>Show diagram</summary>
 
