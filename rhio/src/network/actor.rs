@@ -204,8 +204,7 @@ impl PandaActor {
             if has_joined {
                 return;
             }
-            loop {
-                let joined_topic = joined_rx.recv().await.expect("channel is not dropped");
+            while let Ok(joined_topic) = joined_rx.recv().await {
                 if joined_topic == topic {
                     return;
                 }
