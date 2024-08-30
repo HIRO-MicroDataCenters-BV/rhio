@@ -36,7 +36,7 @@ Similar to NATS JetStream, any number of streams can be subscribed to and filter
 
 ## Usage
 
-1. Copy the [configuration file](/rhio/config.example.toml) and adjust it to your setup: `$ cp config.example.toml config.toml`
+1. Copy the [configuration file](/rhio/config.example.toml) and adjust it to your setup: `cp config.example.toml config.toml`
 2. Run the `rhio` process via `rhio -c config.toml`
 3. The process can be further configured via ENV vars or command line arguments:
 
