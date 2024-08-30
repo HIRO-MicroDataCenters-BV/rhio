@@ -124,7 +124,7 @@ rhio does not offer any direct APIs to subscribe to message streams. To consume 
 
 ### Installation and running
 
-1. Launch `rhio` node:
+1. Launch `rhio` node
 ```bash
 # Run with default configurations
 cargo run

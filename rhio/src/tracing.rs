@@ -25,8 +25,8 @@ pub fn setup_tracing(filter: Option<String>) {
     let builder = EnvFilter::builder().with_default_directive(default);
 
     let filter = if let Some(filter) = filter {
-        if filter.starts_with("=") {
-            filter[1..].to_string()
+        if let Some(all_targets_level) = filter.strip_prefix("=") {
+            all_targets_level.to_string()
         } else {
             match Level::from_str(&filter) {
                 Ok(level) => format!("rhio={level}"),
