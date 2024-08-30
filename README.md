@@ -119,7 +119,7 @@ rhio does not offer any direct APIs to subscribe to message streams. To consume 
 
 * Rust 1.80.1+
 * [NATS Server](https://docs.nats.io/running-a-nats-service/introduction) with [JetStream](https://docs.nats.io/running-a-nats-service/configuration/resource_management) enabled
-* [`nats`](https://docs.nats.io/using-nats/nats-tools/nats_cli)
+* [NATS Command Line Tool](https://docs.nats.io/using-nats/nats-tools/nats_cli)
 * [MinIO](https://min.io/download)
 
 ### Installation and running
