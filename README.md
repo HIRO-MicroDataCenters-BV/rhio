@@ -71,7 +71,7 @@ Options:
           Possible log levels are: ERROR, WARN, INFO, DEBUG, TRACE. They are scoped to "rhio" by default.
 
           If you want to adjust the scope for deeper inspection use a filter value, for example
-          "=TRACE" for logging _everything_ or "rhio=INFO,async-nats=DEBUG" etc.
+          "=TRACE" for logging _everything_ or "rhio=INFO,async_nats=DEBUG" etc.
 
   -h, --help
           Print help (see a summary with '-h')
@@ -80,9 +80,9 @@ Options:
           Print version
 ```
 
-## Publish
+### Publish
 
-### Messages
+#### Messages
 
 rhio does not create or publish any messages by itself and serves merely as an "router" coordinating streams inside and outside the cluster. To publish messages into the stream the regular NATS Core or JetStream API is used. Other processes inside the cluster can independently publish messages to the NATS Server which will then be automatically picked up, processed and forwarded to other nodes by rhio.
 
@@ -91,24 +91,60 @@ Messages need to be encoded based on the p2panda [Operation](https://p2panda.org
 With `rhio-client` library (Rust and Python) it is possible to create messages encoded in the right format. You can also use the interactive demo to send messages to any NATS server for the given subject:
 
 ```bash
-$ cargo run --bin rhio-client -- --subject foo.bar --endpoint localhost:4222
+rhio-client --subject foo.bar --endpoint localhost:4222
 # Type: any message which should be received by all nodes ..
 ```
 
-### Blobs
+#### Blobs
 
 Large files of any size can be imported into the local MinIO database and then announced on the network for other nodes to download them into their regarding MinIO databases. For this to take place in an efficient manner, the blob needs to be first encoded in the bao format. The resulting hash of this process can be used as an unique identifier to announce the blob on the network.
 
 1. Inform rhio to import and encode a file from the file system into the MinIO database. Send its path by publishing to the NATS Core subject `rhio.import`. The resulting hash is displayed in the server's logs, a [reply subject](https://docs.nats.io/nats-concepts/core-nats/reqreply) can also be specified where the resulting hash will be sent to.
-   ```
-   $ nats request rhio.import /home/user/images/sloth.jpg
+   ```bash
+   nats request rhio.import /home/user/images/sloth.jpg
    ```
 2. Publish a message which announces the blob hash on the network. Other peers will be made aware of this new blob now and request to download it from the node. See "Messages" to understand how to publish these messages or use the interactive demo instead:
    ```bash
-   $ cargo run --bin rhio-client -- --subject foo.bar --endpoint localhost:4222
+   rhio-client --subject foo.bar --endpoint localhost:4222
    # Type: blob <hash>
    ```
 
-## Stream
+### Stream
 
 rhio does not offer any direct APIs to subscribe to message streams. To consume data the regular NATS JetStream API is used and messages need to be validated as they are encoded in the p2panda Operation format.
+
+## Development
+
+### Prerequisites
+
+* Rust 1.80.1+
+* [NATS Server](https://docs.nats.io/running-a-nats-service/introduction) with [JetStream](https://docs.nats.io/running-a-nats-service/configuration/resource_management) enabled
+* [`nats`](https://docs.nats.io/using-nats/nats-tools/nats_cli)
+* [MinIO](https://min.io/download)
+
+### Workflows
+
+```bash
+# Run `rhio` main executable
+cargo run
+
+# Pass additional arguments to `rhio`
+cargo run -- -c config.toml
+
+# Enable logging for troubleshooting
+cargo run -- -l DEBUG
+cargo run -- -l "=DEBUG"
+
+# Run `rhio-client` demo client
+cargo run --bin rhio-client
+
+# Run all tests, linters and format checkers
+cargo test
+cargo clippy
+cargo fmt
+
+# Build `rhio` for production
+cargo build --target release
+```
+
+## License
