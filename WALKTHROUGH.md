@@ -15,7 +15,7 @@ A small step-by-step guide to play with rhio.
 There's a bunch of files required to follow the steps, make sure you have the following ready:
 
 <details>
-<summary>cluster-stream-1.json</summary>
+<summary><code>cluster-stream-1.json</code></summary>
 
 ```json
 {
@@ -46,7 +46,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 </details>
 
 <details>
-<summary>cluster-stream-2.json</summary>
+<summary><code>cluster-stream-2.json</code></summary>
 
 ```json
 {
@@ -77,7 +77,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 </details>
 
 <details>
-<summary>config-1.toml</summary>
+<summary><code>config-1.toml</code></summary>
 
 ```toml
 # cluster-1
@@ -108,7 +108,7 @@ endpoint = "localhost:8009"
 </details>
 
 <details>
-<summary>config-2.toml</summary>
+<summary><code>config-2.toml</code></summary>
 
 ```toml
 # cluster-2
@@ -139,7 +139,7 @@ endpoint = "localhost:9009"
 </details>
 
 <details>
-<summary>docker-compose.yaml</summary>
+<summary><code>docker-compose.yaml</code></summary>
 
 ```yaml
 services:
@@ -167,7 +167,7 @@ services:
 </details>
 
 <details>
-<summary>private-key-1.txt</summary>
+<summary><code>private-key-1.txt</code></summary>
 
 ```
 c749c4c7bca73136001520041ac8a00e138dd075da798be33d4644a69cb0c5f8
@@ -175,7 +175,7 @@ c749c4c7bca73136001520041ac8a00e138dd075da798be33d4644a69cb0c5f8
 </details>
 
 <details>
-<summary>private-key-2.txt</summary>
+<summary><code>private-key-2.txt</code></summary>
 
 ```
 d00f23f44b598d0b789b7ff0f1d99a24dc11eda434ad485f692786b624ac83f4
