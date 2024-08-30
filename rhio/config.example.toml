@@ -61,9 +61,9 @@ bind_port = 2022
 # Multiple streams can be defined here. Make sure that the stream is already
 # created on your server and follows the right configuration.
 #
-# The "external_topic" is required to discover other nodes on the network who
-# are interested in the same messages from this stream. Make sure that these
-# topic identifiers match among nodes to be able to exchange data.
+# The "external_topic" is required by p2panda to discover other nodes on the
+# network who are interested in the same messages from this stream. Make sure
+# that these topic identifiers match among nodes to be able to exchange data.
 #
 # [[streams]]
 # nats_stream_name = "icecreams"
@@ -75,6 +75,8 @@ bind_port = 2022
 # ﾟ･｡+☆
 
 # Endpoint of the local MinIO S3 Database.
+#
+# Buckets are created automatically if they don't exist yet.
 #
 # [minio]
 # bucket_name = "rhio"
