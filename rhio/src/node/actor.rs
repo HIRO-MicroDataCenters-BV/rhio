@@ -271,7 +271,7 @@ impl NodeActor {
             .extract()
             .ok_or(anyhow!("missing 'subject' field in header"))?;
         let payload = encode_operation(operation.header, operation.body)?;
-        self.nats.publish(subject, payload).await?;
+        self.nats.publish(true, subject, payload).await?;
 
         Ok(())
     }
@@ -317,8 +317,10 @@ impl NodeActor {
 
                 // If the control command requested a response via NATS Core, we will provide it!
                 if let Some(subject) = reply_subject {
+                    // Since NATS Core messages are never acknowledged ("fire and forget"), we set
+                    // the flag to "false" to never wait for an ACK
                     self.nats
-                        .publish(subject.to_string(), hash.to_bytes())
+                        .publish(false, subject.to_string(), hash.to_bytes())
                         .await?;
                 }
             }

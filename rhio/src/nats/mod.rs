@@ -85,10 +85,16 @@ impl Nats {
         reply_rx.await?
     }
 
-    pub async fn publish(&self, subject: Subject, payload: Vec<u8>) -> Result<()> {
+    pub async fn publish(
+        &self,
+        wait_for_ack: bool,
+        subject: Subject,
+        payload: Vec<u8>,
+    ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Publish {
+                wait_for_ack,
                 subject,
                 payload,
                 reply,
