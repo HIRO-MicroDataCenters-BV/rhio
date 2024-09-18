@@ -1,13 +1,16 @@
 mod actor;
 mod control;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
-use rhio_core::TopicId;
+use p2panda_store::MemoryStore;
+use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
+use rhio_core::{LogId, RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
@@ -47,7 +50,16 @@ impl Node {
             ));
         }
 
-        let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
+        let store = MemoryStore::<LogId, RhioExtensions>::new();
+        let sync_protocol = LogHeightSyncProtocol {
+            // @TODO: We need to be able to update this mapping dynamically
+            log_ids: HashMap::<[u8; 32], LogId>::new(),
+            store: store.clone(),
+        };
+
+        let builder = NetworkBuilder::from_config(network_config)
+            .private_key(private_key.clone())
+            .sync(sync_protocol);
 
         // 2. Configure and set up blob store and connection handlers for blob replication
         let (network, blobs) = if let Some(blobs_dir) = &config.blobs_dir {
@@ -71,7 +83,7 @@ impl Node {
             .direct_addresses()
             .await
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
-        let panda = Panda::new(network);
+        let panda = Panda::new(network, store);
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
         //    interested in. The NATS jetstream is the p2panda persistence and transport layer and

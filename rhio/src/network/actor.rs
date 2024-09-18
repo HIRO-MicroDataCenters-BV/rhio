@@ -53,8 +53,11 @@ pub struct PandaActor {
 }
 
 impl PandaActor {
-    pub fn new(network: Network, inbox: mpsc::Receiver<ToPandaActor>) -> Self {
-        let store: MemoryStore<LogId, RhioExtensions> = MemoryStore::new();
+    pub fn new(
+        network: Network,
+        store: MemoryStore<LogId, RhioExtensions>,
+        inbox: mpsc::Receiver<ToPandaActor>,
+    ) -> Self {
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
 
         Self {
