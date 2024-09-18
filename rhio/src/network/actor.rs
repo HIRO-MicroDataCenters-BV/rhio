@@ -8,9 +8,7 @@ use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{
-    decode_operation, encode_operation, ingest_operation, RhioExtensions, TopicId,
-};
+use rhio_core::{decode_operation, encode_operation, ingest_operation, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{debug, error, trace};

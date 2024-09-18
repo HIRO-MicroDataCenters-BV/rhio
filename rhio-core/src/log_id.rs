@@ -15,6 +15,6 @@ pub struct RhioTopicMap {}
 
 impl TopicMap<[u8; 32], [u8; 32]> for RhioTopicMap {
     fn get(&self, topic: &[u8; 32]) -> Option<[u8; 32]> {
-        Some(topic.clone())
+        Some(*topic)
     }
 }
