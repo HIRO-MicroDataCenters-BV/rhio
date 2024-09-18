@@ -245,9 +245,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.81"
+version = "0.1.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e0c28dcc82d7c8ead5cb13beb15405b57b8546e93215673ff8ca0349a028107"
+checksum = "a27b8a3a6e1a44fa4c8baf1f653e4172e81486d4941f2237e20dc2d0cf4ddff1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2174,6 +2174,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "906875956feb75d3d41d708ddaffeb11fdb10cd05f23efbcb17600037e411779"
 dependencies = [
  "bytes",
+ "futures-io",
  "iroh-quinn-proto",
  "iroh-quinn-udp",
  "pin-project-lite",
@@ -2798,7 +2799,7 @@ dependencies = [
 [[package]]
 name = "p2panda-blobs"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#2421b034de54a9ef9b65b140aed9f58e84a845ba"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2825,7 +2826,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#2421b034de54a9ef9b65b140aed9f58e84a845ba"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
 dependencies = [
  "blake3",
  "ciborium",
@@ -2840,9 +2841,10 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#2421b034de54a9ef9b65b140aed9f58e84a845ba"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
 dependencies = [
  "anyhow",
+ "async-trait",
  "ciborium",
  "flume",
  "futures-buffered",
@@ -2852,7 +2854,9 @@ dependencies = [
  "iroh-base",
  "iroh-gossip",
  "iroh-net",
+ "iroh-quinn",
  "p2panda-core",
+ "p2panda-sync",
  "rand 0.8.5",
  "serde",
  "socket2",
@@ -2865,10 +2869,31 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#2421b034de54a9ef9b65b140aed9f58e84a845ba"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
 dependencies = [
  "p2panda-core",
  "thiserror",
+ "trait-variant",
+]
+
+[[package]]
+name = "p2panda-sync"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "ciborium",
+ "futures",
+ "p2panda-core",
+ "p2panda-store",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "trait-variant",
 ]
 
 [[package]]
@@ -3790,6 +3815,7 @@ dependencies = [
  "p2panda-store",
  "serde",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -4857,6 +4883,7 @@ checksum = "9cf6b47b3771c49ac75ad09a6162f53ad4b8088b76ac60e8ec1455b31a189fe1"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "futures-util",
  "hashbrown 0.14.5",
@@ -4996,6 +5023,17 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.76",
 ]
 
 [[package]]

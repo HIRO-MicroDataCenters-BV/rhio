@@ -9,7 +9,7 @@ use p2panda_store::{LogStore, OperationStore};
 use crate::extensions::{RhioExtensions, Subject};
 use crate::log_id::LogId;
 
-pub fn create_blob_announcement<S>(
+pub async fn create_blob_announcement<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -18,10 +18,10 @@ pub fn create_blob_announcement<S>(
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    create_operation(store, private_key, subject, Some(blob_hash), None)
+    create_operation(store, private_key, subject, Some(blob_hash), None).await
 }
 
-pub fn create_message<S>(
+pub async fn create_message<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -30,10 +30,10 @@ pub fn create_message<S>(
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    create_operation(store, private_key, subject, None, Some(body))
+    create_operation(store, private_key, subject, None, Some(body)).await
 }
 
-pub fn create_operation<S>(
+pub async fn create_operation<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -48,7 +48,7 @@ where
     let public_key = private_key.public_key();
     let log_id = LogId::new(subject);
 
-    let latest_operation = store.latest_operation(public_key, log_id.clone())?;
+    let latest_operation = store.latest_operation(&public_key, &log_id).await?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -84,12 +84,12 @@ where
         body,
     };
 
-    store.insert_operation(operation.clone(), log_id)?;
+    store.insert_operation(&operation, &log_id).await?;
 
     Ok(operation)
 }
 
-pub fn ingest_operation<S>(
+pub async fn ingest_operation<S>(
     store: &mut S,
     header: Header<RhioExtensions>,
     body: Option<Body>,
@@ -104,7 +104,7 @@ where
     };
     validate_operation(&operation)?;
 
-    let already_exists = store.get_operation(operation.hash)?.is_some();
+    let already_exists = store.get_operation(operation.hash).await?.is_some();
     if !already_exists {
         let subject: Subject = operation
             .header
@@ -114,7 +114,8 @@ where
         let log_id = LogId::new(&subject);
 
         let latest_operation = store
-            .latest_operation(operation.header.public_key, log_id.clone())
+            .latest_operation(&operation.header.public_key, &log_id)
+            .await
             .context("critical store failure")?;
 
         if let Some(latest_operation) = latest_operation {
@@ -122,7 +123,8 @@ where
         }
 
         store
-            .insert_operation(operation.clone(), log_id)
+            .insert_operation(&operation, &log_id)
+            .await
             .context("critical store failure")?;
     }
 
@@ -148,8 +150,8 @@ mod tests {
 
     use super::{create_operation, decode_operation, encode_operation};
 
-    #[test]
-    fn operation_roundtrips() {
+    #[tokio::test]
+    async fn operation_roundtrips() {
         let private_key = PrivateKey::new();
         let mut store = MemoryStore::new();
         let subject = "icecreams.vanilla.dropped".into();
@@ -162,6 +164,7 @@ mod tests {
                 None,
                 Some(body.as_bytes()),
             )
+            .await
             .unwrap();
             let encoded_operation =
                 encode_operation(operation.header.clone(), operation.body.clone()).unwrap();

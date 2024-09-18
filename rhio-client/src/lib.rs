@@ -30,7 +30,8 @@ impl Client {
     }
 
     pub async fn publish(&mut self, subject: String, payload: &[u8]) -> Result<()> {
-        let operation = create_message(&mut self.store, &self.private_key, &subject, payload)?;
+        let operation =
+            create_message(&mut self.store, &self.private_key, &subject, payload).await?;
         let encoded_operation = encode_operation(operation.header, operation.body)?;
         self.jetstream.publish(subject, encoded_operation).await?;
         Ok(())
@@ -38,7 +39,7 @@ impl Client {
 
     pub async fn announce_blob(&mut self, subject: String, hash: Hash) -> Result<()> {
         let operation =
-            create_blob_announcement(&mut self.store, &self.private_key, &subject, hash)?;
+            create_blob_announcement(&mut self.store, &self.private_key, &subject, hash).await?;
         let encoded_operation = encode_operation(operation.header, operation.body)?;
         self.jetstream.publish(subject, encoded_operation).await?;
         Ok(())

@@ -117,7 +117,7 @@ impl PandaActor {
                 body,
                 reply,
             } => {
-                let result = self.on_ingest(header, body);
+                let result = self.on_ingest(header, body).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Broadcast {
@@ -214,7 +214,7 @@ impl PandaActor {
         Ok((rx, fut.boxed()))
     }
 
-    fn on_ingest(
+    async fn on_ingest(
         &mut self,
         header: Header<RhioExtensions>,
         body: Option<Body>,
@@ -224,7 +224,7 @@ impl PandaActor {
             header.public_key,
             header.seq_num
         );
-        ingest_operation(&mut self.store, header, body)
+        ingest_operation(&mut self.store, header, body).await
     }
 
     async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
@@ -247,7 +247,7 @@ impl PandaActor {
                     }
                 };
 
-                match ingest_operation(&mut self.store, header.clone(), body.clone()) {
+                match ingest_operation(&mut self.store, header.clone(), body.clone()).await {
                     Ok(result) => result,
                     Err(err) => {
                         error!("failed to ingest operation from {delivered_from}: {err}");
