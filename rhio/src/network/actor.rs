@@ -9,7 +9,7 @@ use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
 use rhio_core::{
-    decode_operation, encode_operation, ingest_operation, LogId, RhioExtensions, TopicId,
+    decode_operation, encode_operation, ingest_operation, RhioExtensions, TopicId,
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
@@ -43,7 +43,7 @@ pub enum ToPandaActor {
 
 pub struct PandaActor {
     network: Network,
-    store: MemoryStore<LogId, RhioExtensions>,
+    store: MemoryStore<[u8; 32], RhioExtensions>,
     topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
     topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
     topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
@@ -55,7 +55,7 @@ pub struct PandaActor {
 impl PandaActor {
     pub fn new(
         network: Network,
-        store: MemoryStore<LogId, RhioExtensions>,
+        store: MemoryStore<[u8; 32], RhioExtensions>,
         inbox: mpsc::Receiver<ToPandaActor>,
     ) -> Self {
         let (broadcast_join, _) = broadcast::channel::<TopicId>(128);

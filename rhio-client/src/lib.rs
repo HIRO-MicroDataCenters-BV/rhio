@@ -2,13 +2,11 @@ use anyhow::Result;
 use async_nats::jetstream::Context;
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_store::MemoryStore;
-use rhio_core::{
-    create_blob_announcement, create_message, encode_operation, LogId, RhioExtensions,
-};
+use rhio_core::{create_blob_announcement, create_message, encode_operation, RhioExtensions};
 
 pub struct Client {
     jetstream: JetStream,
-    store: MemoryStore<LogId, RhioExtensions>,
+    store: MemoryStore<[u8; 32], RhioExtensions>,
     private_key: PrivateKey,
 }
 

@@ -2799,7 +2799,7 @@ dependencies = [
 [[package]]
 name = "p2panda-blobs"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2826,7 +2826,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
 dependencies = [
  "blake3",
  "ciborium",
@@ -2841,7 +2841,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2869,7 +2869,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
 dependencies = [
  "p2panda-core",
  "thiserror",
@@ -2879,7 +2879,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#d8173b0f7343b4e132ae7a1209634a3ec6cd30bc"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
 dependencies = [
  "anyhow",
  "async-trait",

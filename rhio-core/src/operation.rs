@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
@@ -7,7 +8,7 @@ use p2panda_core::{
 use p2panda_store::{LogStore, OperationStore};
 
 use crate::extensions::{RhioExtensions, Subject};
-use crate::log_id::LogId;
+use crate::TopicId;
 
 pub async fn create_blob_announcement<S>(
     store: &mut S,
@@ -16,7 +17,7 @@ pub async fn create_blob_announcement<S>(
     blob_hash: Hash,
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+    S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
     create_operation(store, private_key, subject, Some(blob_hash), None).await
 }
@@ -28,7 +29,7 @@ pub async fn create_message<S>(
     body: &[u8],
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+    S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
     create_operation(store, private_key, subject, None, Some(body)).await
 }
@@ -41,14 +42,14 @@ pub async fn create_operation<S>(
     body: Option<&[u8]>,
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+    S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
     let body = body.map(Body::new);
 
     let public_key = private_key.public_key();
-    let log_id = LogId::new(subject);
+    let log_id = TopicId::from_str(&subject)?;
 
-    let latest_operation = store.latest_operation(&public_key, &log_id).await?;
+    let latest_operation = store.latest_operation(&public_key, &log_id.into()).await?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -84,7 +85,7 @@ where
         body,
     };
 
-    store.insert_operation(&operation, &log_id).await?;
+    store.insert_operation(&operation, &log_id.into()).await?;
 
     Ok(operation)
 }
@@ -95,7 +96,7 @@ pub async fn ingest_operation<S>(
     body: Option<Body>,
 ) -> Result<Operation<RhioExtensions>>
 where
-    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
+    S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
     let operation = Operation {
         hash: header.hash(),
@@ -111,10 +112,10 @@ where
             .extract()
             .ok_or(anyhow!("missing 'subject' field in header"))?;
 
-        let log_id = LogId::new(&subject);
+        let log_id = TopicId::from_str(&subject)?;
 
         let latest_operation = store
-            .latest_operation(&operation.header.public_key, &log_id)
+            .latest_operation(&operation.header.public_key, &log_id.into())
             .await
             .context("critical store failure")?;
 
@@ -123,7 +124,7 @@ where
         }
 
         store
-            .insert_operation(&operation, &log_id)
+            .insert_operation(&operation, &log_id.into())
             .await
             .context("critical store failure")?;
     }

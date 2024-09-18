@@ -1,7 +1,6 @@
 mod actor;
 mod control;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
@@ -10,7 +9,8 @@ use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore;
 use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
-use rhio_core::{LogId, RhioExtensions, TopicId};
+use rhio_core::log_id::RhioTopicMap;
+use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tracing::error;
 
@@ -50,10 +50,10 @@ impl Node {
             ));
         }
 
-        let store = MemoryStore::<LogId, RhioExtensions>::new();
+        let store = MemoryStore::<[u8; 32], RhioExtensions>::new();
         let sync_protocol = LogHeightSyncProtocol {
             // @TODO: We need to be able to update this mapping dynamically
-            log_ids: HashMap::<[u8; 32], LogId>::new(),
+            topic_map: RhioTopicMap {},
             store: store.clone(),
         };
 

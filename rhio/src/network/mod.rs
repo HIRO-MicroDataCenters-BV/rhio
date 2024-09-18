@@ -7,7 +7,7 @@ use anyhow::Result;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::{Network, SharedAbortingJoinHandle};
 use p2panda_store::MemoryStore;
-use rhio_core::{LogId, RhioExtensions, TopicId};
+use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -21,7 +21,7 @@ pub struct Panda {
 }
 
 impl Panda {
-    pub fn new(network: Network, store: MemoryStore<LogId, RhioExtensions>) -> Self {
+    pub fn new(network: Network, store: MemoryStore<[u8; 32], RhioExtensions>) -> Self {
         let (panda_actor_tx, panda_actor_rx) = mpsc::channel(256);
         let panda_actor = PandaActor::new(network, store, panda_actor_rx);
 
