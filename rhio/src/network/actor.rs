@@ -70,7 +70,7 @@ pub struct PandaActor {
     /// received on these streams.
     topic_streams: TopicOperationStreams,
 
-    /// Map of broadcast senders where newly arrived p2panda operations will be routed. 
+    /// Map of broadcast senders where newly arrived p2panda operations will be routed.
     topic_subscribers_tx_map: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
 
     /// Channel used for broadcasting "topic joined" notification events.
@@ -269,9 +269,7 @@ impl PandaActor {
         match ingest_operation(&mut self.store, header, body).await {
             Ok(IngestResult::Complete(operation)) => Ok(operation),
             Ok(IngestResult::Retry(_, _, _)) => {
-                return Err(anyhow!(
-                    "Unexpected out-of-order operation received"
-                ))
+                return Err(anyhow!("Unexpected out-of-order operation received"))
             }
             Err(e) => return Err(anyhow!(e)),
         }
@@ -344,7 +342,9 @@ impl PandaActor {
                     .expect("broadcast_join channel not dropped");
                 Ok(())
             }
-            OutEvent::Message { .. } => return Err(anyhow!("OutEvent::Message received before OutEvent::Ready")),
+            OutEvent::Message { .. } => {
+                return Err(anyhow!("OutEvent::Message received before OutEvent::Ready"))
+            }
         }
     }
 
