@@ -8,7 +8,6 @@ pub use extensions::{RhioExtensions, Subject};
 pub use log_id::LogId;
 pub use operation::{
     create_blob_announcement, create_message, create_operation, decode_operation, encode_operation,
-    ingest_operation,
 };
 pub use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
 pub use topic_id::TopicId;

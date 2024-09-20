@@ -2799,7 +2799,7 @@ dependencies = [
 [[package]]
 name = "p2panda-blobs"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2813,8 +2813,8 @@ dependencies = [
  "iroh-io",
  "iroh-net",
  "num_cpus",
- "p2panda-core",
- "p2panda-net",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "p2panda-net 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
  "serde",
  "tempdir",
  "tokio",
@@ -2826,7 +2826,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#8704da7c7dd0edb7acaea990014f13894017483d"
 dependencies = [
  "blake3",
  "ciborium",
@@ -2839,9 +2839,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "p2panda-core"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
+dependencies = [
+ "blake3",
+ "ciborium",
+ "ed25519-dalek",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "serde_bytes",
+ "thiserror",
+]
+
+[[package]]
+name = "p2panda-engine"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
+dependencies = [
+ "ciborium",
+ "futures-channel",
+ "futures-util",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "pin-project",
+ "pin-utils",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "p2panda-net"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#8704da7c7dd0edb7acaea990014f13894017483d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2855,8 +2886,36 @@ dependencies = [
  "iroh-gossip",
  "iroh-net",
  "iroh-quinn",
- "p2panda-core",
- "p2panda-sync",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "p2panda-sync 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "rand 0.8.5",
+ "serde",
+ "socket2",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "p2panda-net"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "ciborium",
+ "flume",
+ "futures-buffered",
+ "futures-lite 2.3.0",
+ "futures-util",
+ "hickory-proto",
+ "iroh-base",
+ "iroh-gossip",
+ "iroh-net",
+ "iroh-quinn",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-sync 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "rand 0.8.5",
  "serde",
  "socket2",
@@ -2869,9 +2928,19 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#8704da7c7dd0edb7acaea990014f13894017483d"
 dependencies = [
- "p2panda-core",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "thiserror",
+ "trait-variant",
+]
+
+[[package]]
+name = "p2panda-store"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
+dependencies = [
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "thiserror",
  "trait-variant",
 ]
@@ -2879,14 +2948,34 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#c0dfe724f747a7cae2482846ef5c589da17c01f8"
+source = "git+https://github.com/p2panda/p2panda.git?branch=v2#8704da7c7dd0edb7acaea990014f13894017483d"
 dependencies = [
  "anyhow",
  "async-trait",
  "ciborium",
  "futures",
- "p2panda-core",
- "p2panda-store",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "trait-variant",
+]
+
+[[package]]
+name = "p2panda-sync"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4#3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "ciborium",
+ "futures",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "serde",
  "thiserror",
  "tokio",
@@ -3771,6 +3860,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "async-stream",
+ "ciborium",
  "clap",
  "directories",
  "figment",
@@ -3778,10 +3868,11 @@ dependencies = [
  "hex",
  "iroh-blobs",
  "p2panda-blobs",
- "p2panda-core",
- "p2panda-net",
- "p2panda-store",
- "p2panda-sync",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-engine",
+ "p2panda-net 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-sync 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "rhio-core",
  "rust-s3",
  "serde",
@@ -3799,8 +3890,8 @@ dependencies = [
  "anyhow",
  "async-nats",
  "clap",
- "p2panda-core",
- "p2panda-store",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "rhio-core",
  "tokio",
 ]
@@ -3812,8 +3903,9 @@ dependencies = [
  "anyhow",
  "ciborium",
  "hex",
- "p2panda-core",
- "p2panda-store",
+ "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
+ "p2panda-engine",
+ "p2panda-store 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4)",
  "serde",
  "tempfile",
  "tokio",
@@ -4181,9 +4273,9 @@ checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
 
 [[package]]
 name = "serde"
-version = "1.0.209"
+version = "1.0.210"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99fce0ffe7310761ca6bf9faf5115afbc19688edd00171d81b1bb1b116c63e09"
+checksum = "c8e3592472072e6e22e0a54d5904d9febf8508f65fb8552499a1abc7d1078c3a"
 dependencies = [
  "serde_derive",
 ]
@@ -4208,9 +4300,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.209"
+version = "1.0.210"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5831b979fd7b5439637af1752d535ff49f4860c0f341d1baeb6faf0f4242170"
+checksum = "243902eda00fad750862fc144cea25caca5e20d615af0a81bee94ca738f1df1f"
 dependencies = [
  "proc-macro2",
  "quote",

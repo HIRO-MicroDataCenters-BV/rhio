@@ -11,17 +11,19 @@ name = "rhio"
 anyhow = "1.0.86"
 async-nats = "0.35.1"
 async-stream = "0.3.5"
+ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
 directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "toml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
 iroh-blobs = { version = "0.22.0", features = ["fs-store"], default-features = false }
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", branch = "v2", default-features = false }
-p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
+p2panda-engine = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "3b9c8af7064ba489ef5eab9d4a165fab7b8c40c4" }
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.34.0"
 serde = { version = "1.0.203", features = ["derive"] }

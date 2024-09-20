@@ -1,13 +1,11 @@
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
-use p2panda_core::{
-    validate_backlink, validate_operation, Body, Extension, Hash, Header, Operation, PrivateKey,
-};
+use anyhow::Result;
+use p2panda_core::{Body, Hash, Header, Operation, PrivateKey};
 use p2panda_store::{LogStore, OperationStore};
 
-use crate::extensions::{RhioExtensions, Subject};
+use crate::extensions::RhioExtensions;
 use crate::TopicId;
 
 pub async fn create_blob_announcement<S>(
@@ -63,6 +61,7 @@ where
     let extensions = RhioExtensions {
         subject: Some(subject.to_owned()),
         blob_hash,
+        ..Default::default()
     };
 
     let mut header = Header {
@@ -86,48 +85,6 @@ where
     };
 
     store.insert_operation(&operation, &log_id.into()).await?;
-
-    Ok(operation)
-}
-
-pub async fn ingest_operation<S>(
-    store: &mut S,
-    header: Header<RhioExtensions>,
-    body: Option<Body>,
-) -> Result<Operation<RhioExtensions>>
-where
-    S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
-{
-    let operation = Operation {
-        hash: header.hash(),
-        header,
-        body,
-    };
-    validate_operation(&operation)?;
-
-    let already_exists = store.get_operation(operation.hash).await?.is_some();
-    if !already_exists {
-        let subject: Subject = operation
-            .header
-            .extract()
-            .ok_or(anyhow!("missing 'subject' field in header"))?;
-
-        let log_id = TopicId::from_str(&subject)?;
-
-        let latest_operation = store
-            .latest_operation(&operation.header.public_key, &log_id.into())
-            .await
-            .context("critical store failure")?;
-
-        if let Some(latest_operation) = latest_operation {
-            validate_backlink(&latest_operation.header, &operation.header)?;
-        }
-
-        store
-            .insert_operation(&operation, &log_id.into())
-            .await
-            .context("critical store failure")?;
-    }
 
     Ok(operation)
 }
