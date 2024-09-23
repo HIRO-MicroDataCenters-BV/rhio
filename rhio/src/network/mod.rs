@@ -1,8 +1,5 @@
 mod actor;
 
-use std::future::Future;
-use std::pin::Pin;
-
 use anyhow::Result;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::{Network, SharedAbortingJoinHandle};
@@ -45,15 +42,13 @@ impl Panda {
     pub async fn subscribe(
         &self,
         topic: TopicId,
-    ) -> Result<(
-        broadcast::Receiver<Operation<RhioExtensions>>,
-        Pin<Box<dyn Future<Output = ()> + Send>>,
-    )> {
+    ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
             .send(ToPandaActor::Subscribe { topic, reply })
             .await?;
-        reply_rx.await?
+        let rx = reply_rx.await?;
+        Ok(rx)
     }
 
     /// Validates and stores a given operation in the in-memory cache.

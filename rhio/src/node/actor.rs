@@ -200,11 +200,7 @@ impl NodeActor {
     /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
     async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
         debug!("join gossip on topic {topic} ..");
-        let (panda_rx, panda_ready) = self.panda.subscribe(topic).await?;
-        tokio::spawn(async move {
-            panda_ready.await;
-            debug!("successfully joined p2panda gossip on topic {topic}");
-        });
+        let panda_rx = self.panda.subscribe(topic).await?;
 
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`

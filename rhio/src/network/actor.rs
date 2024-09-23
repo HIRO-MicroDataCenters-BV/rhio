@@ -1,9 +1,7 @@
-use std::collections::{hash_map, HashMap, HashSet};
-use std::future::Future;
+use std::collections::{hash_map, HashMap};
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
-use futures_util::FutureExt;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_engine::operation::{ingest_operation, IngestResult};
 use p2panda_engine::{DecodeExt, IngestExt};
@@ -12,23 +10,9 @@ use p2panda_net::Network;
 use p2panda_store::MemoryStore;
 use rhio_core::{encode_operation, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::{error, trace};
-
-pub type SubscribeResult = Result<(
-    broadcast::Receiver<Operation<RhioExtensions>>,
-    Pin<Box<dyn Future<Output = ()> + Send>>,
-)>;
-
-pub type TopicEventStreams = StreamMap<
-    TopicId,
-    Pin<Box<dyn Stream<Item = Result<OutEvent, BroadcastStreamRecvError>> + Send + 'static>>,
->;
-
-pub type TopicOperationStreams =
-    StreamMap<TopicId, Pin<Box<dyn Stream<Item = Operation<RhioExtensions>> + Send + 'static>>>;
 
 pub enum ToPandaActor {
     Ingest {
@@ -44,7 +28,7 @@ pub enum ToPandaActor {
     },
     Subscribe {
         topic: TopicId,
-        reply: oneshot::Sender<SubscribeResult>,
+        reply: oneshot::Sender<broadcast::Receiver<Operation<RhioExtensions>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -58,26 +42,17 @@ pub struct PandaActor {
     /// In memory p2panda store.
     store: MemoryStore<[u8; 32], RhioExtensions>,
 
+    /// Map of p2panda "engine" streams. Decoded, validated and in-order p2panda operations are
+    /// received on these streams.
+    topic_streams:
+        StreamMap<TopicId, Pin<Box<dyn Stream<Item = Operation<RhioExtensions>> + Send + 'static>>>,
+
     /// Map containing senders for all subscribed topics. Messages sent on this channels will be
     /// broadcast to peers interested in the same topic.
     topic_gossip_tx_map: HashMap<TopicId, mpsc::Sender<InEvent>>,
 
-    /// Map of newly subscribed topic streams which have not received their `Ready` message yet.
-    /// Once the `Ready` message arrives the stream is moved to the `topic_streams` map.
-    pre_ready_topic_streams: TopicEventStreams,
-
-    /// Map of p2panda "engine" streams. Decoded and validated and in-order p2panda operations are
-    /// received on these streams.
-    topic_streams: TopicOperationStreams,
-
-    /// Map of broadcast senders where newly arrived p2panda operations will be routed.
+    /// Map of subscription senders where newly arrived p2panda operations will be routed.
     topic_subscribers_tx_map: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
-
-    /// Channel used for broadcasting "topic joined" notification events.
-    broadcast_join: broadcast::Sender<TopicId>,
-
-    /// Set containing all successfully joined topics.
-    joined_topics: HashSet<TopicId>,
 
     /// Actor inbox.
     inbox: mpsc::Receiver<ToPandaActor>,
@@ -89,17 +64,12 @@ impl PandaActor {
         store: MemoryStore<[u8; 32], RhioExtensions>,
         inbox: mpsc::Receiver<ToPandaActor>,
     ) -> Self {
-        let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
-
         Self {
             network,
             store,
             topic_gossip_tx_map: HashMap::default(),
-            pre_ready_topic_streams: StreamMap::default(),
             topic_streams: StreamMap::default(),
             topic_subscribers_tx_map: HashMap::new(),
-            broadcast_join,
-            joined_topics: HashSet::new(),
             inbox,
         }
     }
@@ -136,17 +106,6 @@ impl PandaActor {
                         }
                     }
                 },
-                Some((topic, result)) = self.pre_ready_topic_streams.next() => {
-                    let result = match result {
-                        Ok(event) => self.on_topic_event(topic, event).await,
-                        Err(e) => break Err(anyhow!(e))
-                    };
-
-                    if let Err(e) = result {
-                        break Err(e)
-                    }
-
-                }
                 Some((topic_id, msg)) = self.topic_streams.next() => {
                     self
                         .on_topic_operation(topic_id, msg)
@@ -176,7 +135,7 @@ impl PandaActor {
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe { topic, reply } => {
-                let result = self.on_subscribe(topic).await;
+                let result = self.on_subscribe(topic).await?;
                 reply.send(result).ok();
             }
             ToPandaActor::Shutdown { .. } => {
@@ -210,20 +169,58 @@ impl PandaActor {
     async fn on_subscribe(
         &mut self,
         topic: TopicId,
-    ) -> Result<(
-        broadcast::Receiver<Operation<RhioExtensions>>,
-        Pin<Box<dyn Future<Output = ()> + Send>>,
-    )> {
+    ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
         let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
 
-        // If we didn't already subscribe to this topic we need to insert the receiver into the
-        // pre_ready_topic_streams map, where it will stay until a `Ready` message arrives, and
-        // insert the sender into topic_tx map, ready to handle broadcasting of messages.
+        // If we didn't already subscribe to this topic we need to insert the `tx` into the topic
+        // gossip map where we'll use it for broadcasting operations on the network, and we need
+        // to convert the `rx` into a p2panda engine stream and insert it into the topic streams
+        // map and listen for incoming operations.
         if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx_map.entry(topic) {
-            let stream = BroadcastStream::new(topic_rx);
-            self.pre_ready_topic_streams.insert(topic, Box::pin(stream));
-
             entry.insert(topic_tx);
+
+            let stream = BroadcastStream::new(topic_rx);
+
+            // Process the stream so items contain expected operation header and option body bytes.
+            let stream = stream.filter_map(|event| match event {
+                Ok(OutEvent::Ready) => None,
+                Ok(OutEvent::Message { bytes, .. }) => {
+                    let raw_operation: Result<(Vec<u8>, Option<Vec<u8>>), _> =
+                        ciborium::from_reader(&bytes[..]);
+                    match raw_operation {
+                        Ok(data) => Some(data),
+                        Err(err) => {
+                            eprintln!("failed deserializing JSON: {err}");
+                            None
+                        }
+                    }
+                }
+                Err(_) => None,
+            });
+
+            // Decode items in the stream to Header and Body tuples.
+            let stream = stream.decode().filter_map(|event| match event {
+                Ok((header, body)) => Some((header, body)),
+                Err(err) => {
+                    eprintln!("failed decoding operation: {err}");
+                    None
+                }
+            });
+
+            // Ingest all operations, buffering out-of-order arrivals when required.
+            let stream = stream
+                .ingest(self.store.clone(), 128)
+                .filter_map(|event| match event {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        eprintln!("failed ingesting operation: {err}");
+                        None
+                    }
+                });
+
+            // Place the processed stream into the topic_streams map.
+            let stream = Box::pin(stream);
+            self.topic_streams.insert(topic, stream);
         }
 
         // Get a receiver where decoded, validated and ordered operations arriving on this topic will be sent.
@@ -235,25 +232,7 @@ impl PandaActor {
             rx
         };
 
-        // Subscribe to the broadcast channel which receives "topic joined" events
-        let mut joined_rx = self.broadcast_join.subscribe();
-
-        // Flag if the topic has already been joined
-        let has_joined = self.joined_topics.contains(&topic);
-
-        // Future which returns when the topic has been joined (or is already joined)
-        let fut = async move {
-            if has_joined {
-                return;
-            }
-            while let Ok(joined_topic) = joined_rx.recv().await {
-                if joined_topic == topic {
-                    return;
-                }
-            }
-        };
-
-        Ok((rx, fut.boxed()))
+        Ok(rx)
     }
 
     async fn on_ingest(
@@ -278,73 +257,6 @@ impl PandaActor {
     async fn on_topic_operation(&mut self, topic: TopicId, operation: Operation<RhioExtensions>) {
         if let Some(rx) = self.topic_subscribers_tx_map.get(&topic) {
             rx.send(operation).expect("topic channel closed");
-        }
-    }
-
-    async fn on_topic_event(&mut self, topic: TopicId, event: OutEvent) -> Result<()> {
-        match event {
-            OutEvent::Ready => {
-                // Take the stream from the "pre-ready" map so we can process it and later move it
-                // to the main topic_streams map.
-                let stream = self
-                    .pre_ready_topic_streams
-                    .remove(&topic)
-                    .expect("topic stream not found");
-
-                // Process the stream so items contain expected operation header and option body bytes.
-                let stream = stream.filter_map(|event| match event {
-                    Ok(OutEvent::Ready) => None,
-                    Ok(OutEvent::Message { bytes, .. }) => {
-                        let raw_operation: Result<(Vec<u8>, Option<Vec<u8>>), _> =
-                            ciborium::from_reader(&bytes[..]);
-                        match raw_operation {
-                            Ok(data) => Some(data),
-                            Err(err) => {
-                                eprintln!("failed deserializing JSON: {err}");
-                                None
-                            }
-                        }
-                    }
-                    Err(_) => None,
-                });
-
-                // Decode items in the stream to Header and Body tuples.
-                let stream = stream.decode().filter_map(|event| match event {
-                    Ok((header, body)) => Some((header, body)),
-                    Err(err) => {
-                        eprintln!("failed decoding operation: {err}");
-                        None
-                    }
-                });
-
-                // Ingest all operations, buffering out-of-order arrivals when required.
-                let stream =
-                    stream
-                        .ingest(self.store.clone(), 128)
-                        .filter_map(|event| match event {
-                            Ok(operation) => Some(operation),
-                            Err(err) => {
-                                eprintln!("failed ingesting operation: {err}");
-                                None
-                            }
-                        });
-
-                // Place the processed stream into the topic_streams map.
-                let stream = Box::pin(stream);
-                self.topic_streams.insert(topic, stream);
-
-                // Flag that the topic was successfully joined.
-                self.joined_topics.insert(topic);
-
-                // Announce the successful join.
-                self.broadcast_join
-                    .send(topic)
-                    .expect("broadcast_join channel not dropped");
-                Ok(())
-            }
-            OutEvent::Message { .. } => {
-                return Err(anyhow!("OutEvent::Message received before OutEvent::Ready"))
-            }
         }
     }
 
