@@ -255,9 +255,9 @@ impl PandaActor {
         match ingest_operation(&mut self.store, header, body, &topic, prune_flag.is_set()).await {
             Ok(IngestResult::Complete(operation)) => Ok(operation),
             Ok(IngestResult::Retry(_, _, _)) => {
-                return Err(anyhow!("Unexpected out-of-order operation received"))
+                Err(anyhow!("Unexpected out-of-order operation received"))
             }
-            Err(e) => return Err(anyhow!(e)),
+            Err(e) => Err(anyhow!(e)),
         }
     }
 
