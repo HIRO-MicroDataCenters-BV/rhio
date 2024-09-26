@@ -2,7 +2,8 @@ use std::collections::{hash_map, HashMap};
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
-use p2panda_core::{Body, Header, Operation};
+use p2panda_core::{Body, Extension, Header, Operation};
+use p2panda_engine::extensions::PruneFlag;
 use p2panda_engine::operation::{ingest_operation, IngestResult};
 use p2panda_engine::{DecodeExt, IngestExt};
 use p2panda_net::network::{InEvent, OutEvent};
@@ -245,7 +246,13 @@ impl PandaActor {
             header.public_key,
             header.seq_num
         );
-        match ingest_operation(&mut self.store, header, body).await {
+        let topic: [u8; 32] = header
+            .extract()
+            .expect("tried to ingest operation without mandatory topic id extension");
+
+        let prune_flag: PruneFlag = header.extract().unwrap(); // PruneFlag is never None
+
+        match ingest_operation(&mut self.store, header, body, &topic, prune_flag.is_set()).await {
             Ok(IngestResult::Complete(operation)) => Ok(operation),
             Ok(IngestResult::Retry(_, _, _)) => {
                 return Err(anyhow!("Unexpected out-of-order operation received"))
