@@ -17,7 +17,7 @@ directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "toml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
-iroh-blobs = { version = "0.22.0", features = ["fs-store"], default-features = false }
+iroh-blobs = { version = "0.25.0", features = ["fs-store"], default-features = false }
 p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-engine = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
