@@ -2,11 +2,13 @@ use anyhow::Result;
 use async_nats::jetstream::Context;
 use p2panda_core::{Hash, PrivateKey};
 use p2panda_store::MemoryStore;
-use rhio_core::{create_blob_announcement, create_message, encode_operation, RhioExtensions};
+use rhio_core::{
+    create_blob_announcement, create_message, encode_operation, LogId, RhioExtensions,
+};
 
 pub struct Client {
     jetstream: JetStream,
-    store: MemoryStore<[u8; 32], RhioExtensions>,
+    store: MemoryStore<LogId, RhioExtensions>,
     private_key: PrivateKey,
 }
 
@@ -27,29 +29,17 @@ impl Client {
         })
     }
 
-    pub async fn publish(&mut self, subject: String, topic: String, payload: &[u8]) -> Result<()> {
-        let operation = create_message(
-            &mut self.store,
-            &self.private_key,
-            &subject,
-            &topic,
-            payload,
-        )
-        .await?;
+    pub async fn publish(&mut self, subject: String, payload: &[u8]) -> Result<()> {
+        let operation =
+            create_message(&mut self.store, &self.private_key, &subject, payload).await?;
         let encoded_operation = encode_operation(operation.header, operation.body)?;
         self.jetstream.publish(subject, encoded_operation).await?;
         Ok(())
     }
 
-    pub async fn announce_blob(
-        &mut self,
-        subject: String,
-        topic: String,
-        hash: Hash,
-    ) -> Result<()> {
+    pub async fn announce_blob(&mut self, subject: String, hash: Hash) -> Result<()> {
         let operation =
-            create_blob_announcement(&mut self.store, &self.private_key, &subject, &topic, hash)
-                .await?;
+            create_blob_announcement(&mut self.store, &self.private_key, &subject, hash).await?;
         let encoded_operation = encode_operation(operation.header, operation.body)?;
         self.jetstream.publish(subject, encoded_operation).await?;
         Ok(())

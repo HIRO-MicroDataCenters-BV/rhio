@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use p2panda_store::TopicMap;
 use serde::{Deserialize, Serialize};
 
@@ -10,11 +12,17 @@ impl LogId {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct RhioTopicMap {}
+#[derive(Clone, Default, Debug)]
+pub struct RhioTopicMap(HashMap<[u8; 32], LogId>);
 
-impl TopicMap<[u8; 32], [u8; 32]> for RhioTopicMap {
-    fn get(&self, topic: &[u8; 32]) -> Option<[u8; 32]> {
-        Some(*topic)
+impl RhioTopicMap {
+    pub fn insert(&mut self, topic_id: [u8; 32], subject: LogId) {
+        self.0.insert(topic_id, subject);
+    }
+}
+
+impl TopicMap<[u8; 32], LogId> for RhioTopicMap {
+    fn get(&self, topic: &[u8; 32]) -> Option<LogId> {
+        self.0.get(topic).cloned()
     }
 }

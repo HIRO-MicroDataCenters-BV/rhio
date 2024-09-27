@@ -12,7 +12,7 @@ use p2panda_net::{AbortOnDropHandle, Config as NetworkConfig, JoinErrToStr, Netw
 use p2panda_store::MemoryStore;
 use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
 use rhio_core::log_id::RhioTopicMap;
-use rhio_core::{RhioExtensions, TopicId};
+use rhio_core::{LogId, RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tracing::error;
@@ -37,7 +37,11 @@ pub struct Node {
 
 impl Node {
     /// Configure and spawn a node.
-    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
+    pub async fn spawn(
+        config: Config,
+        private_key: PrivateKey,
+        topic_map: RhioTopicMap,
+    ) -> Result<Self> {
         // 1. Configure rhio network
         let mut network_config = NetworkConfig {
             bind_port: config.node.bind_port,
@@ -53,10 +57,9 @@ impl Node {
             ));
         }
 
-        let store = MemoryStore::<[u8; 32], RhioExtensions>::new();
+        let store = MemoryStore::<LogId, RhioExtensions>::new();
         let sync_protocol = LogHeightSyncProtocol {
-            // @TODO: We need to be able to update this mapping dynamically
-            topic_map: RhioTopicMap {},
+            topic_map,
             store: store.clone(),
         };
 

@@ -2,6 +2,8 @@ use p2panda_core::{Extension, Hash};
 use p2panda_engine::extensions::{PruneFlag, StreamName};
 use serde::{Deserialize, Serialize};
 
+use crate::LogId;
+
 /// NATS "subject" which are similar to p2panda or Kafka "topics".
 ///
 /// A NATS subject is just a string of characters that form a name the publisher and subscriber can
@@ -41,6 +43,12 @@ impl Extension<Subject> for RhioExtensions {
     }
 }
 
+impl Extension<LogId> for RhioExtensions {
+    fn extract(&self) -> Option<LogId> {
+        self.subject.clone().map(|subject| LogId::new(&subject))
+    }
+}
+
 impl Extension<Hash> for RhioExtensions {
     fn extract(&self) -> Option<Hash> {
         self.blob_hash
@@ -50,12 +58,6 @@ impl Extension<Hash> for RhioExtensions {
 impl Extension<StreamName> for RhioExtensions {
     fn extract(&self) -> Option<StreamName> {
         None
-    }
-}
-
-impl Extension<TopicId> for RhioExtensions {
-    fn extract(&self) -> Option<TopicId> {
-        self.topic
     }
 }
 

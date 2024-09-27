@@ -9,7 +9,7 @@ use p2panda_engine::IngestExt;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{decode_operation, encode_operation, RhioExtensions, TopicId};
+use rhio_core::{decode_operation, encode_operation, LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt, StreamMap};
@@ -41,7 +41,7 @@ pub struct PandaActor {
     network: Network,
 
     /// In memory p2panda store.
-    store: MemoryStore<[u8; 32], RhioExtensions>,
+    store: MemoryStore<LogId, RhioExtensions>,
 
     /// Map of p2panda "engine" streams. Decoded, validated and in-order p2panda operations are
     /// received on these streams.
@@ -62,7 +62,7 @@ pub struct PandaActor {
 impl PandaActor {
     pub fn new(
         network: Network,
-        store: MemoryStore<[u8; 32], RhioExtensions>,
+        store: MemoryStore<LogId, RhioExtensions>,
         inbox: mpsc::Receiver<ToPandaActor>,
     ) -> Self {
         Self {
@@ -236,13 +236,14 @@ impl PandaActor {
             header.public_key,
             header.seq_num
         );
-        let topic: [u8; 32] = header
+
+        let log_id: LogId = header
             .extract()
-            .expect("tried to ingest operation without mandatory topic id extension");
+            .expect("tried to ingest operation without mandatory log id extension");
 
         let prune_flag: PruneFlag = header.extract().unwrap(); // PruneFlag is never None
 
-        match ingest_operation(&mut self.store, header, body, &topic, prune_flag.is_set()).await {
+        match ingest_operation(&mut self.store, header, body, &log_id, prune_flag.is_set()).await {
             Ok(IngestResult::Complete(operation)) => Ok(operation),
             Ok(IngestResult::Retry(_, _, _)) => {
                 Err(anyhow!("Unexpected out-of-order operation received"))

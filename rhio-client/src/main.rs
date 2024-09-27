@@ -17,10 +17,6 @@ struct Args {
     /// Publish messages to this NATS subject.
     #[arg(short, long)]
     subject: String,
-
-    /// Publish messages with this external topic.
-    #[arg(short, long)]
-    topic: String,
 }
 
 #[tokio::main]
@@ -49,11 +45,11 @@ async fn main() -> Result<()> {
                 if line.len() == 4 + 1 + 64 + 1 && line.to_lowercase().starts_with("blob") {
                     let hash = Hash::from_str(&line[5..69])?;
                     client
-                        .announce_blob(args.subject.clone(), args.topic.clone(), hash)
+                        .announce_blob(args.subject.clone(), hash)
                         .await?;
                 } else {
                     client
-                        .publish(args.subject.clone(), args.topic.clone(), line.as_bytes())
+                        .publish(args.subject.clone(), line.as_bytes())
                         .await?;
                 }
             }
