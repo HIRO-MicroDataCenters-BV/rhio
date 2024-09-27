@@ -12,30 +12,33 @@ pub async fn create_blob_announcement<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
+    topic: &str,
     blob_hash: Hash,
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
-    create_operation(store, private_key, subject, Some(blob_hash), None).await
+    create_operation(store, private_key, subject, topic, Some(blob_hash), None).await
 }
 
 pub async fn create_message<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
+    topic: &str,
     body: &[u8],
 ) -> Result<Operation<RhioExtensions>>
 where
     S: OperationStore<[u8; 32], RhioExtensions> + LogStore<[u8; 32], RhioExtensions>,
 {
-    create_operation(store, private_key, subject, None, Some(body)).await
+    create_operation(store, private_key, subject, topic, None, Some(body)).await
 }
 
 pub async fn create_operation<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
+    topic: &str,
     blob_hash: Option<Hash>,
     body: Option<&[u8]>,
 ) -> Result<Operation<RhioExtensions>>
@@ -45,9 +48,11 @@ where
     let body = body.map(Body::new);
 
     let public_key = private_key.public_key();
-    let log_id = TopicId::from_str(subject)?;
+    let topic_id = TopicId::from_str(topic)?;
 
-    let latest_operation = store.latest_operation(&public_key, &log_id.into()).await?;
+    let latest_operation = store
+        .latest_operation(&public_key, &topic_id.into())
+        .await?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -61,6 +66,7 @@ where
     let extensions = RhioExtensions {
         subject: Some(subject.to_owned()),
         blob_hash,
+        topic: Some(topic_id.clone().into()),
         ..Default::default()
     };
 
@@ -84,7 +90,7 @@ where
         body,
     };
 
-    store.insert_operation(&operation, &log_id.into()).await?;
+    store.insert_operation(&operation, &topic_id.into()).await?;
 
     Ok(operation)
 }
@@ -113,12 +119,14 @@ mod tests {
         let private_key = PrivateKey::new();
         let mut store = MemoryStore::new();
         let subject = "icecreams.vanilla.dropped".into();
+        let topic = "icecreams".into();
         for i in 0..16 {
             let body = format!("Oh, no! {i}");
             let operation = create_operation(
                 &mut store,
                 &private_key,
                 subject,
+                topic,
                 None,
                 Some(body.as_bytes()),
             )
