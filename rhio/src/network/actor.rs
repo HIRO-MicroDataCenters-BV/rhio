@@ -5,11 +5,11 @@ use anyhow::{anyhow, Result};
 use p2panda_core::{Body, Extension, Header, Operation};
 use p2panda_engine::extensions::PruneFlag;
 use p2panda_engine::operation::{ingest_operation, IngestResult};
-use p2panda_engine::{DecodeExt, IngestExt};
+use p2panda_engine::IngestExt;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{encode_operation, RhioExtensions, TopicId};
+use rhio_core::{decode_operation, encode_operation, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt, StreamMap};
@@ -186,26 +186,16 @@ impl PandaActor {
             let stream = stream.filter_map(|event| match event {
                 Ok(OutEvent::Ready) => None,
                 Ok(OutEvent::Message { bytes, .. }) => {
-                    let raw_operation: Result<(Vec<u8>, Option<Vec<u8>>), _> =
-                        ciborium::from_reader(&bytes[..]);
-                    match raw_operation {
-                        Ok(data) => Some(data),
+                    let operation = decode_operation(&bytes[..]);
+                    match operation {
+                        Ok((header, body)) => Some((header, body)),
                         Err(err) => {
-                            eprintln!("failed deserializing JSON: {err}");
+                            error!("failed deserializing CBOR: {err}");
                             None
                         }
                     }
                 }
                 Err(_) => None,
-            });
-
-            // Decode items in the stream to Header and Body tuples.
-            let stream = stream.decode().filter_map(|event| match event {
-                Ok((header, body)) => Some((header, body)),
-                Err(err) => {
-                    eprintln!("failed decoding operation: {err}");
-                    None
-                }
             });
 
             // Ingest all operations, buffering out-of-order arrivals when required.
@@ -214,7 +204,7 @@ impl PandaActor {
                 .filter_map(|event| match event {
                     Ok(operation) => Some(operation),
                     Err(err) => {
-                        eprintln!("failed ingesting operation: {err}");
+                        error!("failed ingesting operation: {err}");
                         None
                     }
                 });
