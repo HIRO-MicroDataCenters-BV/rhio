@@ -66,7 +66,7 @@ where
     let extensions = RhioExtensions {
         subject: Some(subject.to_owned()),
         blob_hash,
-        topic: Some(topic_id.clone().into()),
+        topic: Some(topic_id.into()),
         ..Default::default()
     };
 
