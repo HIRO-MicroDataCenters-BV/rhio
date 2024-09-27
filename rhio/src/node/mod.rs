@@ -4,14 +4,17 @@ mod control;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
+use futures_util::future::{MapErr, Shared};
+use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{PrivateKey, PublicKey};
-use p2panda_net::{Config as NetworkConfig, NetworkBuilder, SharedAbortingJoinHandle};
+use p2panda_net::{AbortOnDropHandle, Config as NetworkConfig, JoinErrToStr, NetworkBuilder};
 use p2panda_store::MemoryStore;
 use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
 use rhio_core::log_id::RhioTopicMap;
 use rhio_core::{RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinError;
 use tracing::error;
 
 use crate::blobs::Blobs;
@@ -29,7 +32,7 @@ pub struct Node {
     node_id: PublicKey,
     direct_addresses: Vec<SocketAddr>,
     node_actor_tx: mpsc::Sender<ToNodeActor>,
-    actor_handle: SharedAbortingJoinHandle<()>,
+    actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Node {
@@ -104,12 +107,16 @@ impl Node {
             }
         });
 
+        let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
+            .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
+            .shared();
+
         let node = Node {
             config,
             node_id,
             direct_addresses,
             node_actor_tx,
-            actor_handle: actor_handle.into(),
+            actor_handle: actor_drop_handle,
         };
 
         Ok(node)

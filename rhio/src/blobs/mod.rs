@@ -3,12 +3,15 @@ mod actor;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
+use futures_util::future::{MapErr, Shared};
+use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use p2panda_net::SharedAbortingJoinHandle;
+use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
 use s3::Region;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinError;
 use tokio_util::task::LocalPoolHandle;
 use tracing::error;
 
@@ -20,7 +23,7 @@ pub struct Blobs {
     config: MinioConfig,
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
     #[allow(dead_code)]
-    actor_handle: SharedAbortingJoinHandle<()>,
+    actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Blobs {
@@ -35,10 +38,14 @@ impl Blobs {
             }
         });
 
+        let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
+            .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
+            .shared();
+
         Self {
             config,
             blobs_actor_tx,
-            actor_handle: actor_handle.into(),
+            actor_handle: actor_drop_handle,
         }
     }
 
