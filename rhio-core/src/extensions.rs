@@ -21,10 +21,6 @@ pub struct RhioExtensions {
     #[serde(rename = "s")]
     pub subject: Option<Subject>,
 
-    /// Mandatory field containing the Topic Id operations of this type are associated with.
-    #[serde(rename = "t")]
-    pub topic: Option<TopicId>,
-
     /// Optional field for messages which announce new blobs in the network, identified by this
     /// hash. p2panda peers will connect to other nodes and replicate the blob on receipt.
     #[serde(rename = "b", skip_serializing_if = "Option::is_none")]
