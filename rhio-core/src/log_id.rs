@@ -16,8 +16,8 @@ impl LogId {
 pub struct RhioTopicMap(HashMap<[u8; 32], LogId>);
 
 impl RhioTopicMap {
-    pub fn insert(&mut self, topic_id: [u8; 32], subject: LogId) {
-        self.0.insert(topic_id, subject);
+    pub fn insert(&mut self, topic_id: [u8; 32], log_id: LogId) {
+        self.0.insert(topic_id, log_id);
     }
 }
 
