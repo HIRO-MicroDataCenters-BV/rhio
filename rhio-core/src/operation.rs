@@ -1,15 +1,13 @@
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
-use p2panda_core::{
-    validate_backlink, validate_operation, Body, Extension, Hash, Header, Operation, PrivateKey,
-};
+use anyhow::Result;
+use p2panda_core::{Body, Hash, Header, Operation, PrivateKey};
 use p2panda_store::{LogStore, OperationStore};
 
-use crate::extensions::{RhioExtensions, Subject};
-use crate::log_id::LogId;
+use crate::extensions::RhioExtensions;
+use crate::LogId;
 
-pub fn create_blob_announcement<S>(
+pub async fn create_blob_announcement<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -18,10 +16,10 @@ pub fn create_blob_announcement<S>(
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    create_operation(store, private_key, subject, Some(blob_hash), None)
+    create_operation(store, private_key, subject, Some(blob_hash), None).await
 }
 
-pub fn create_message<S>(
+pub async fn create_message<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -30,10 +28,10 @@ pub fn create_message<S>(
 where
     S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
 {
-    create_operation(store, private_key, subject, None, Some(body))
+    create_operation(store, private_key, subject, None, Some(body)).await
 }
 
-pub fn create_operation<S>(
+pub async fn create_operation<S>(
     store: &mut S,
     private_key: &PrivateKey,
     subject: &str,
@@ -48,7 +46,7 @@ where
     let public_key = private_key.public_key();
     let log_id = LogId::new(subject);
 
-    let latest_operation = store.latest_operation(public_key, log_id.clone())?;
+    let latest_operation = store.latest_operation(&public_key, &log_id).await?;
 
     let (seq_num, backlink) = match latest_operation {
         Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
@@ -62,6 +60,7 @@ where
     let extensions = RhioExtensions {
         subject: Some(subject.to_owned()),
         blob_hash,
+        ..Default::default()
     };
 
     let mut header = Header {
@@ -84,47 +83,7 @@ where
         body,
     };
 
-    store.insert_operation(operation.clone(), log_id)?;
-
-    Ok(operation)
-}
-
-pub fn ingest_operation<S>(
-    store: &mut S,
-    header: Header<RhioExtensions>,
-    body: Option<Body>,
-) -> Result<Operation<RhioExtensions>>
-where
-    S: OperationStore<LogId, RhioExtensions> + LogStore<LogId, RhioExtensions>,
-{
-    let operation = Operation {
-        hash: header.hash(),
-        header,
-        body,
-    };
-    validate_operation(&operation)?;
-
-    let already_exists = store.get_operation(operation.hash)?.is_some();
-    if !already_exists {
-        let subject: Subject = operation
-            .header
-            .extract()
-            .ok_or(anyhow!("missing 'subject' field in header"))?;
-
-        let log_id = LogId::new(&subject);
-
-        let latest_operation = store
-            .latest_operation(operation.header.public_key, log_id.clone())
-            .context("critical store failure")?;
-
-        if let Some(latest_operation) = latest_operation {
-            validate_backlink(&latest_operation.header, &operation.header)?;
-        }
-
-        store
-            .insert_operation(operation.clone(), log_id)
-            .context("critical store failure")?;
-    }
+    store.insert_operation(&operation, &log_id).await?;
 
     Ok(operation)
 }
@@ -148,8 +107,8 @@ mod tests {
 
     use super::{create_operation, decode_operation, encode_operation};
 
-    #[test]
-    fn operation_roundtrips() {
+    #[tokio::test]
+    async fn operation_roundtrips() {
         let private_key = PrivateKey::new();
         let mut store = MemoryStore::new();
         let subject = "icecreams.vanilla.dropped".into();
@@ -162,6 +121,7 @@ mod tests {
                 None,
                 Some(body.as_bytes()),
             )
+            .await
             .unwrap();
             let encoded_operation =
                 encode_operation(operation.header.clone(), operation.body.clone()).unwrap();

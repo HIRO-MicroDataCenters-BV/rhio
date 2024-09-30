@@ -6,9 +6,12 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use async_nats::{Client, ConnectOptions};
-use p2panda_net::SharedAbortingJoinHandle;
+use futures_util::future::{MapErr, Shared};
+use futures_util::{FutureExt, TryFutureExt};
+use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
 use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tracing::{error, warn};
 
@@ -21,7 +24,7 @@ use crate::node::NodeControl;
 pub struct Nats {
     nats_actor_tx: mpsc::Sender<ToNatsActor>,
     #[allow(dead_code)]
-    actor_handle: SharedAbortingJoinHandle<()>,
+    actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Nats {
@@ -50,9 +53,13 @@ impl Nats {
             }
         });
 
+        let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
+            .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
+            .shared();
+
         Ok(Self {
             nats_actor_tx,
-            actor_handle: actor_handle.into(),
+            actor_handle: actor_drop_handle,
         })
     }
 

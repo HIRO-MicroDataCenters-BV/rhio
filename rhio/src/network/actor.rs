@@ -1,24 +1,19 @@
-use std::collections::{hash_map, HashMap, HashSet};
-use std::future::Future;
+use std::collections::{hash_map, HashMap};
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
-use futures_util::FutureExt;
-use p2panda_core::{Body, Header, Operation};
+use p2panda_core::{Body, Extension, Header, Operation};
+use p2panda_engine::extensions::PruneFlag;
+use p2panda_engine::operation::{ingest_operation, IngestResult};
+use p2panda_engine::IngestExt;
 use p2panda_net::network::{InEvent, OutEvent};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{
-    decode_operation, encode_operation, ingest_operation, LogId, RhioExtensions, TopicId,
-};
+use rhio_core::{decode_operation, encode_operation, LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt, StreamMap};
-use tracing::{debug, error, trace};
-
-pub type SubscribeResult = Result<(
-    broadcast::Receiver<Operation<RhioExtensions>>,
-    Pin<Box<dyn Future<Output = ()> + Send>>,
-)>;
+use tracing::{error, trace};
 
 pub enum ToPandaActor {
     Ingest {
@@ -34,7 +29,7 @@ pub enum ToPandaActor {
     },
     Subscribe {
         topic: TopicId,
-        reply: oneshot::Sender<SubscribeResult>,
+        reply: oneshot::Sender<broadcast::Receiver<Operation<RhioExtensions>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -42,29 +37,40 @@ pub enum ToPandaActor {
 }
 
 pub struct PandaActor {
+    /// p2panda-net network.
     network: Network,
+
+    /// In memory p2panda store.
     store: MemoryStore<LogId, RhioExtensions>,
-    topic_gossip_tx: HashMap<TopicId, mpsc::Sender<InEvent>>,
-    topic_topic_rx: StreamMap<TopicId, Pin<Box<dyn Stream<Item = OutEvent> + Send + 'static>>>,
-    topic_subscribers_tx: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
-    broadcast_join: broadcast::Sender<TopicId>,
-    joined_topics: HashSet<TopicId>,
+
+    /// Map of p2panda "engine" streams. Decoded, validated and in-order p2panda operations are
+    /// received on these streams.
+    topic_streams:
+        StreamMap<TopicId, Pin<Box<dyn Stream<Item = Operation<RhioExtensions>> + Send + 'static>>>,
+
+    /// Map containing senders for all subscribed topics. Messages sent on this channels will be
+    /// broadcast to peers interested in the same topic.
+    topic_gossip_tx_map: HashMap<TopicId, mpsc::Sender<InEvent>>,
+
+    /// Map of subscription senders where newly arrived p2panda operations will be routed.
+    topic_subscribers_tx_map: HashMap<TopicId, broadcast::Sender<Operation<RhioExtensions>>>,
+
+    /// Actor inbox.
     inbox: mpsc::Receiver<ToPandaActor>,
 }
 
 impl PandaActor {
-    pub fn new(network: Network, inbox: mpsc::Receiver<ToPandaActor>) -> Self {
-        let store: MemoryStore<LogId, RhioExtensions> = MemoryStore::new();
-        let (broadcast_join, _) = broadcast::channel::<TopicId>(128);
-
+    pub fn new(
+        network: Network,
+        store: MemoryStore<LogId, RhioExtensions>,
+        inbox: mpsc::Receiver<ToPandaActor>,
+    ) -> Self {
         Self {
             network,
             store,
-            topic_gossip_tx: HashMap::default(),
-            topic_topic_rx: StreamMap::default(),
-            topic_subscribers_tx: HashMap::new(),
-            broadcast_join,
-            joined_topics: HashSet::new(),
+            topic_gossip_tx_map: HashMap::default(),
+            topic_streams: StreamMap::default(),
+            topic_subscribers_tx_map: HashMap::new(),
             inbox,
         }
     }
@@ -101,9 +107,9 @@ impl PandaActor {
                         }
                     }
                 },
-                Some((topic_id, msg)) = self.topic_topic_rx.next() => {
+                Some((topic_id, msg)) = self.topic_streams.next() => {
                     self
-                        .on_gossip_event(topic_id, msg)
+                        .on_topic_operation(topic_id, msg)
                         .await;
                 }
             }
@@ -117,7 +123,7 @@ impl PandaActor {
                 body,
                 reply,
             } => {
-                let result = self.on_ingest(header, body);
+                let result = self.on_ingest(header, body).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Broadcast {
@@ -130,7 +136,7 @@ impl PandaActor {
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe { topic, reply } => {
-                let result = self.on_subscribe(topic).await;
+                let result = self.on_subscribe(topic).await?;
                 reply.send(result).ok();
             }
             ToPandaActor::Shutdown { .. } => {
@@ -147,7 +153,7 @@ impl PandaActor {
         body: Option<Body>,
         topic: TopicId,
     ) -> Result<()> {
-        match self.topic_gossip_tx.get_mut(&topic) {
+        match self.topic_gossip_tx_map.get_mut(&topic) {
             Some(tx) => {
                 let bytes = encode_operation(header, body)?;
                 tx.send(InEvent::Message { bytes }).await
@@ -164,57 +170,63 @@ impl PandaActor {
     async fn on_subscribe(
         &mut self,
         topic: TopicId,
-    ) -> Result<(
-        broadcast::Receiver<Operation<RhioExtensions>>,
-        Pin<Box<dyn Future<Output = ()> + Send>>,
-    )> {
-        let (topic_tx, mut topic_rx) = self.network.subscribe(topic.into()).await?;
+    ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
+        let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
 
-        // If we didn't already subscribe to this topic, then add the topic gossip channels to our
-        // sender and receiver maps
-        if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx.entry(topic) {
+        // If we didn't already subscribe to this topic we need to insert the `tx` into the topic
+        // gossip map where we'll use it for broadcasting operations on the network, and we need
+        // to convert the `rx` into a p2panda engine stream and insert it into the topic streams
+        // map and listen for incoming operations.
+        if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx_map.entry(topic) {
             entry.insert(topic_tx);
 
-            let rx_stream = Box::pin(async_stream::stream! {
-              while let Ok(item) = topic_rx.recv().await {
-                  yield item;
-              }
+            let stream = BroadcastStream::new(topic_rx);
+
+            // Process the stream so items contain expected operation header and option body bytes.
+            let stream = stream.filter_map(|event| match event {
+                Ok(OutEvent::Ready) => None,
+                Ok(OutEvent::Message { bytes, .. }) => {
+                    let operation = decode_operation(&bytes[..]);
+                    match operation {
+                        Ok((header, body)) => Some((header, body)),
+                        Err(err) => {
+                            error!("failed deserializing CBOR: {err}");
+                            None
+                        }
+                    }
+                }
+                Err(_) => None,
             });
 
-            self.topic_topic_rx.insert(topic, rx_stream);
+            // Ingest all operations, buffering out-of-order arrivals when required.
+            let stream = stream
+                .ingest(self.store.clone(), 128)
+                .filter_map(|event| match event {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        error!("failed ingesting operation: {err}");
+                        None
+                    }
+                });
+
+            // Place the processed stream into the topic_streams map.
+            let stream = Box::pin(stream);
+            self.topic_streams.insert(topic, stream);
         }
 
-        // Get a receiver channel which will be sent decoded gossip events arriving on this topic
-        let rx = if let Some(tx) = self.topic_subscribers_tx.get(&topic) {
+        // Get a receiver where decoded, validated and ordered operations arriving on this topic will be sent.
+        let rx = if let Some(tx) = self.topic_subscribers_tx_map.get(&topic) {
             tx.subscribe()
         } else {
             let (tx, rx) = broadcast::channel(128);
-            self.topic_subscribers_tx.insert(topic, tx);
+            self.topic_subscribers_tx_map.insert(topic, tx);
             rx
         };
 
-        // Subscribe to the broadcast channel which receives "topic joined" events
-        let mut joined_rx = self.broadcast_join.subscribe();
-
-        // Flag if the topic has already been joined
-        let has_joined = self.joined_topics.contains(&topic);
-
-        // Future which returns when the topic has been joined (or is already joined)
-        let fut = async move {
-            if has_joined {
-                return;
-            }
-            while let Ok(joined_topic) = joined_rx.recv().await {
-                if joined_topic == topic {
-                    return;
-                }
-            }
-        };
-
-        Ok((rx, fut.boxed()))
+        Ok(rx)
     }
 
-    fn on_ingest(
+    async fn on_ingest(
         &mut self,
         header: Header<RhioExtensions>,
         body: Option<Body>,
@@ -224,51 +236,25 @@ impl PandaActor {
             header.public_key,
             header.seq_num
         );
-        ingest_operation(&mut self.store, header, body)
+
+        let log_id: LogId = header
+            .extract()
+            .expect("tried to ingest operation without mandatory log id extension");
+
+        let prune_flag: PruneFlag = header.extract().unwrap(); // PruneFlag is never None
+
+        match ingest_operation(&mut self.store, header, body, &log_id, prune_flag.is_set()).await {
+            Ok(IngestResult::Complete(operation)) => Ok(operation),
+            Ok(IngestResult::Retry(_, _, _)) => {
+                Err(anyhow!("Unexpected out-of-order operation received"))
+            }
+            Err(e) => Err(anyhow!(e)),
+        }
     }
 
-    async fn on_gossip_event(&mut self, topic: TopicId, event: OutEvent) {
-        match event {
-            OutEvent::Ready => {
-                self.joined_topics.insert(topic);
-                self.broadcast_join
-                    .send(topic)
-                    .expect("broadcast_join channel not dropped");
-            }
-            OutEvent::Message {
-                bytes,
-                delivered_from,
-            } => {
-                let (header, body) = match decode_operation(&bytes) {
-                    Ok(operation) => operation,
-                    Err(err) => {
-                        error!("failed to decode gossip operation: {err}");
-                        return;
-                    }
-                };
-
-                match ingest_operation(&mut self.store, header.clone(), body.clone()) {
-                    Ok(result) => result,
-                    Err(err) => {
-                        error!("failed to ingest operation from {delivered_from}: {err}");
-                        return;
-                    }
-                };
-
-                let hash = header.hash();
-
-                debug!(
-                    "received operation: {} {} {} {}",
-                    header.public_key, header.seq_num, header.timestamp, hash,
-                );
-
-                let tx = self
-                    .topic_subscribers_tx
-                    .get(&topic)
-                    .expect("topic is known");
-
-                let _ = tx.send(Operation { header, body, hash });
-            }
+    async fn on_topic_operation(&mut self, topic: TopicId, operation: Operation<RhioExtensions>) {
+        if let Some(rx) = self.topic_subscribers_tx_map.get(&topic) {
+            rx.send(operation).expect("topic channel closed");
         }
     }
 

@@ -5,9 +5,12 @@ use async_nats::jetstream::consumer::push::{
 };
 use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
-use p2panda_net::SharedAbortingJoinHandle;
+use futures_util::future::{MapErr, Shared};
+use futures_util::{FutureExt, TryFutureExt};
+use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
 use rhio_core::{Subject, TopicId};
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tracing::error;
 
@@ -181,7 +184,7 @@ pub struct Consumer {
     #[allow(dead_code)]
     consumer_actor_tx: mpsc::Sender<ToConsumerActor>,
     #[allow(dead_code)]
-    actor_handle: SharedAbortingJoinHandle<()>,
+    actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Consumer {
@@ -271,10 +274,14 @@ impl Consumer {
             }
         });
 
+        let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
+            .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
+            .shared();
+
         let consumer = Self {
             subscribers_tx,
             consumer_actor_tx,
-            actor_handle: actor_handle.into(),
+            actor_handle: actor_drop_handle,
         };
 
         Ok(consumer)

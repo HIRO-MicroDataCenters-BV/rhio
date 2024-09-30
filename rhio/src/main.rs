@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
 use rhio::Node;
-use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key, TopicId};
+use rhio_core::{
+    generate_ephemeral_private_key, generate_or_load_private_key, log_id::RhioTopicMap, LogId,
+    TopicId,
+};
 use tracing::{info, warn};
 
 #[tokio::main]
@@ -20,7 +23,32 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
-    let node = Node::spawn(config.clone(), private_key.clone()).await?;
+    let mut topic_map = RhioTopicMap::default();
+    config
+        .streams
+        .clone()
+        .unwrap_or_default()
+        .iter()
+        .for_each(|stream_config| {
+            let Some(subject) = &stream_config.nats_filter_subject else {
+                warn!(
+                    "no subject provided, not subscribing to {}",
+                    stream_config.external_topic
+                );
+                return;
+            };
+
+            let log_id = LogId::new(subject);
+
+            topic_map.insert(
+                TopicId::from_str(&stream_config.external_topic)
+                    .unwrap()
+                    .into(),
+                log_id,
+            );
+        });
+
+    let node = Node::spawn(config.clone(), private_key.clone(), topic_map).await?;
 
     let addresses: Vec<String> = node
         .direct_addresses()
