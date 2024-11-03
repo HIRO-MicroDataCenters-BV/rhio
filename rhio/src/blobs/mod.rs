@@ -1,4 +1,5 @@
 mod actor;
+pub mod store;
 
 use std::path::PathBuf;
 

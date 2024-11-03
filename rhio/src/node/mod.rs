@@ -17,6 +17,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tracing::error;
 
+use crate::blobs::store::S3Store;
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
@@ -70,7 +71,7 @@ impl Node {
         // 2. Configure and set up blob store and connection handlers for blob replication
         let (network, blobs) = if let Some(blobs_dir) = &config.blobs_dir {
             // Spawn a rhio actor backed by a filesystem blob store
-            let blob_store = FilesystemStore::load(blobs_dir).await?;
+            let blob_store = S3Store::load(blobs_dir).await?;
             let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
             let blobs = Blobs::new(config.minio.clone(), blobs_handler);
             (network, blobs)

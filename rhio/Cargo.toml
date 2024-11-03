@@ -9,24 +9,37 @@ name = "rhio"
 
 [dependencies]
 anyhow = "1.0.86"
+async-channel = "2.3.1"
 async-nats = "0.35.1"
 async-stream = "0.3.5"
+bytes = "1.8.0"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
+derive_more = "1.0.0-beta.7"
 directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "toml"] }
+futures-lite = "2.4.0"
 futures-util = "0.3.30"
+genawaiter = "0.99.1"
 hex = "0.4.3"
+iroh-base = "0.25.0"
 iroh-blobs = { version = "0.25.0", features = ["fs-store"], default-features = false }
+iroh-io = "0.6.1"
+oneshot = "0.1.8"
 p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-engine = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-net = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
+postcard = "1.0.10"
+rand = "0.8.5"
+redb = "2.2.0"
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.34.0"
 serde = { version = "1.0.203", features = ["derive"] }
+smallvec = "1.13.2"
+thiserror = "1.0.66"
 tokio = "1.38.0"
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
