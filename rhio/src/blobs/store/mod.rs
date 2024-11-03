@@ -81,10 +81,13 @@ use iroh_blobs::store::{
 };
 use iroh_io::AsyncSliceReader;
 use redb::{AccessGuard, DatabaseError, ReadableTable, StorageError};
+use s3::Bucket;
+use s3_file::S3File;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 mod bao_file;
+mod s3_file;
 mod tables;
 mod util;
 
@@ -228,8 +231,7 @@ impl redb::Value for EntryState {
 /// Options for directories used by the file store.
 #[derive(Debug, Clone)]
 pub struct PathOptions {
-    /// Path to the directory where data and outboard files are stored.
-    pub data_path: PathBuf,
+    pub outboard_path: PathBuf,
     /// Path to the directory where temp files are stored.
     /// This *must* be on the same device as `data_path`, since we need to
     /// atomically move temp files into place.
@@ -239,21 +241,17 @@ pub struct PathOptions {
 impl PathOptions {
     fn new(root: &Path) -> Self {
         Self {
-            data_path: root.join("data"),
+            outboard_path: root.join("data"),
             temp_path: root.join("temp"),
         }
     }
 
-    fn owned_data_path(&self, hash: &Hash) -> PathBuf {
-        self.data_path.join(format!("{}.data", hash.to_hex()))
-    }
-
     fn owned_outboard_path(&self, hash: &Hash) -> PathBuf {
-        self.data_path.join(format!("{}.obao4", hash.to_hex()))
+        self.outboard_path.join(format!("{}.obao4", hash.to_hex()))
     }
 
     fn owned_sizes_path(&self, hash: &Hash) -> PathBuf {
-        self.data_path.join(format!("{}.sizes4", hash.to_hex()))
+        self.outboard_path.join(format!("{}.sizes4", hash.to_hex()))
     }
 
     fn temp_file_name(&self) -> PathBuf {
@@ -455,11 +453,11 @@ struct StoreInner {
 
 impl StoreInner {
     fn new_sync(path: PathBuf, options: Options, rt: tokio::runtime::Handle) -> io::Result<Self> {
-        tracing::trace!(
-            "creating data directory: {}",
-            options.path.data_path.display()
-        );
-        std::fs::create_dir_all(&options.path.data_path)?;
+        // tracing::trace!(
+        //     "creating data directory: {}",
+        //     options.path.data_path.display()
+        // );
+        // std::fs::create_dir_all(&options.path.data_path)?;
         tracing::trace!(
             "creating temp directory: {}",
             options.path.temp_path.display()
@@ -885,10 +883,11 @@ impl Actor {
         // make the channel relatively large. there are some messages that don't
         // require a response, it's fine if they pile up a bit.
         let (tx, rx) = async_channel::bounded(1024);
-        let tx2 = tx.clone();
+        // let tx2 = tx.clone();
         let create_options = BaoFileConfig::new(
-            Arc::new(options.path.data_path.clone()),
-            Arc::new(options.path.data_path.clone()),
+            Arc::new(options.path.outboard_path.clone()),
+            // @TODO: Pass bucket and actual data prefix into method
+            Bucket::new_public("name", s3::Region::EuNorth1).expect("valid bucket"),
         );
         Ok((
             Self {
@@ -1020,7 +1019,7 @@ impl ActorState {
         let config = self.create_options.clone();
         let handle = match entry {
             EntryState::Complete { data_location } => {
-                let data = load_data(tables, &self.options.path, data_location, &hash)?;
+                let data = load_data(tables, data_location, &hash)?;
                 let outboard = load_outboard(tables, &self.options.path, data.1, &hash)?;
                 BaoFileHandle::new_complete(config, hash, data, outboard)
             }
@@ -1029,215 +1028,6 @@ impl ActorState {
         self.handles.insert(hash, handle.downgrade());
         Ok(Some(handle))
     }
-    //
-    //     fn export(
-    //         &mut self,
-    //         tables: &mut Tables,
-    //         cmd: Export,
-    //         tx: oneshot::Sender<ActorResult<()>>,
-    //     ) -> ActorResult<()> {
-    //         let Export {
-    //             temp_tag,
-    //             target,
-    //             mode,
-    //             progress,
-    //         } = cmd;
-    //         let guard = tables
-    //             .blobs
-    //             .get(temp_tag.hash())?
-    //             .ok_or_else(|| ActorError::Inconsistent("entry not found".to_owned()))?;
-    //         let entry = guard.value();
-    //         match entry {
-    //             EntryState::Complete {
-    //                 data_location,
-    //                 outboard_location,
-    //             } => match data_location {
-    //                 DataLocation::Inline(()) => {
-    //                     // ignore export mode, just copy. For inline data we can not reference anyway.
-    //                     let data = tables.inline_data.get(temp_tag.hash())?.ok_or_else(|| {
-    //                         ActorError::Inconsistent("inline data not found".to_owned())
-    //                     })?;
-    //                     tracing::trace!("exporting inline data to {}", target.display());
-    //                     tx.send(std::fs::write(&target, data.value()).map_err(|e| e.into()))
-    //                         .ok();
-    //                 }
-    //                 DataLocation::Owned(size) => {
-    //                     let path = self.options.path.owned_data_path(temp_tag.hash());
-    //                     match mode {
-    //                         ExportMode::Copy => {
-    //                             // copy in an external thread
-    //                             self.rt.spawn_blocking(move || {
-    //                                 tx.send(export_file_copy(temp_tag, path, size, target, progress))
-    //                                     .ok();
-    //                             });
-    //                         }
-    //                         ExportMode::TryReference => match std::fs::rename(&path, &target) {
-    //                             Ok(()) => {
-    //                                 let entry = EntryState::Complete {
-    //                                     data_location: DataLocation::External(vec![target], size),
-    //                                     outboard_location,
-    //                                 };
-    //                                 drop(guard);
-    //                                 tables.blobs.insert(temp_tag.hash(), entry)?;
-    //                                 drop(temp_tag);
-    //                                 tx.send(Ok(())).ok();
-    //                             }
-    //                             Err(e) => {
-    //                                 const ERR_CROSS: i32 = 18;
-    //                                 if e.raw_os_error() == Some(ERR_CROSS) {
-    //                                     // Cross device renaming failed, copy instead
-    //                                     match std::fs::copy(&path, &target) {
-    //                                         Ok(_) => {
-    //                                             let entry = EntryState::Complete {
-    //                                                 data_location: DataLocation::External(
-    //                                                     vec![target],
-    //                                                     size,
-    //                                                 ),
-    //                                                 outboard_location,
-    //                                             };
-    //
-    //                                             drop(guard);
-    //                                             tables.blobs.insert(temp_tag.hash(), entry)?;
-    //                                             tables
-    //                                                 .delete_after_commit
-    //                                                 .insert(*temp_tag.hash(), [BaoFilePart::Data]);
-    //                                             drop(temp_tag);
-    //
-    //                                             tx.send(Ok(())).ok();
-    //                                         }
-    //                                         Err(e) => {
-    //                                             drop(temp_tag);
-    //                                             tx.send(Err(e.into())).ok();
-    //                                         }
-    //                                     }
-    //                                 } else {
-    //                                     drop(temp_tag);
-    //                                     tx.send(Err(e.into())).ok();
-    //                                 }
-    //                             }
-    //                         },
-    //                     }
-    //                 }
-    //                 DataLocation::External(paths, size) => {
-    //                     let path = paths
-    //                         .first()
-    //                         .ok_or_else(|| {
-    //                             ActorError::Inconsistent("external path missing".to_owned())
-    //                         })?
-    //                         .to_owned();
-    //                     // we can not reference external files, so we just copy them. But this does not have to happen in the actor.
-    //                     if path == target {
-    //                         // export to the same path, nothing to do
-    //                         tx.send(Ok(())).ok();
-    //                     } else {
-    //                         // copy in an external thread
-    //                         self.rt.spawn_blocking(move || {
-    //                             tx.send(export_file_copy(temp_tag, path, size, target, progress))
-    //                                 .ok();
-    //                         });
-    //                     }
-    //                 }
-    //             },
-    //             EntryState::Partial { .. } => {
-    //                 return Err(io::Error::new(io::ErrorKind::Unsupported, "partial entry").into());
-    //             }
-    //         }
-    //         Ok(())
-    //     }
-    //
-    //     fn import(&mut self, tables: &mut Tables, cmd: Import) -> ActorResult<(TempTag, u64)> {
-    //         let Import {
-    //             content_id,
-    //             source: file,
-    //             outboard,
-    //             data_size,
-    //         } = cmd;
-    //         let outboard_size = outboard.as_ref().map(|x| x.len() as u64).unwrap_or(0);
-    //         let inline_data = data_size <= self.options.inline.max_data_inlined;
-    //         let inline_outboard =
-    //             outboard_size <= self.options.inline.max_outboard_inlined && outboard_size != 0;
-    //         // from here on, everything related to the hash is protected by the temp tag
-    //         let tag = self.temp.temp_tag(content_id);
-    //         let hash = *tag.hash();
-    //         self.protected.insert(hash);
-    //         // move the data file into place, or create a reference to it
-    //         let data_location = match file {
-    //             ImportSource::External(external_path) => {
-    //                 tracing::debug!("stored external reference {}", external_path.display());
-    //                 if inline_data {
-    //                     tracing::debug!(
-    //                         "reading external data to inline it: {}",
-    //                         external_path.display()
-    //                     );
-    //                     let data = Bytes::from(std::fs::read(&external_path)?);
-    //                     DataLocation::Inline(data)
-    //                 } else {
-    //                     DataLocation::External(vec![external_path], data_size)
-    //                 }
-    //             }
-    //             ImportSource::TempFile(temp_data_path) => {
-    //                 if inline_data {
-    //                     tracing::debug!(
-    //                         "reading and deleting temp file to inline it: {}",
-    //                         temp_data_path.display()
-    //                     );
-    //                     let data = Bytes::from(read_and_remove(&temp_data_path)?);
-    //                     DataLocation::Inline(data)
-    //                 } else {
-    //                     let data_path = self.options.path.owned_data_path(&hash);
-    //                     std::fs::rename(&temp_data_path, &data_path)?;
-    //                     tracing::debug!("created file {}", data_path.display());
-    //                     DataLocation::Owned(data_size)
-    //                 }
-    //             }
-    //             ImportSource::Memory(data) => {
-    //                 if inline_data {
-    //                     DataLocation::Inline(data)
-    //                 } else {
-    //                     let data_path = self.options.path.owned_data_path(&hash);
-    //                     overwrite_and_sync(&data_path, &data)?;
-    //                     tracing::debug!("created file {}", data_path.display());
-    //                     DataLocation::Owned(data_size)
-    //                 }
-    //             }
-    //         };
-    //         let outboard_location = if let Some(outboard) = outboard {
-    //             if inline_outboard {
-    //                 OutboardLocation::Inline(Bytes::from(outboard))
-    //             } else {
-    //                 let outboard_path = self.options.path.owned_outboard_path(&hash);
-    //                 // todo: this blocks the actor when writing a large outboard
-    //                 overwrite_and_sync(&outboard_path, &outboard)?;
-    //                 OutboardLocation::Owned
-    //             }
-    //         } else {
-    //             OutboardLocation::NotNeeded
-    //         };
-    //         if let DataLocation::Inline(data) = &data_location {
-    //             tables.inline_data.insert(hash, data.as_ref())?;
-    //         }
-    //         if let OutboardLocation::Inline(outboard) = &outboard_location {
-    //             tables.inline_outboard.insert(hash, outboard.as_ref())?;
-    //         }
-    //         if let DataLocation::Owned(_) = &data_location {
-    //             tables.delete_after_commit.remove(hash, [BaoFilePart::Data]);
-    //         }
-    //         if let OutboardLocation::Owned = &outboard_location {
-    //             tables
-    //                 .delete_after_commit
-    //                 .remove(hash, [BaoFilePart::Outboard]);
-    //         }
-    //         let entry = tables.blobs.get(hash)?;
-    //         let entry = entry.map(|x| x.value()).unwrap_or_default();
-    //         let data_location = data_location.discard_inline_data();
-    //         let outboard_location = outboard_location.discard_extra_data();
-    //         let entry = entry.union(EntryState::Complete {
-    //             data_location,
-    //             outboard_location,
-    //         })?;
-    //         tables.blobs.insert(hash, entry)?;
-    //         Ok((tag, data_size))
-    //     }
 
     fn get_or_create(
         &mut self,
@@ -1253,7 +1043,7 @@ impl ActorState {
             let entry = entry.value();
             match entry {
                 EntryState::Complete { data_location, .. } => {
-                    let data = load_data(tables, &self.options.path, data_location, &hash)?;
+                    let data = load_data(tables, data_location, &hash)?;
                     let outboard = load_outboard(tables, &self.options.path, data.1, &hash)?;
                     tracing::debug!("creating complete entry for {}", hash.to_hex());
                     BaoFileHandle::new_complete(self.create_options.clone(), hash, data, outboard)
@@ -1458,20 +1248,11 @@ impl ActorState {
 
 fn load_data(
     tables: &impl ReadableTables,
-    options: &PathOptions,
     location: DataLocation,
     hash: &Hash,
-) -> ActorResult<(File, u64)> {
-    // @TODO: load a handle onto the data located in the s3 bucket
-    let path = options.owned_data_path(hash);
-    let Ok(file) = std::fs::File::open(&path) else {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("file not found: {}", path.display()),
-        )
-        .into());
-    };
-    Ok((file, location.0))
+) -> ActorResult<(S3File, u64)> {
+    unimplemented!()
+    // Ok((file, location.0))
 }
 
 fn load_outboard(

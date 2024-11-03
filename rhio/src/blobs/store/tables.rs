@@ -1,11 +1,10 @@
 //! Table definitions and accessors for the redb database.
-use std::collections::BTreeSet;
 
 use iroh_base::hash::{Hash, HashAndFormat};
 use iroh_blobs::Tag;
 use redb::{ReadableTable, TableDefinition, TableError};
 
-use super::{EntryState, PathOptions};
+use super::EntryState;
 
 pub(super) const BLOBS_TABLE: TableDefinition<Hash, EntryState> = TableDefinition::new("blobs-0");
 
@@ -27,9 +26,7 @@ pub(super) struct Tables<'a> {
 }
 
 impl<'txn> Tables<'txn> {
-    pub fn new(
-        tx: &'txn redb::WriteTransaction,
-    ) -> std::result::Result<Self, TableError> {
+    pub fn new(tx: &'txn redb::WriteTransaction) -> std::result::Result<Self, TableError> {
         Ok(Self {
             blobs: tx.open_table(BLOBS_TABLE)?,
             tags: tx.open_table(TAGS_TABLE)?,

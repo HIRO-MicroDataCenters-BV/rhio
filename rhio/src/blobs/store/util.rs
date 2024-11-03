@@ -2,11 +2,7 @@ use std::{
     fs::OpenOptions,
     io::{self, Write},
     path::Path,
-    sync::{Arc, Weak},
 };
-
-use iroh_blobs::{BlobFormat, Hash, HashAndFormat, TempTag};
-use tracing::warn;
 
 /// overwrite a file with the given data.
 ///

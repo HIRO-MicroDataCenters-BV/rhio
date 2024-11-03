@@ -23,8 +23,10 @@ futures-util = "0.3.30"
 genawaiter = "0.99.1"
 hex = "0.4.3"
 iroh-base = "0.25.0"
-iroh-blobs = { version = "0.25.0", features = ["fs-store"], default-features = false }
-iroh-io = "0.6.1"
+iroh-blobs = { version = "0.25.0", features = [
+    "fs-store",
+], default-features = false }
+iroh-io = { version = "0.6.1", features = ["x-http"] }
 oneshot = "0.1.8"
 p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
@@ -36,7 +38,7 @@ postcard = "1.0.10"
 rand = "0.8.5"
 redb = "2.2.0"
 rhio-core = { path = "../rhio-core" }
-rust-s3 = "0.34.0"
+rust-s3 = { version = "0.34.0", features = ["blocking", "tokio"] }
 serde = { version = "1.0.203", features = ["derive"] }
 smallvec = "1.13.2"
 thiserror = "1.0.66"
@@ -45,3 +47,4 @@ tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+url = "2.5.2"
