@@ -20,11 +20,20 @@ use std::{
 use bytes::{Bytes, BytesMut};
 use derive_more::Debug;
 use iroh_base::hash::Hash;
-use iroh_blobs::{store::{bao_tree::{io::{
-    fsm::BaoContentItem,
-    outboard::PreOrderOutboard,
-    sync::{ReadAt, Size, WriteAt},
-}, BaoTree}, BaoBatchWriter}, IROH_BLOCK_SIZE};
+use iroh_blobs::{
+    store::{
+        bao_tree::{
+            io::{
+                fsm::BaoContentItem,
+                outboard::PreOrderOutboard,
+                sync::{ReadAt, Size, WriteAt},
+            },
+            BaoTree,
+        },
+        BaoBatchWriter,
+    },
+    IROH_BLOCK_SIZE,
+};
 use iroh_io::AsyncSliceReader;
 
 /// Data files are stored in 3 files. The data file, the outboard file,
@@ -557,49 +566,6 @@ impl BaoFileHandle {
         BaoFileHandleWeak(Arc::downgrade(&self.0))
     }
 }
-
-// @TODO: multiple implementations
-// impl SizeInfo {
-//     /// Persist into a file where each chunk has its own slot.
-//     pub fn persist(&self, mut target: impl WriteAt) -> io::Result<()> {
-//         let size_offset = (self.offset >> IROH_BLOCK_SIZE.chunk_log()) << 3;
-//         target.write_all_at(size_offset, self.size.to_le_bytes().as_slice())?;
-//         Ok(())
-//     }
-//
-//     /// Convert to a vec in slot format.
-//     pub fn to_vec(&self) -> Vec<u8> {
-//         let mut res = Vec::new();
-//         self.persist(&mut res).expect("io error writing to vec");
-//         res
-//     }
-// }
-
-// @NOTE: multiple implementations
-// impl MutableMemStorage {
-//     /// Persist the batch to disk, creating a FileBatch.
-//     fn persist(&self, paths: DataPaths) -> io::Result<FileStorage> {
-//         let mut data = create_read_write(&paths.data)?;
-//         let mut outboard = create_read_write(&paths.outboard)?;
-//         let mut sizes = create_read_write(&paths.sizes)?;
-//         self.data.persist(&mut data)?;
-//         self.outboard.persist(&mut outboard)?;
-//         self.sizes.persist(&mut sizes)?;
-//         data.sync_all()?;
-//         outboard.sync_all()?;
-//         sizes.sync_all()?;
-//         Ok(FileStorage {
-//             data,
-//             outboard,
-//             sizes,
-//         })
-//     }
-//
-//     /// Get the parts data, outboard and sizes
-//     pub fn into_parts(self) -> (SparseMemFile, SparseMemFile, SizeInfo) {
-//         (self.data, self.outboard, self.sizes)
-//     }
-// }
 
 /// This is finally the thing for which we can implement BaoPairMut.
 ///

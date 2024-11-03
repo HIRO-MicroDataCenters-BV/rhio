@@ -69,13 +69,12 @@ use std::{
     future::Future,
     io,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
 use bytes::Bytes;
-use futures_lite::{Stream, StreamExt};
-use genawaiter::rc::{Co, Gen};
+use futures_lite::Stream;
 use iroh_base::hash::{BlobFormat, Hash, HashAndFormat};
 use iroh_blobs::store::{
     bao_tree::io::fsm::Outboard, DbIter, GcConfig, MapEntry, MapEntryMut, MapMut, Store,
@@ -96,17 +95,12 @@ use self::util::PeekableFlumeReceiver;
 use iroh_blobs::{
     store::{
         bao_tree::BaoTree, BaoBatchWriter, BaoBlobSize, ConsistencyCheckProgress, EntryStatus,
-        ExportMode, ExportProgressCb, GcMarkEvent, GcSweepEvent, ImportMode, ImportProgress, Map,
-        ReadableStore,
+        ExportMode, ExportProgressCb, ImportMode, ImportProgress, Map, ReadableStore,
     },
     IROH_BLOCK_SIZE,
 };
-// use iroh_blobs::{temp_name, TempCounterMap};
 use iroh_blobs::{
-    util::{
-        progress::{BoxedProgressSender, IdGenerator, ProgressSendError, ProgressSender},
-        MemOrFile, TagCounter,
-    },
+    util::progress::{BoxedProgressSender, IdGenerator, ProgressSendError, ProgressSender},
     Tag, TempTag,
 };
 
@@ -118,82 +112,6 @@ use iroh_blobs::{
 /// Only complete data can be inlined.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct DataLocation(u64);
-
-// @TODO: don't believe this is needed as we will have all data in one location/path
-// impl DataLocation {
-//     fn union(self, that: DataLocation) -> ActorResult<Self> {
-//         Ok(match (self, that) {
-//             (
-//                 DataLocation::External(mut paths, a_size),
-//                 DataLocation::External(b_paths, b_size),
-//             ) => {
-//                 if a_size != b_size {
-//                     return Err(ActorError::Inconsistent(format!(
-//                         "complete size mismatch {} {}",
-//                         a_size, b_size
-//                     )));
-//                 }
-//                 paths.extend(b_paths);
-//                 paths.sort();
-//                 paths.dedup();
-//                 DataLocation::External(paths, a_size)
-//             }
-//             (_, b @ DataLocation::Owned(_)) => {
-//                 // owned needs to win, since it has an associated file. Choosing
-//                 // external would orphan the file.
-//                 b
-//             }
-//             (a @ DataLocation::Owned(_), _) => {
-//                 // owned needs to win, since it has an associated file. Choosing
-//                 // external would orphan the file.
-//                 a
-//             }
-//             (_, b @ DataLocation::Inline(_)) => {
-//                 // inline needs to win, since it has associated data. Choosing
-//                 // external would orphan the file.
-//                 b
-//             }
-//             (a @ DataLocation::Inline(_), _) => {
-//                 // inline needs to win, since it has associated data. Choosing
-//                 // external would orphan the file.
-//                 a
-//             }
-//         })
-//     }
-// }
-//
-// impl<I, E> DataLocation<I, E> {
-//     fn discard_inline_data(self) -> DataLocation<(), E> {
-//         match self {
-//             DataLocation::Inline(_) => DataLocation::Inline(()),
-//             DataLocation::Owned(x) => DataLocation::Owned(x),
-//             DataLocation::External(paths, x) => DataLocation::External(paths, x),
-//         }
-//     }
-// }
-//
-// /// Location of the outboard.
-// ///
-// /// Outboard can be inlined in the database or a file conceptually owned by the store.
-// /// Outboards are implementation specific to the store and as such are always owned.
-// ///
-// /// Only complete outboards can be inlined.
-// #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
-// pub(crate) enum OutboardLocation {
-//     /// Outboard is in the canonical location in the data directory.
-//     Owned,
-//     /// Outboard is not needed
-//     NotNeeded,
-// }
-//
-// impl OutboardLocation {
-//     fn discard_extra_data(self) -> OutboardLocation {
-//         match self {
-//             Self::Owned => OutboardLocation::Owned,
-//             Self::NotNeeded => OutboardLocation::NotNeeded,
-//         }
-//     }
-// }
 
 /// The information about an entry that we keep in the entry table for quick access.
 ///
@@ -307,37 +225,6 @@ impl redb::Value for EntryState {
     }
 }
 
-/// Options for inlining small complete data or outboards.
-#[derive(Debug, Clone)]
-pub struct InlineOptions {
-    /// Maximum data size to inline.
-    pub max_data_inlined: u64,
-    /// Maximum outboard size to inline.
-    pub max_outboard_inlined: u64,
-}
-
-impl InlineOptions {
-    /// Do not inline anything, ever.
-    pub const NO_INLINE: Self = Self {
-        max_data_inlined: 0,
-        max_outboard_inlined: 0,
-    };
-    /// Always inline everything
-    pub const ALWAYS_INLINE: Self = Self {
-        max_data_inlined: u64::MAX,
-        max_outboard_inlined: u64::MAX,
-    };
-}
-
-impl Default for InlineOptions {
-    fn default() -> Self {
-        Self {
-            max_data_inlined: 1024 * 16,
-            max_outboard_inlined: 1024 * 16,
-        }
-    }
-}
-
 /// Options for directories used by the file store.
 #[derive(Debug, Clone)]
 pub struct PathOptions {
@@ -404,35 +291,8 @@ impl Default for BatchOptions {
 pub struct Options {
     /// Path options.
     pub path: PathOptions,
-    /// Inline storage options.
-    pub inline: InlineOptions,
     /// Transaction batching options.
     pub batch: BatchOptions,
-}
-
-#[derive(derive_more::Debug)]
-pub(crate) enum ImportSource {
-    TempFile(PathBuf),
-    External(PathBuf),
-    Memory(#[debug(skip)] Bytes),
-}
-
-impl ImportSource {
-    fn content(&self) -> MemOrFile<&[u8], &Path> {
-        match self {
-            Self::TempFile(path) => MemOrFile::File(path.as_path()),
-            Self::External(path) => MemOrFile::File(path.as_path()),
-            Self::Memory(data) => MemOrFile::Mem(data.as_ref()),
-        }
-    }
-
-    fn len(&self) -> io::Result<u64> {
-        match self {
-            Self::TempFile(path) => std::fs::metadata(path).map(|m| m.len()),
-            Self::External(path) => std::fs::metadata(path).map(|m| m.len()),
-            Self::Memory(data) => Ok(data.len() as u64),
-        }
-    }
 }
 
 /// Use BaoFileHandle as the entry type for the map.
@@ -467,33 +327,6 @@ impl MapEntryMut for Entry {
         Ok(self.writer())
     }
 }
-//
-// #[derive(derive_more::Debug)]
-// pub(crate) struct Import {
-//     /// The hash and format of the data to import
-//     content_id: HashAndFormat,
-//     /// The source of the data to import, can be a temp file, external file, or memory
-//     source: ImportSource,
-//     /// Data size
-//     data_size: u64,
-//     /// Outboard without length prefix
-//     #[debug("{:?}", outboard.as_ref().map(|x| x.len()))]
-//     outboard: Option<Vec<u8>>,
-// }
-//
-// #[derive(derive_more::Debug)]
-// pub(crate) struct Export {
-//     /// A temp tag to keep the entry alive while exporting. This also
-//     /// contains the hash to be exported.
-//     temp_tag: TempTag,
-//     /// The target path for the export.
-//     target: PathBuf,
-//     /// The export mode to use.
-//     mode: ExportMode,
-//     /// The progress callback to use.
-//     #[debug(skip)]
-//     progress: ExportProgressCb,
-// }
 
 #[derive(derive_more::Debug)]
 pub(crate) enum ActorMessage {
@@ -508,24 +341,6 @@ pub(crate) enum ActorMessage {
         hash: Hash,
         tx: oneshot::Sender<ActorResult<EntryStatus>>,
     },
-    // #[cfg(test)]
-    // /// Query method: get the full entry state for a hash, both in memory and in redb.
-    // /// This is everything we got about the entry, including the actual inline outboard and data.
-    // EntryState {
-    //     hash: Hash,
-    //     tx: oneshot::Sender<ActorResult<test_support::EntryStateResponse>>,
-    // },
-    // /// Query method: get the full entry state for a hash.
-    // GetFullEntryState {
-    //     hash: Hash,
-    //     tx: oneshot::Sender<ActorResult<Option<EntryData>>>,
-    // },
-    // /// Modification method: set the full entry state for a hash.
-    // SetFullEntryState {
-    //     hash: Hash,
-    //     entry: Option<EntryData>,
-    //     tx: oneshot::Sender<ActorResult<()>>,
-    // },
     /// Modification method: get or create a file handle for a hash.
     ///
     /// If the entry exists in redb, either partial or complete, the corresponding
@@ -535,37 +350,9 @@ pub(crate) enum ActorMessage {
         hash: Hash,
         tx: oneshot::Sender<ActorResult<BaoFileHandle>>,
     },
-    /// Modification method: inline size was exceeded for a partial entry.
-    /// If the entry is complete, this is a no-op. If the entry is partial and in
-    /// memory, it will be written to a file and created in redb.
-    OnMemSizeExceeded { hash: Hash },
     /// Modification method: marks a partial entry as complete.
     /// Calling this on a complete entry is a no-op.
     OnComplete { handle: BaoFileHandle },
-    // /// Modification method: import data into a redb store
-    // ///
-    // /// At this point the size, hash and outboard must already be known.
-    // Import {
-    //     cmd: Import,
-    //     tx: oneshot::Sender<ActorResult<(TempTag, u64)>>,
-    // },
-    // /// Modification method: export data from a redb store
-    // ///
-    // /// In most cases this will not modify the store. Only when using
-    // /// [`ExportMode::TryReference`] and the entry is large enough to not be
-    // /// inlined.
-    // Export {
-    //     cmd: Export,
-    //     tx: oneshot::Sender<ActorResult<()>>,
-    // },
-    /// Update inline options
-    UpdateInlineOptions {
-        /// The new inline options
-        inline_options: InlineOptions,
-        /// Whether to reapply the new options to existing entries
-        reapply: bool,
-        tx: oneshot::Sender<()>,
-    },
     /// Bulk query method: get entries from the blobs table
     Blobs {
         #[debug(skip)]
@@ -595,41 +382,15 @@ pub(crate) enum ActorMessage {
         hash: HashAndFormat,
         tx: oneshot::Sender<ActorResult<Tag>>,
     },
-    /// Modification method: unconditional delete the data for a number of hashes
-    Delete {
-        hashes: Vec<Hash>,
-        tx: oneshot::Sender<ActorResult<()>>,
-    },
-    /// Modification method: delete the data for a number of hashes, only if not protected
-    GcDelete {
-        hashes: Vec<Hash>,
-        tx: oneshot::Sender<ActorResult<()>>,
-    },
     /// Sync the entire database to disk.
     ///
     /// This just makes sure that there is no write transaction open.
     Sync { tx: oneshot::Sender<()> },
-    /// Internal method: dump the entire database to stdout.
-    Dump,
-    /// Internal method: validate the entire database.
-    ///
-    /// Note that this will block the actor until it is done, so don't use it
-    /// on a node under load.
-    Fsck {
-        repair: bool,
-        progress: BoxedProgressSender<ConsistencyCheckProgress>,
-        tx: oneshot::Sender<ActorResult<()>>,
-    },
-    /// Internal method: notify the actor that a new gc epoch has started.
-    ///
-    /// This will be called periodically and can be used to do misc cleanups.
-    GcStart { tx: oneshot::Sender<()> },
     /// Internal method: shutdown the actor.
     ///
     /// Can have an optional oneshot sender to signal when the actor has shut down.
     Shutdown { tx: Option<oneshot::Sender<()>> },
 }
-
 impl ActorMessage {
     fn category(&self) -> MessageCategory {
         match self {
@@ -637,25 +398,11 @@ impl ActorMessage {
             | Self::GetOrCreate { .. }
             | Self::EntryStatus { .. }
             | Self::Blobs { .. }
-            | Self::Tags { .. }
-            | Self::GcStart { .. }
-            // | Self::GetFullEntryState { .. }
-            | Self::Dump => MessageCategory::ReadOnly,
-            // Self::Import { .. }
-            // | Self::Export { .. }
-            | Self::OnMemSizeExceeded { .. }
-            | Self::OnComplete { .. }
-            | Self::SetTag { .. }
-            | Self::CreateTag { .. }
-            // | Self::SetFullEntryState { .. }
-            | Self::Delete { .. }
-            | Self::GcDelete { .. } => MessageCategory::ReadWrite,
-            Self::UpdateInlineOptions { .. }
-            | Self::Sync { .. }
-            | Self::Shutdown { .. }
-            | Self::Fsck { .. } => MessageCategory::TopLevel,
-            // #[cfg(test)]
-            // Self::EntryState { .. } => MessageCategory::ReadOnly,
+            | Self::Tags { .. } => MessageCategory::ReadOnly,
+            Self::OnComplete { .. } | Self::SetTag { .. } | Self::CreateTag { .. } => {
+                MessageCategory::ReadWrite
+            }
+            Self::Sync { .. } | Self::Shutdown { .. } => MessageCategory::TopLevel,
         }
     }
 }
@@ -682,7 +429,6 @@ impl S3Store {
         let db_path = path.join("blobs.db");
         let options = Options {
             path: PathOptions::new(path),
-            inline: Default::default(),
             batch: Default::default(),
         };
         Self::new(db_path, options).await
@@ -697,26 +443,6 @@ impl S3Store {
             tokio::task::spawn_blocking(move || StoreInner::new_sync(path, options, rt)).await??;
         Ok(Self(Arc::new(inner)))
     }
-
-    /// Update the inline options.
-    ///
-    /// When reapply is true, the new options will be applied to all existing
-    /// entries.
-    pub async fn update_inline_options(
-        &self,
-        inline_options: InlineOptions,
-        reapply: bool,
-    ) -> io::Result<()> {
-        Ok(self
-            .0
-            .update_inline_options(inline_options, reapply)
-            .await?)
-    }
-
-    /// Dump the entire content of the database to stdout.
-    pub async fn dump(&self) -> io::Result<()> {
-        Ok(self.0.dump().await?)
-    }
 }
 
 #[derive(Debug)]
@@ -726,19 +452,6 @@ struct StoreInner {
     handle: Option<std::thread::JoinHandle<()>>,
     path_options: Arc<PathOptions>,
 }
-
-// @NOTE: Conflicting implementation
-// impl TagDrop for RwLock<TempCounterMap> {
-//     fn on_drop(&self, content: &HashAndFormat) {
-//         self.write().unwrap().dec(content);
-//     }
-// }
-//
-// impl TagCounter for RwLock<TempCounterMap> {
-//     fn on_create(&self, content: &HashAndFormat) {
-//         self.write().unwrap().inc(content);
-//     }
-// }
 
 impl StoreInner {
     fn new_sync(path: PathBuf, options: Options, rt: tokio::runtime::Handle) -> io::Result<Self> {
@@ -861,24 +574,6 @@ impl StoreInner {
         Ok(rx.await??)
     }
 
-    async fn delete(&self, hashes: Vec<Hash>) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx.send(ActorMessage::Delete { hashes, tx }).await?;
-        Ok(rx.await??)
-    }
-
-    async fn gc_delete(&self, hashes: Vec<Hash>) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx.send(ActorMessage::GcDelete { hashes, tx }).await?;
-        Ok(rx.await??)
-    }
-
-    async fn gc_start(&self) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx.send(ActorMessage::GcStart { tx }).await?;
-        Ok(rx.await?)
-    }
-
     async fn entry_status(&self, hash: &Hash) -> OuterResult<EntryStatus> {
         let (tx, rx) = oneshot::channel();
         self.tx
@@ -900,197 +595,12 @@ impl StoreInner {
             .await?;
         Ok(())
     }
-    //
-    //     async fn export(
-    //         &self,
-    //         hash: Hash,
-    //         target: PathBuf,
-    //         mode: ExportMode,
-    //         progress: ExportProgressCb,
-    //     ) -> OuterResult<()> {
-    //         tracing::debug!(
-    //             "exporting {} to {} using mode {:?}",
-    //             hash.to_hex(),
-    //             target.display(),
-    //             mode
-    //         );
-    //         if !target.is_absolute() {
-    //             return Err(io::Error::new(
-    //                 io::ErrorKind::InvalidInput,
-    //                 "target path must be absolute",
-    //             )
-    //             .into());
-    //         }
-    //         let parent = target.parent().ok_or_else(|| {
-    //             OuterError::from(io::Error::new(
-    //                 io::ErrorKind::InvalidInput,
-    //                 "target path has no parent directory",
-    //             ))
-    //         })?;
-    //         std::fs::create_dir_all(parent)?;
-    //         let temp_tag = self.temp.temp_tag(HashAndFormat::raw(hash));
-    //         let (tx, rx) = oneshot::channel();
-    //         self.tx
-    //             .send(ActorMessage::Export {
-    //                 cmd: Export {
-    //                     temp_tag,
-    //                     target,
-    //                     mode,
-    //                     progress,
-    //                 },
-    //                 tx,
-    //             })
-    //             .await?;
-    //         Ok(rx.await??)
-    //     }
-
-    async fn consistency_check(
-        &self,
-        repair: bool,
-        progress: BoxedProgressSender<ConsistencyCheckProgress>,
-    ) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx
-            .send(ActorMessage::Fsck {
-                repair,
-                progress,
-                tx,
-            })
-            .await?;
-        Ok(rx.await??)
-    }
-
-    async fn update_inline_options(
-        &self,
-        inline_options: InlineOptions,
-        reapply: bool,
-    ) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx
-            .send(ActorMessage::UpdateInlineOptions {
-                inline_options,
-                reapply,
-                tx,
-            })
-            .await?;
-        Ok(rx.await?)
-    }
-
-    async fn dump(&self) -> OuterResult<()> {
-        self.tx.send(ActorMessage::Dump).await?;
-        Ok(())
-    }
 
     async fn sync(&self) -> OuterResult<()> {
         let (tx, rx) = oneshot::channel();
         self.tx.send(ActorMessage::Sync { tx }).await?;
         Ok(rx.await?)
     }
-    //
-    //     fn import_file_sync(
-    //         &self,
-    //         path: PathBuf,
-    //         mode: ImportMode,
-    //         format: BlobFormat,
-    //         progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
-    //     ) -> OuterResult<(TempTag, u64)> {
-    //         if !path.is_absolute() {
-    //             return Err(
-    //                 io::Error::new(io::ErrorKind::InvalidInput, "path must be absolute").into(),
-    //             );
-    //         }
-    //         if !path.is_file() && !path.is_symlink() {
-    //             return Err(io::Error::new(
-    //                 io::ErrorKind::InvalidInput,
-    //                 "path is not a file or symlink",
-    //             )
-    //             .into());
-    //         }
-    //         let id = progress.new_id();
-    //         progress.blocking_send(ImportProgress::Found {
-    //             id,
-    //             name: path.to_string_lossy().to_string(),
-    //         })?;
-    //         let file = match mode {
-    //             ImportMode::TryReference => ImportSource::External(path),
-    //             ImportMode::Copy => {
-    //                 if std::fs::metadata(&path)?.len() < 16 * 1024 {
-    //                     // we don't know if the data will be inlined since we don't
-    //                     // have the inline options here. But still for such a small file
-    //                     // it does not seem worth it do to the temp file ceremony.
-    //                     let data = std::fs::read(&path)?;
-    //                     ImportSource::Memory(data.into())
-    //                 } else {
-    //                     let temp_path = self.temp_file_name();
-    //                     // copy the data, since it is not stable
-    //                     progress.try_send(ImportProgress::CopyProgress { id, offset: 0 })?;
-    //                     if reflink_copy::reflink_or_copy(&path, &temp_path)?.is_none() {
-    //                         tracing::debug!("reflinked {} to {}", path.display(), temp_path.display());
-    //                     } else {
-    //                         tracing::debug!("copied {} to {}", path.display(), temp_path.display());
-    //                     }
-    //                     // copy progress for size will be called in finalize_import_sync
-    //                     ImportSource::TempFile(temp_path)
-    //                 }
-    //             }
-    //         };
-    //         let (tag, size) = self.finalize_import_sync(file, format, id, progress)?;
-    //         Ok((tag, size))
-    //     }
-    //
-    //     fn import_bytes_sync(&self, data: Bytes, format: BlobFormat) -> OuterResult<TempTag> {
-    //         let id = 0;
-    //         let file = ImportSource::Memory(data);
-    //         let progress = IgnoreProgressSender::default();
-    //         let (tag, _size) = self.finalize_import_sync(file, format, id, progress)?;
-    //         Ok(tag)
-    //     }
-    //
-    //     fn finalize_import_sync(
-    //         &self,
-    //         file: ImportSource,
-    //         format: BlobFormat,
-    //         id: u64,
-    //         progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
-    //     ) -> OuterResult<(TempTag, u64)> {
-    //         let data_size = file.len()?;
-    //         tracing::debug!("finalize_import_sync {:?} {}", file, data_size);
-    //         progress.blocking_send(ImportProgress::Size {
-    //             id,
-    //             size: data_size,
-    //         })?;
-    //         let progress2 = progress.clone();
-    //         let (hash, outboard) = match file.content() {
-    //             MemOrFile::File(path) => {
-    //                 let span = trace_span!("outboard.compute", path = %path.display());
-    //                 let _guard = span.enter();
-    //                 let file = std::fs::File::open(path)?;
-    //                 compute_outboard(file, data_size, move |offset| {
-    //                     Ok(progress2.try_send(ImportProgress::OutboardProgress { id, offset })?)
-    //                 })?
-    //             }
-    //             MemOrFile::Mem(bytes) => {
-    //                 // todo: progress? usually this is will be small enough that progress might not be needed.
-    //                 compute_outboard(bytes, data_size, |_| Ok(()))?
-    //             }
-    //         };
-    //         progress.blocking_send(ImportProgress::OutboardDone { id, hash })?;
-    //         // from here on, everything related to the hash is protected by the temp tag
-    //         let tag = self.temp.temp_tag(HashAndFormat { hash, format });
-    //         let hash = *tag.hash();
-    //         // blocking send for the import
-    //         let (tx, rx) = oneshot::channel();
-    //         self.tx.send_blocking(ActorMessage::Import {
-    //             cmd: Import {
-    //                 content_id: HashAndFormat { hash, format },
-    //                 source: file,
-    //                 outboard,
-    //                 data_size,
-    //             },
-    //             tx,
-    //         })?;
-    //         Ok(rx.recv()??)
-    //     }
 
     fn temp_file_name(&self) -> PathBuf {
         self.path_options.temp_file_name()
@@ -1275,8 +785,7 @@ impl ReadableStore for S3Store {
         repair: bool,
         tx: BoxedProgressSender<ConsistencyCheckProgress>,
     ) -> io::Result<()> {
-        self.0.consistency_check(repair, tx.clone()).await?;
-        Ok(())
+        unimplemented!()
     }
 
     async fn export(
@@ -1327,7 +836,7 @@ impl Store for S3Store {
     }
 
     async fn delete(&self, hashes: Vec<Hash>) -> io::Result<()> {
-        Ok(self.0.delete(hashes).await?)
+        unimplemented!()
     }
 
     async fn gc_run<G, Gut>(&self, config: GcConfig, protected_cb: G)
@@ -1336,76 +845,11 @@ impl Store for S3Store {
         Gut: Future<Output = BTreeSet<Hash>> + Send,
     {
         unimplemented!()
-        //         tracing::info!("Starting GC task with interval {:?}", config.period);
-        //         let mut live = BTreeSet::new();
-        //         'outer: loop {
-        //             if let Err(cause) = self.0.gc_start().await {
-        //                 tracing::debug!(
-        //                     "unable to notify the db of GC start: {cause}. Shutting down GC loop."
-        //                 );
-        //                 break;
-        //             }
-        //             // do delay before the two phases of GC
-        //             tokio::time::sleep(config.period).await;
-        //             tracing::debug!("Starting GC");
-        //             live.clear();
-        //
-        //             let p = protected_cb().await;
-        //             live.extend(p);
-        //
-        //             tracing::debug!("Starting GC mark phase");
-        //             let live_ref = &mut live;
-        //             let mut stream = Gen::new(|co| async move {
-        //                 if let Err(e) = gc_mark_task(self, live_ref, &co).await {
-        //                     co.yield_(GcMarkEvent::Error(e)).await;
-        //                 }
-        //             });
-        //             while let Some(item) = stream.next().await {
-        //                 match item {
-        //                     GcMarkEvent::CustomDebug(text) => {
-        //                         tracing::debug!("{}", text);
-        //                     }
-        //                     GcMarkEvent::CustomWarning(text, _) => {
-        //                         tracing::warn!("{}", text);
-        //                     }
-        //                     GcMarkEvent::Error(err) => {
-        //                         tracing::error!("Fatal error during GC mark {}", err);
-        //                         continue 'outer;
-        //                     }
-        //                 }
-        //             }
-        //             drop(stream);
-        //
-        //             tracing::debug!("Starting GC sweep phase");
-        //             let live_ref = &live;
-        //             let mut stream = Gen::new(|co| async move {
-        //                 if let Err(e) = gc_sweep_task(self, live_ref, &co).await {
-        //                     co.yield_(GcSweepEvent::Error(e)).await;
-        //                 }
-        //             });
-        //             while let Some(item) = stream.next().await {
-        //                 match item {
-        //                     GcSweepEvent::CustomDebug(text) => {
-        //                         tracing::debug!("{}", text);
-        //                     }
-        //                     GcSweepEvent::CustomWarning(text, _) => {
-        //                         tracing::warn!("{}", text);
-        //                     }
-        //                     GcSweepEvent::Error(err) => {
-        //                         tracing::error!("Fatal error during GC mark {}", err);
-        //                         continue 'outer;
-        //                     }
-        //                 }
-        //             }
-        //             if let Some(ref cb) = config.done_callback {
-        //                 cb();
-        //             }
-        //         }
     }
 
     fn temp_tag(&self, value: HashAndFormat) -> TempTag {
-        unimplemented!()
         // self.0.temp.temp_tag(value)
+        unimplemented!()
     }
 
     async fn sync(&self) -> io::Result<()> {
@@ -1416,36 +860,6 @@ impl Store for S3Store {
         self.0.shutdown().await;
     }
 }
-//
-// pub(super) async fn gc_sweep_task<'a>(
-//     store: &'a S3Store,
-//     live: &BTreeSet<Hash>,
-//     co: &Co<GcSweepEvent>,
-// ) -> anyhow::Result<()> {
-//     let blobs = store.blobs().await?.chain(store.partial_blobs().await?);
-//     let mut count = 0;
-//     let mut batch = Vec::new();
-//     for hash in blobs {
-//         let hash = hash?;
-//         if !live.contains(&hash) {
-//             batch.push(hash);
-//             count += 1;
-//         }
-//         if batch.len() >= 100 {
-//             store.0.gc_delete(batch.clone()).await?;
-//             batch.clear();
-//         }
-//     }
-//     if !batch.is_empty() {
-//         store.0.gc_delete(batch).await?;
-//     }
-//     co.yield_(GcSweepEvent::CustomDebug(format!(
-//         "deleted {} blobs",
-//         count
-//     )))
-//     .await;
-//     Ok(())
-// }
 
 impl Actor {
     fn new(
@@ -1936,217 +1350,12 @@ impl ActorState {
         }
         Ok(())
     }
-    //
-    //     fn on_mem_size_exceeded(&mut self, tables: &mut Tables, hash: Hash) -> ActorResult<()> {
-    //         let entry = tables
-    //             .blobs
-    //             .get(hash)?
-    //             .map(|x| x.value())
-    //             .unwrap_or_default();
-    //         let entry = entry.union(EntryState::Partial { size: None })?;
-    //         tables.blobs.insert(hash, entry)?;
-    //         // protect all three parts of the entry
-    //         tables.delete_after_commit.remove(
-    //             hash,
-    //             [BaoFilePart::Data, BaoFilePart::Outboard, BaoFilePart::Sizes],
-    //         );
-    //         Ok(())
-    //     }
-
-    // @TODO: Don't believe we need this now that data and outboard locations cannot change
-    // fn update_inline_options(
-    //     &mut self,
-    //     db: &redb::Database,
-    //     options: InlineOptions,
-    //     reapply: bool,
-    // ) -> ActorResult<()> {
-    //     self.options.inline = options;
-    //     if reapply {
-    //         let mut delete_after_commit = Default::default();
-    //         let tx = db.begin_write()?;
-    //         {
-    //             let mut tables = Tables::new(&tx, &mut delete_after_commit)?;
-    //             let hashes = tables
-    //                 .blobs
-    //                 .iter()?
-    //                 .map(|x| x.map(|(k, _)| k.value()))
-    //                 .collect::<Result<Vec<_>, _>>()?;
-    //             for hash in hashes {
-    //                 let guard = tables
-    //                     .blobs
-    //                     .get(hash)?
-    //                     .ok_or_else(|| ActorError::Inconsistent("hash not found".to_owned()))?;
-    //                 let entry = guard.value();
-    //                 if let EntryState::Complete { data_location } = entry {
-    //                     {
-    //                         DataLocation::Owned(size) => {
-    //                             // inline
-    //                             if size <= self.options.inline.max_data_inlined {
-    //                                 let path = self.options.path.owned_data_path(&hash);
-    //                                 let data = std::fs::read(&path)?;
-    //                                 tables.delete_after_commit.insert(hash, [BaoFilePart::Data]);
-    //                                 tables.inline_data.insert(hash, data.as_slice())?;
-    //                                 (DataLocation::Inline(()), size, true)
-    //                             } else {
-    //                                 (DataLocation::Owned(size), size, false)
-    //                             }
-    //                         }
-    //                         DataLocation::Inline(()) => {
-    //                             let guard = tables.inline_data.get(hash)?.ok_or_else(|| {
-    //                                 ActorError::Inconsistent("inline data missing".to_owned())
-    //                             })?;
-    //                             let data = guard.value();
-    //                             let size = data.len() as u64;
-    //                             if size > self.options.inline.max_data_inlined {
-    //                                 let path = self.options.path.owned_data_path(&hash);
-    //                                 std::fs::write(&path, data)?;
-    //                                 drop(guard);
-    //                                 tables.inline_data.remove(hash)?;
-    //                                 (DataLocation::Owned(size), size, true)
-    //                             } else {
-    //                                 (DataLocation::Inline(()), size, false)
-    //                             }
-    //                         }
-    //                         DataLocation::External(paths, size) => {
-    //                             (DataLocation::External(paths, size), size, false)
-    //                         }
-    //                     };
-    //                     let outboard_size = raw_outboard_size(data_location.0);
-    //                     let (outboard_location, outboard_location_changed) = match outboard_location
-    //                     {
-    //                         OutboardLocation::Owned
-    //                             if outboard_size <= self.options.inline.max_outboard_inlined =>
-    //                         {
-    //                             let path = self.options.path.owned_outboard_path(&hash);
-    //                             let outboard = std::fs::read(&path)?;
-    //                             tables
-    //                                 .delete_after_commit
-    //                                 .insert(hash, [BaoFilePart::Outboard]);
-    //                             tables.inline_outboard.insert(hash, outboard.as_slice())?;
-    //                             (OutboardLocation::Inline(()), true)
-    //                         }
-    //                         OutboardLocation::Inline(())
-    //                             if outboard_size > self.options.inline.max_outboard_inlined =>
-    //                         {
-    //                             let guard = tables.inline_outboard.get(hash)?.ok_or_else(|| {
-    //                                 ActorError::Inconsistent("inline outboard missing".to_owned())
-    //                             })?;
-    //                             let outboard = guard.value();
-    //                             let path = self.options.path.owned_outboard_path(&hash);
-    //                             std::fs::write(&path, outboard)?;
-    //                             drop(guard);
-    //                             tables.inline_outboard.remove(hash)?;
-    //                             (OutboardLocation::Owned, true)
-    //                         }
-    //                         x => (x, false),
-    //                     };
-    //                     drop(guard);
-    //                     if outboard_location_changed {
-    //                         tables.blobs.insert(
-    //                             hash,
-    //                             EntryState::Complete {
-    //                                 data_location,
-    //                             },
-    //                         )?;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         tx.commit()?;
-    //         delete_after_commit.apply_and_clear(&self.options.path);
-    //     }
-    //     Ok(())
-    // }
-    //
-    //     fn delete(&mut self, tables: &mut Tables, hashes: Vec<Hash>, force: bool) -> ActorResult<()> {
-    //         for hash in hashes {
-    //             if self.temp.as_ref().read().unwrap().contains(&hash) {
-    //                 continue;
-    //             }
-    //             if !force && self.protected.contains(&hash) {
-    //                 tracing::debug!("protected hash, continuing {}", &hash.to_hex()[..8]);
-    //                 continue;
-    //             }
-    //
-    //             tracing::debug!("deleting {}", &hash.to_hex()[..8]);
-    //
-    //             self.handles.remove(&hash);
-    //             if let Some(entry) = tables.blobs.remove(hash)? {
-    //                 match entry.value() {
-    //                     EntryState::Complete {
-    //                         data_location,
-    //                     } => {
-    //                         match data_location {
-    //                             DataLocation::Inline(_) => {
-    //                                 tables.inline_data.remove(hash)?;
-    //                             }
-    //                             DataLocation::Owned(_) => {
-    //                                 // mark the data for deletion
-    //                                 tables.delete_after_commit.insert(hash, [BaoFilePart::Data]);
-    //                             }
-    //                             DataLocation::External(_, _) => {}
-    //                         }
-    //                         match outboard_location {
-    //                             OutboardLocation::Inline(_) => {
-    //                                 tables.inline_outboard.remove(hash)?;
-    //                             }
-    //                             OutboardLocation::Owned => {
-    //                                 // mark the outboard for deletion
-    //                                 tables
-    //                                     .delete_after_commit
-    //                                     .insert(hash, [BaoFilePart::Outboard]);
-    //                             }
-    //                             OutboardLocation::NotNeeded => {}
-    //                         }
-    //                     }
-    //                     EntryState::Partial { .. } => {
-    //                         // mark all parts for deletion
-    //                         tables.delete_after_commit.insert(
-    //                             hash,
-    //                             [BaoFilePart::Outboard, BaoFilePart::Data, BaoFilePart::Sizes],
-    //                         );
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         Ok(())
-    //     }
 
     fn on_complete(&mut self, tables: &mut Tables, entry: BaoFileHandle) -> ActorResult<()> {
         let hash = entry.hash();
         tracing::trace!("on_complete({})", hash.to_hex());
 
         //@TODO: assert data bytes size is correct against outboard data bytes size
-        // entry.transform(|state: BaoFileStorage| {
-        //     tracing::trace!("on_complete transform {:?}", state);
-        //     let entry = match complete_storage(
-        //         state,
-        //         &hash,
-        //         &self.options.path,
-        //         &self.options.inline,
-        //         tables.delete_after_commit,
-        //     )? {
-        //         Ok(entry) => {
-        //             // store the info so we can insert it into the db later
-        //             info = Some((
-        //                 entry.data_size(),
-        //                 entry.data.0,
-        //                 entry.outboard_size(),
-        //                 entry.outboard.0,
-        //             ));
-        //             entry
-        //         }
-        //         Err(entry) => {
-        //             // the entry was already complete, nothing to do
-        //             entry
-        //         }
-        //     };
-        //     Ok(BaoFileStorage::Complete(entry))
-        // })?;
-
-        // let BaoFileHandle::IncompleteFile(storage) = entry else {
-        // };
-
         if entry.is_complete() {
             // @TODO: The entry is already complete, we don't need to do anything but should log
             // here as there must be some logic error elsewhere.
@@ -2174,22 +1383,6 @@ impl ActorState {
 
     fn handle_toplevel(&mut self, db: &redb::Database, msg: ActorMessage) -> ActorResult<()> {
         match msg {
-            // ActorMessage::UpdateInlineOptions {
-            //     inline_options,
-            //     reapply,
-            //     tx,
-            // } => {
-            //     let res = self.update_inline_options(db, inline_options, reapply);
-            //     tx.send(res?).ok();
-            // }
-            // ActorMessage::Fsck {
-            //     repair,
-            //     progress,
-            //     tx,
-            // } => {
-            //     let res = self.consistency_check(db, repair, progress);
-            //     tx.send(res).ok();
-            // }
             ActorMessage::Sync { tx } => {
                 tx.send(()).ok();
             }
@@ -2229,22 +1422,6 @@ impl ActorState {
                 let res = self.tags(tables, filter);
                 tx.send(res).ok();
             }
-            ActorMessage::GcStart { tx } => {
-                self.protected.clear();
-                self.handles.retain(|_, weak| weak.is_live());
-                tx.send(()).ok();
-            }
-            // ActorMessage::Dump => {
-            //     dump(tables).ok();
-            // }
-            // #[cfg(test)]
-            // ActorMessage::EntryState { hash, tx } => {
-            //     tx.send(self.entry_state(tables, hash)).ok();
-            // }
-            // ActorMessage::GetFullEntryState { hash, tx } => {
-            //     let res = self.get_full_entry_state(tables, hash);
-            //     tx.send(res).ok();
-            // }
             x => return Ok(Err(x)),
         }
         Ok(Ok(()))
@@ -2256,10 +1433,6 @@ impl ActorState {
         msg: ActorMessage,
     ) -> ActorResult<std::result::Result<(), ActorMessage>> {
         match msg {
-            // ActorMessage::Import { cmd, tx } => {
-            //     let res = self.import(tables, cmd);
-            //     tx.send(res).ok();
-            // }
             ActorMessage::SetTag { tag, value, tx } => {
                 let res = self.set_tag(tables, tag, value);
                 tx.send(res).ok();
@@ -2268,33 +1441,10 @@ impl ActorState {
                 let res = self.create_tag(tables, hash);
                 tx.send(res).ok();
             }
-            // ActorMessage::Delete { hashes, tx } => {
-            //     let res = self.delete(tables, hashes, true);
-            //     tx.send(res).ok();
-            // }
-            // ActorMessage::GcDelete { hashes, tx } => {
-            //     let res = self.delete(tables, hashes, false);
-            //     tx.send(res).ok();
-            // }
             ActorMessage::OnComplete { handle } => {
                 let res = self.on_complete(tables, handle);
                 res.ok();
             }
-            // ActorMessage::Export { cmd, tx } => {
-            //     self.export(tables, cmd, tx)?;
-            // }
-            // ActorMessage::OnMemSizeExceeded { hash } => {
-            //     let res = self.on_mem_size_exceeded(tables, hash);
-            //     res.ok();
-            // }
-            // ActorMessage::Dump => {
-            //     let res = dump(tables);
-            //     res.ok();
-            // }
-            // ActorMessage::SetFullEntryState { hash, entry, tx } => {
-            //     let res = self.set_full_entry_state(tables, hash, entry);
-            //     tx.send(res).ok();
-            // }
             msg => {
                 // try to handle it as readonly
                 if let Err(msg) = self.handle_readonly(tables, msg)? {
@@ -2305,50 +1455,6 @@ impl ActorState {
         Ok(Ok(()))
     }
 }
-//
-// /// Export a file by copying out its content to a new location
-// fn export_file_copy(
-//     temp_tag: TempTag,
-//     path: PathBuf,
-//     size: u64,
-//     target: PathBuf,
-//     progress: ExportProgressCb,
-// ) -> ActorResult<()> {
-//     progress(0)?;
-//     // todo: fine grained copy progress
-//     reflink_copy::reflink_or_copy(path, target)?;
-//     progress(size)?;
-//     drop(temp_tag);
-//     Ok(())
-// }
-//
-// fn dump(tables: &impl ReadableTables) -> ActorResult<()> {
-//     for e in tables.blobs().iter()? {
-//         let (k, v) = e?;
-//         let k = k.value();
-//         let v = v.value();
-//         println!("blobs: {} -> {:?}", k.to_hex(), v);
-//     }
-//     for e in tables.tags().iter()? {
-//         let (k, v) = e?;
-//         let k = k.value();
-//         let v = v.value();
-//         println!("tags: {} -> {:?}", k, v);
-//     }
-//     for e in tables.inline_data().iter()? {
-//         let (k, v) = e?;
-//         let k = k.value();
-//         let v = v.value();
-//         println!("inline_data: {} -> {:?}", k.to_hex(), v.len());
-//     }
-//     for e in tables.inline_outboard().iter()? {
-//         let (k, v) = e?;
-//         let k = k.value();
-//         let v = v.value();
-//         println!("inline_outboard: {} -> {:?}", k.to_hex(), v.len());
-//     }
-//     Ok(())
-// }
 
 fn load_data(
     tables: &impl ReadableTables,
@@ -2385,30 +1491,3 @@ fn load_outboard(
     };
     Ok((file, outboard_size))
 }
-//
-// /// Take a possibly incomplete storage and turn it into complete
-// fn complete_storage(
-//     storage: BaoFileStorage,
-//     hash: &Hash,
-//     path_options: &PathOptions,
-//     inline_options: &InlineOptions,
-//     delete_after_commit: &mut DeleteSet,
-// ) -> ActorResult<std::result::Result<CompleteStorage, CompleteStorage>> {
-//     let (data, outboard, _sizes) = match storage {
-//         BaoFileStorage::Complete(c) => return Ok(Err(c)),
-//         BaoFileStorage::IncompleteFile(storage) => storage.into_parts(),
-//     };
-//     // @TODO: get data size?
-//     // let data_size = data.size()?.unwrap();
-//     let data_size = todo!();
-//     let outboard_size = outboard.size()?.unwrap();
-//     // todo: perform more sanity checks if in debug mode
-//     debug_assert!(raw_outboard_size(data_size) == outboard_size);
-//     // mark sizes for deletion after commit in any case - a complete entry
-//     // does not need sizes.
-//     delete_after_commit.insert(*hash, [BaoFilePart::Sizes]);
-//     Ok(Ok(CompleteStorage {
-//         data: (data, data_size),
-//         outboard: (outboard, outboard_size),
-//     }))
-// }
