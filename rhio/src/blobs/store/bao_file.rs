@@ -49,7 +49,7 @@ use super::s3_file::S3File;
 ///
 /// For files below the chunk size, the outboard file is not needed, since
 /// there is only one leaf, and the outboard file is empty.
-struct DataPaths {
+pub struct DataPaths {
     /// The outboard file. This is *without* the size header, since that is not
     /// known for partial files.
     ///
@@ -60,7 +60,7 @@ struct DataPaths {
     /// for post order traversal. The log2 of the chunk group size is appended,
     /// so for the default chunk group size in iroh of 4, the file extension
     /// is .obao4.
-    outboard: PathBuf,
+    pub outboard: PathBuf,
     /// The sizes file. This is a file with 8 byte sizes for each chunk group.
     /// The naming convention is to prepend the log2 of the chunk group size,
     /// so for the default chunk group size in iroh of 4, the file extension
@@ -68,7 +68,7 @@ struct DataPaths {
     ///
     /// The traversal order is not relevant for the sizes file, since it is
     /// about the data chunks, not the hash pairs.
-    sizes: PathBuf,
+    pub sizes: PathBuf,
 }
 
 /// Storage for complete blobs. There is no longer any uncertainty about the
@@ -131,8 +131,8 @@ fn create_read_write(path: impl AsRef<Path>) -> io::Result<File> {
 // @TODO: not clear if we need this...
 /// Create a file for reading and writing, but *without* truncating the existing
 /// file.
-fn create_s3_read_write(bucket: Bucket, path: String) -> S3File {
-    S3File::new(bucket, path)
+fn create_s3_read_write(bucket: Bucket, path: String, size: u64) -> S3File {
+    S3File::new(bucket, path, size)
 }
 
 /// Read from the given file at the given offset, until end of file or max bytes.
@@ -229,8 +229,7 @@ impl FileStorage {
 
                     // @TODO: This will actually be a handle on some remote s3 data, we probably
                     // want to make this whole method async
-                    self.data
-                        .write_all_at(o0, IROH_BLOCK_SIZE.bytes(), leaf.data.as_ref())?;
+                    self.data.write_all_at(o0, leaf.data.as_ref())?;
 
                     let size = tree.size();
                     self.sizes.write_all_at(index, &size.to_le_bytes())?;
@@ -322,26 +321,27 @@ pub struct BaoFileHandle(Arc<BaoFileHandleInner>);
 #[derive(derive_more::Debug, Clone)]
 pub struct BaoFileConfig {
     /// Directory to store files in. Only used when memory limit is reached.
-    outboard_dir: Arc<PathBuf>,
+    root: Arc<PathBuf>,
 
     bucket: Bucket,
 }
 
 impl BaoFileConfig {
     /// Create a new deferred batch writer configuration.
-    pub fn new(outboard_dir: Arc<PathBuf>, bucket: Bucket) -> Self {
-        Self {
-            outboard_dir,
-            bucket,
-        }
+    pub fn new(root: Arc<PathBuf>, bucket: Bucket) -> Self {
+        Self { root, bucket }
     }
 
     /// Get the paths for a hash.
-    fn paths(&self, hash: &Hash) -> DataPaths {
+    pub fn paths(&self, hash: &Hash) -> DataPaths {
         DataPaths {
-            outboard: self.outboard_dir.join(format!("{}.obao4", hash.to_hex())),
-            sizes: self.outboard_dir.join(format!("{}.sizes4", hash.to_hex())),
+            outboard: self.root.join(format!("{}.obao4", hash.to_hex())),
+            sizes: self.root.join(format!("{}.sizes4", hash.to_hex())),
         }
+    }
+
+    pub fn bucket(&self) -> Bucket {
+        self.bucket.clone()
     }
 }
 
@@ -378,18 +378,17 @@ impl AsyncSliceReader for OutboardReader {
     }
 }
 
-enum HandleChange {
-    None,
-    MemToFile,
-    // later: size verified
-}
-
 impl BaoFileHandle {
     /// Create a new bao file handle with a partial file.
-    pub fn incomplete_file(config: Arc<BaoFileConfig>, hash: Hash) -> io::Result<Self> {
+    pub fn incomplete_file(
+        config: Arc<BaoFileConfig>,
+        hash: Hash,
+        path: String,
+        size: u64,
+    ) -> io::Result<Self> {
         let paths = config.paths(&hash);
         let storage = BaoFileStorage::IncompleteFile(FileStorage {
-            data: create_s3_read_write(config.bucket.clone(), hash.to_hex()),
+            data: create_s3_read_write(config.bucket.clone(), path, size),
             outboard: create_read_write(&paths.outboard)?,
             sizes: create_read_write(&paths.sizes)?,
         });

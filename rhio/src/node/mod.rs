@@ -6,20 +6,21 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
+use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::{AbortOnDropHandle, Config as NetworkConfig, JoinErrToStr, NetworkBuilder};
 use p2panda_store::MemoryStore;
 use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
 use rhio_core::log_id::RhioTopicMap;
 use rhio_core::{LogId, RhioExtensions, TopicId};
+use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tracing::error;
 
 use crate::blobs::store::S3Store;
 use crate::blobs::Blobs;
-use crate::config::Config;
+use crate::config::{Config, MinioConfig};
 use crate::nats::Nats;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
@@ -69,18 +70,31 @@ impl Node {
             .sync(sync_protocol);
 
         // 2. Configure and set up blob store and connection handlers for blob replication
-        let (network, blobs) = if let Some(blobs_dir) = &config.blobs_dir {
+        let (network, blobs) = if let Some(outboard_path) = &config.blobs_dir {
+            let MinioConfig {
+                bucket_name,
+                endpoint,
+                region,
+                credentials,
+            } = &config.minio;
+
+            let Some(credentials) = credentials else {
+                return Err(anyhow!("no minio credentials provided"));
+            };
+
+            let region = Region::Custom {
+                region: region.clone(),
+                endpoint: endpoint.clone(),
+            };
             // Spawn a rhio actor backed by a filesystem blob store
-            let blob_store = S3Store::load(blobs_dir).await?;
+            let bucket = Bucket::new(&bucket_name, region, credentials.clone())?.with_path_style();
+
+            let blob_store = S3Store::new(bucket, outboard_path.clone()).await?;
             let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
             let blobs = Blobs::new(config.minio.clone(), blobs_handler);
             (network, blobs)
         } else {
-            // Spawn a rhio actor backed by an in memory blob store
-            let blob_store = BlobsMemoryStore::new();
-            let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
-            let blobs = Blobs::new(config.minio.clone(), blobs_handler);
-            (network, blobs)
+            unimplemented!()
         };
 
         // 3. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,

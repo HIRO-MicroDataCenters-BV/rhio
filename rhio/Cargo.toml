@@ -20,7 +20,6 @@ directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "toml"] }
 futures-lite = "2.4.0"
 futures-util = "0.3.30"
-genawaiter = "0.99.1"
 hex = "0.4.3"
 iroh-base = "0.25.0"
 iroh-blobs = { version = "0.25.0", features = [
@@ -36,11 +35,9 @@ p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" 
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
 postcard = "1.0.10"
 rand = "0.8.5"
-redb = "2.2.0"
 rhio-core = { path = "../rhio-core" }
 rust-s3 = { version = "0.34.0", features = ["blocking", "tokio"] }
 serde = { version = "1.0.203", features = ["derive"] }
-smallvec = "1.13.2"
 thiserror = "1.0.66"
 tokio = "1.38.0"
 tokio-stream = "0.1.15"
