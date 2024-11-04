@@ -1,14 +1,13 @@
 //! An implementation of a bao file, meaning some data blob with associated
 //! outboard.
 //!
-//! Compared to just a pair of (data, outboard), this implementation also works
-//! when both the data and the outboard is incomplete, and not even the size
-//! is fully known.
+//! The actual blob data is stored on an s3 bucket and the outboard files are stored on the local
+//! filesystem. A strict requirement of this implementation is that the amount of data being
+//! processed in memory is bounded to a reasonably low limit. To achieve this data is uploaded to
+//! the configured s3 bucket as the BAO tree is being constructed.
 //!
-//! There is a full in memory implementation, and an implementation that uses
-//! the file system for the data, outboard, and sizes file. There is also a
-//! combined implementation that starts in memory and switches to file when
-//! the memory limit is reached.
+//! For this implementation it is assumed that the final size of a blob is known _before_ adding
+//! it to the store.
 use std::{
     fs::{File, OpenOptions},
     io,
@@ -40,15 +39,7 @@ use s3::Bucket;
 
 use super::s3_file::S3File;
 
-/// Data files are stored in 3 files. The data file, the outboard file,
-/// and a sizes file. The sizes file contains the size that the remote side told us
-/// when writing each data block.
-///
-/// For complete data files, the sizes file is not needed, since you can just
-/// use the size of the data file.
-///
-/// For files below the chunk size, the outboard file is not needed, since
-/// there is only one leaf, and the outboard file is empty.
+/// Data paths for outboard and sizes files which are stored on the local filesystem.
 pub struct DataPaths {
     /// The outboard file. This is *without* the size header, since that is not
     /// known for partial files.
@@ -71,18 +62,10 @@ pub struct DataPaths {
     pub sizes: PathBuf,
 }
 
-/// Storage for complete blobs. There is no longer any uncertainty about the
-/// size, so we don't need a sizes file.
+/// Storage for complete blobs.
 ///
-/// Writing is not possible but also not needed, since the file is complete.
-/// This covers all combinations of data and outboard being in memory or on
-/// disk.
-///
-/// For the memory variant, it does reading in a zero copy way, since storage
-/// is already a `Bytes`.
-// @TODO: This struct should contain a handle to the data stored on an s3 bucket, need to solve
-// issues around re-using http adapters/clients. Maybe better to only support s3 store and drop
-// the memory variant. I believe this is only used as an optimisation for when blobs are tiny.
+/// The data is stored on an s3 bucket at an arbitrary "paths" and the outboard files are stored on
+/// the local filesystem at expected paths (based on hash string).
 #[derive(derive_more::Debug)]
 pub struct CompleteStorage {
     /// data part, which can be in memory or on disk.
@@ -94,14 +77,12 @@ pub struct CompleteStorage {
 impl CompleteStorage {
     /// Read from the data file at the given offset, until end of file or max bytes.
     pub async fn read_data_at(&self, offset: u64, len: usize) -> Result<Bytes> {
-        // @TODO: read data from the s3 bucket, we want to re-use http adapters/clients here.
         let bytes = self.data.0.reader()?.read_at(offset, len).await?;
         Ok(bytes)
     }
 
     /// Read from the outboard file at the given offset, until end of file or max bytes.
     pub fn read_outboard_at(&self, offset: u64, len: usize) -> Bytes {
-        // @TODO: read outboard from file system
         read_to_end(&self.outboard.0, offset, len).unwrap()
     }
 
@@ -116,7 +97,6 @@ impl CompleteStorage {
     }
 }
 
-// @TODO: not clear if we need this...
 /// Create a file for reading and writing, but *without* truncating the existing
 /// file.
 fn create_read_write(path: impl AsRef<Path>) -> io::Result<File> {
@@ -128,16 +108,16 @@ fn create_read_write(path: impl AsRef<Path>) -> io::Result<File> {
         .open(path)
 }
 
-// @TODO: not clear if we need this...
-/// Create a file for reading and writing, but *without* truncating the existing
-/// file.
+/// Create an `S3File` handle.
+///
+/// This doesn't make any calls to the remote bucket, it is just a configured handle from which
+/// further requests can be made.
 fn create_s3_read_write(bucket: Bucket, path: String, size: u64) -> S3File {
     S3File::new(bucket, path, size)
 }
 
 /// Read from the given file at the given offset, until end of file or max bytes.
 fn read_to_end(file: impl ReadAt, offset: u64, max: usize) -> io::Result<Bytes> {
-    // @TODO: This will become a read from the s3 storage
     let mut res = BytesMut::new();
     let mut buf = [0u8; 4096];
     let mut remaining = max;
@@ -155,35 +135,34 @@ fn read_to_end(file: impl ReadAt, offset: u64, max: usize) -> io::Result<Bytes> 
     }
     Ok(res.freeze())
 }
-
-fn max_offset(batch: &[BaoContentItem]) -> u64 {
-    batch
-        .iter()
-        .filter_map(|item| match item {
-            BaoContentItem::Leaf(leaf) => {
-                let len = leaf.data.len().try_into().unwrap();
-                let end = leaf
-                    .offset
-                    .checked_add(len)
-                    .expect("u64 overflow for leaf end");
-                Some(end)
-            }
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0)
-}
+// @TODO: Feels like we should still be using this, but I'm not sure where...
+// fn max_offset(batch: &[BaoContentItem]) -> u64 {
+//     batch
+//         .iter()
+//         .filter_map(|item| match item {
+//             BaoContentItem::Leaf(leaf) => {
+//                 let len = leaf.data.len().try_into().unwrap();
+//                 let end = leaf
+//                     .offset
+//                     .checked_add(len)
+//                     .expect("u64 overflow for leaf end");
+//                 Some(end)
+//             }
+//             _ => None,
+//         })
+//         .max()
+//         .unwrap_or(0)
+// }
 
 /// A file storage for an incomplete bao file.
-// @TODO: This needs to be converted to an s3 storage
 #[derive(Debug)]
-pub struct FileStorage {
+pub struct IncompleteStorage {
     pub data: S3File,
     pub outboard: std::fs::File,
     pub sizes: std::fs::File,
 }
 
-impl FileStorage {
+impl IncompleteStorage {
     /// Split into data, outboard and sizes files.
     pub fn into_parts(self) -> (S3File, File, File) {
         (self.data, self.outboard, self.sizes)
@@ -202,7 +181,6 @@ impl FileStorage {
         }
     }
 
-    // @TODO: can we make this async?
     fn write_batch(&mut self, size: u64, batch: &[BaoContentItem]) -> Result<()> {
         let tree = BaoTree::new(size, IROH_BLOCK_SIZE);
         for item in batch {
@@ -249,39 +227,15 @@ impl FileStorage {
     }
 }
 
-/// The storage for a bao file. This can be either in memory or on disk.
-// @TODO: remove the mem options for data storage
+/// The storage for a bao file split across local file system and an s3 bucket.
 #[derive(Debug)]
 pub(crate) enum BaoFileStorage {
     /// The entry is incomplete and on disk.
-    IncompleteFile(FileStorage),
-    /// The entry is complete. Outboard and data can come from different sources
-    /// (memory or file).
+    IncompleteFile(IncompleteStorage),
+    /// The entry is complete and on disk.
     ///
     /// Writing to this is a no-op, since it is already complete.
     Complete(CompleteStorage),
-}
-//
-// impl Default for BaoFileStorage {
-//     fn default() -> Self {
-//         BaoFileStorage::Complete(Default::default())
-//     }
-// }
-
-impl BaoFileStorage {
-    /// Call sync_all on all the files.
-    fn sync_all(&self) -> io::Result<()> {
-        match self {
-            Self::Complete(_) => Ok(()),
-            Self::IncompleteFile(file) => {
-                // TODO: Check what behavior is expected here and how to reproduce that in s3 world
-                // file.data.sync_all()?;
-                file.outboard.sync_all()?;
-                file.sizes.sync_all()?;
-                Ok(())
-            }
-        }
-    }
 }
 
 /// A weak reference to a bao file handle.
@@ -313,11 +267,7 @@ pub struct BaoFileHandleInner {
 #[derive(Debug, Clone, derive_more::Deref)]
 pub struct BaoFileHandle(Arc<BaoFileHandleInner>);
 
-// pub(crate) type CreateCb = Arc<dyn Fn(&Hash) -> io::Result<()> + Send + Sync>;
-
-/// Configuration for the deferred batch writer. It will start writing to memory,
-/// and then switch to a file when the memory limit is reached.
-// @TODO: Updates required now that outboards are only stored on file, and data is only stored in s3
+/// Configuration for BAO file.
 #[derive(derive_more::Debug, Clone)]
 pub struct BaoFileConfig {
     /// Directory to store files in. Only used when memory limit is reached.
@@ -387,7 +337,7 @@ impl BaoFileHandle {
         size: u64,
     ) -> io::Result<Self> {
         let paths = config.paths(&hash);
-        let storage = BaoFileStorage::IncompleteFile(FileStorage {
+        let storage = BaoFileStorage::IncompleteFile(IncompleteStorage {
             data: create_s3_read_write(config.bucket.clone(), path, size),
             outboard: create_read_write(&paths.outboard)?,
             sizes: create_read_write(&paths.sizes)?,

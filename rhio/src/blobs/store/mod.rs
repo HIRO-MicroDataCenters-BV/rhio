@@ -1,4 +1,4 @@
-//! minio and filesystem backed storage
+//! minio and filesystem backed storage.
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs::File,
@@ -36,9 +36,7 @@ mod util;
 use self::bao_file::{BaoFileConfig, BaoFileHandle, BaoFileHandleWeak};
 use self::util::PeekableFlumeReceiver;
 
-/// The information about an entry that we keep in the entry table for quick access.
-///
-/// The exact info to store here is TBD, so usually you should use the accessor methods.
+/// The information about an entry that we keep in memory.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct EntryState {
     size: u64,
@@ -58,7 +56,6 @@ impl MapEntry for Entry {
 
     fn size(&self) -> BaoBlobSize {
         let size = self.current_size().unwrap();
-        tracing::trace!("redb::Entry::size() = {}", size);
         BaoBlobSize::new(size, self.is_complete())
     }
 
@@ -84,7 +81,6 @@ impl MapEntryMut for Entry {
 #[derive(derive_more::Debug)]
 pub(crate) enum ActorMessage {
     // Query method: get a file handle for a hash, if it exists.
-    // This will produce a file handle even for entries that are not yet in redb at all.
     Get {
         hash: Hash,
         tx: oneshot::Sender<ActorResult<Option<BaoFileHandle>>>,
@@ -96,9 +92,8 @@ pub(crate) enum ActorMessage {
     },
     /// Modification method: get or create a file handle for a hash.
     ///
-    /// If the entry exists in redb, either partial or complete, the corresponding
-    /// data will be returned. If it does not yet exist, a new partial file handle
-    /// will be created, but not yet written to redb.
+    /// If the entry exists in memory in complete or partial state it will be returned. If it
+    /// doesn't exist a new entry will be created.
     GetOrCreate {
         hash: Hash,
         tx: oneshot::Sender<ActorResult<BaoFileHandle>>,
@@ -106,37 +101,14 @@ pub(crate) enum ActorMessage {
     /// Modification method: marks a partial entry as complete.
     /// Calling this on a complete entry is a no-op.
     OnComplete { handle: BaoFileHandle },
-    /// Bulk query method: get entries from the blobs table
+    /// Bulk query method: get entries from the blobs table which are complete.
     CompleteBlobs {
         tx: oneshot::Sender<Vec<io::Result<Hash>>>,
     },
+    /// Bulk query method: get entries from the blobs table which are incomplete.
     IncompleteBlobs {
         tx: oneshot::Sender<Vec<io::Result<Hash>>>,
     },
-    /// Bulk query method: get the entire tags table
-    // Tags {
-    //     #[debug(skip)]
-    //     filter: FilterPredicate<Tag, HashAndFormat>,
-    //     #[allow(clippy::type_complexity)]
-    //     tx: oneshot::Sender<
-    //         ActorResult<Vec<std::result::Result<(Tag, HashAndFormat), StorageError>>>,
-    //     >,
-    // },
-    // /// Modification method: set a tag to a value, or remove it.
-    // SetTag {
-    //     tag: Tag,
-    //     value: Option<HashAndFormat>,
-    //     tx: oneshot::Sender<ActorResult<()>>,
-    // },
-    // /// Modification method: create a new unique tag and set it to a value.
-    // CreateTag {
-    //     hash: HashAndFormat,
-    //     tx: oneshot::Sender<ActorResult<Tag>>,
-    // },
-    /// Sync the entire database to disk.
-    ///
-    /// This just makes sure that there is no write transaction open.
-    Sync { tx: oneshot::Sender<()> },
     /// Internal method: shutdown the actor.
     ///
     /// Can have an optional oneshot sender to signal when the actor has shut down.
@@ -151,7 +123,7 @@ impl ActorMessage {
             | Self::CompleteBlobs { .. }
             | Self::IncompleteBlobs { .. } => MessageCategory::ReadOnly,
             Self::OnComplete { .. } => MessageCategory::ReadWrite,
-            Self::Sync { .. } | Self::Shutdown { .. } => MessageCategory::TopLevel,
+            Self::Shutdown { .. } => MessageCategory::TopLevel,
         }
     }
 }
@@ -250,33 +222,14 @@ impl StoreInner {
 
     async fn tags(&self) -> OuterResult<Vec<io::Result<(Tag, HashAndFormat)>>> {
         unimplemented!()
-        // let (tx, rx) = oneshot::channel();
-        // let filter: FilterPredicate<Tag, HashAndFormat> =
-        //     Box::new(|_i, k, v| Some((k.value(), v.value())));
-        // self.tx.send(ActorMessage::Tags { filter, tx }).await?;
-        // let tags = rx.await?;
-        // // transform the internal error type into io::Error
-        // let tags = tags?
-        //     .into_iter()
-        //     .map(|r| r.map_err(|e| ActorError::from(e).into()))
-        //     .collect();
-        // Ok(tags)
     }
 
     async fn set_tag(&self, tag: Tag, value: Option<HashAndFormat>) -> OuterResult<()> {
         unimplemented!()
-        // let (tx, rx) = oneshot::channel();
-        // self.tx
-        //     .send(ActorMessage::SetTag { tag, value, tx })
-        //     .await?;
-        // Ok(rx.await??)
     }
 
     async fn create_tag(&self, hash: HashAndFormat) -> OuterResult<Tag> {
         unimplemented!()
-        // let (tx, rx) = oneshot::channel();
-        // self.tx.send(ActorMessage::CreateTag { hash, tx }).await?;
-        // Ok(rx.await??)
     }
 
     async fn entry_status(&self, hash: &Hash) -> OuterResult<EntryStatus> {
@@ -300,16 +253,6 @@ impl StoreInner {
             .await?;
         Ok(())
     }
-
-    async fn sync(&self) -> OuterResult<()> {
-        let (tx, rx) = oneshot::channel();
-        self.tx.send(ActorMessage::Sync { tx }).await?;
-        Ok(rx.await?)
-    }
-
-    // fn temp_file_name(&self) -> PathBuf {
-    //     self.path_options.temp_file_name()
-    // }
 
     async fn shutdown(&self) {
         let (tx, rx) = oneshot::channel();
@@ -534,12 +477,11 @@ impl Store for S3Store {
     }
 
     fn temp_tag(&self, value: HashAndFormat) -> TempTag {
-        // self.0.temp.temp_tag(value)
         unimplemented!()
     }
 
     async fn sync(&self) -> io::Result<()> {
-        Ok(self.0.sync().await?)
+        unimplemented!()
     }
 
     async fn shutdown(&self) {
@@ -570,18 +512,13 @@ impl Actor {
         let mut msgs = PeekableFlumeReceiver::new(self.msgs_rx.clone());
         while let Some(msg) = msgs.recv().await {
             if let ActorMessage::Shutdown { tx } = msg {
-                // Make sure the database is dropped before we send the reply.
-                // @TODO: What do we need to drop here?
-                drop(self);
                 if let Some(tx) = tx {
                     tx.send(()).ok();
                 }
                 break;
             }
             match msg.category() {
-                MessageCategory::TopLevel => {
-                    self.handle_toplevel(msg)?;
-                }
+                MessageCategory::TopLevel => (), // There aren't any other top level messages.
                 MessageCategory::ReadOnly => {
                     if let Err(msg) = self.handle_readonly(msg)? {
                         warn!("error handling message in store actor: {msg:?}")
@@ -721,21 +658,6 @@ impl Actor {
         self.blobs
             .entry(hash)
             .and_modify(|entry| entry.complete = true);
-        Ok(())
-    }
-
-    fn handle_toplevel(&mut self, msg: ActorMessage) -> ActorResult<()> {
-        match msg {
-            ActorMessage::Sync { tx } => {
-                tx.send(()).ok();
-            }
-            x => {
-                return Err(ActorError::Inconsistent(format!(
-                    "unexpected message for handle_toplevel: {:?}",
-                    x
-                )))
-            }
-        }
         Ok(())
     }
 
