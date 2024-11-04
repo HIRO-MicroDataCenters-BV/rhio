@@ -60,7 +60,7 @@ impl RhioSubject {
             return false;
         }
 
-        return true;
+        true
     }
 }
 
@@ -108,8 +108,8 @@ impl<'de> Deserialize<'de> for RhioSubject {
     where
         D: serde::Deserializer<'de>,
     {
-        let value: String = String::deserialize(deserializer)?.into();
-        Ok(Self::from_str(&value).map_err(|err| serde::de::Error::custom(err.to_string()))?)
+        let value: String = String::deserialize(deserializer)?;
+        Self::from_str(&value).map_err(|err| serde::de::Error::custom(err.to_string()))
     }
 }
 

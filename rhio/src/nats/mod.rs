@@ -141,10 +141,7 @@ fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<Node
                 continue;
             };
 
-            let Ok(file_path) = PathBuf::from_str(file_path_str) else {
-                warn!("failed parsing minio control message");
-                continue;
-            };
+            let Ok(file_path) = PathBuf::from_str(file_path_str);
 
             if let Err(err) = node_control_tx
                 .send(NodeControl::ImportBlob {
