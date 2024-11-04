@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use bao_file::BaoFileStorage;
 use bytes::Bytes;
 use futures_lite::Stream;
 use iroh_base::hash::{BlobFormat, Hash, HashAndFormat};
@@ -710,6 +711,13 @@ impl Actor {
             hash.to_hex(),
             data_size,
         );
+
+        let mut lock = entry.storage.write();
+        if let BaoFileStorage::IncompleteFile(file_storage) = lock.as_deref_mut().unwrap() {
+            // @TODO: Handle this error
+            file_storage.data.complete().expect("can complete blob");
+        }
+
         self.blobs
             .entry(hash)
             .and_modify(|entry| entry.complete = true);

@@ -178,9 +178,9 @@ fn max_offset(batch: &[BaoContentItem]) -> u64 {
 // @TODO: This needs to be converted to an s3 storage
 #[derive(Debug)]
 pub struct FileStorage {
-    data: S3File,
-    outboard: std::fs::File,
-    sizes: std::fs::File,
+    pub data: S3File,
+    pub outboard: std::fs::File,
+    pub sizes: std::fs::File,
 }
 
 impl FileStorage {
