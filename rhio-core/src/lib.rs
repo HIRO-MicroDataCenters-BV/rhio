@@ -2,6 +2,7 @@ pub mod extensions;
 pub mod log_id;
 pub mod operation;
 pub mod private_key;
+pub mod subject;
 pub mod topic_id;
 
 pub use extensions::{RhioExtensions, Subject};
