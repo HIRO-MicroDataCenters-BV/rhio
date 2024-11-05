@@ -68,7 +68,7 @@ impl FromStr for Subject {
         if value.is_empty() {
             bail!("can't have empty nats subject string");
         }
-        Ok(Self::new(&value))
+        Ok(Self::new(value))
     }
 }
 

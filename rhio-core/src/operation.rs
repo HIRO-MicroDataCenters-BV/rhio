@@ -111,7 +111,7 @@ mod tests {
     async fn operation_roundtrips() {
         let private_key = PrivateKey::new();
         let mut store = MemoryStore::new();
-        let subject = "icecreams.vanilla.dropped".into();
+        let subject = "icecreams.vanilla.dropped";
         for i in 0..16 {
             let body = format!("Oh, no! {i}");
             let operation = create_operation(

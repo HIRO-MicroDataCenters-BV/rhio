@@ -1,18 +1,15 @@
-use std::collections::{hash_map, HashMap};
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use anyhow::{anyhow, Result};
-use p2panda_core::{Body, Extension, Header, Operation};
-use p2panda_engine::operation::{ingest_operation, IngestResult};
-use p2panda_engine::IngestExt;
-use p2panda_net::network::{FromNetwork, ToNetwork};
+use p2panda_core::{Body, Header, Operation};
+use p2panda_net::network::ToNetwork;
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{decode_operation, encode_operation, LogId, RhioExtensions, TopicId};
+use rhio_core::{encode_operation, LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt, StreamMap};
-use tracing::{error, trace};
+use tracing::error;
 
 use crate::topic::Subscription;
 
