@@ -2,11 +2,7 @@
 resolver = "2"
 members = [
   "rhio",
-  "rhio-client",
   "rhio-core",
-  # @TODO(adz): Commented it out for now to "ignore" this crate during CI and `cargo` tasks.
-  # See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/63
-  # "rhio-ffi"
 ]
 
 [workspace.lints.rust]
