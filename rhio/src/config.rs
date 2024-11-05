@@ -17,6 +17,9 @@ const CONFIG_FILE_NAME: &str = "config.toml";
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
 
+/// Default rhio network id.
+const DEFAULT_NETWORK_ID: &str = "rhio-default-network-1";
+
 /// Default HTTP API endpoint for MinIO server.
 pub const MINIO_ENDPOINT: &str = "http://localhost:9000";
 
@@ -203,6 +206,7 @@ pub struct NodeConfig {
     pub known_nodes: Vec<KnownNode>,
     #[serde(rename = "private_key_path")]
     pub private_key: Option<PathBuf>,
+    pub network_id: String,
 }
 
 impl Default for NodeConfig {
@@ -211,6 +215,7 @@ impl Default for NodeConfig {
             bind_port: DEFAULT_BIND_PORT,
             known_nodes: vec![],
             private_key: None,
+            network_id: DEFAULT_NETWORK_ID.to_string(),
         }
     }
 }

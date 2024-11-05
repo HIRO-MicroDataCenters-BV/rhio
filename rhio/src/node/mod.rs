@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::{Blobs as BlobsHandler, FilesystemStore, MemoryStore as BlobsMemoryStore};
-use p2panda_core::{PrivateKey, PublicKey};
+use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{AbortOnDropHandle, Config as NetworkConfig, JoinErrToStr, NetworkBuilder};
 use p2panda_store::MemoryStore;
 use p2panda_sync::protocols::log_height::LogHeightSyncProtocol;
@@ -23,9 +23,6 @@ use crate::nats::Nats;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 pub use crate::node::control::NodeControl;
-
-// @TODO: Give rhio a cool network id
-const RHIO_NETWORK_ID: [u8; 32] = [0; 32];
 
 pub struct Node {
     pub config: Config,
@@ -43,9 +40,11 @@ impl Node {
         topic_map: RhioTopicMap,
     ) -> Result<Self> {
         // 1. Configure rhio network
+        let network_id_hash = Hash::new(config.node.network_id.as_bytes());
+        let network_id = network_id_hash.as_bytes();
         let mut network_config = NetworkConfig {
             bind_port: config.node.bind_port,
-            network_id: RHIO_NETWORK_ID,
+            network_id: *network_id,
             ..Default::default()
         };
 

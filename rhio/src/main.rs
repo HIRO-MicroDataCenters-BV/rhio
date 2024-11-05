@@ -55,6 +55,8 @@ async fn main() -> Result<()> {
         .iter()
         .map(|addr| addr.to_string())
         .collect();
+    info!("‣ network id:");
+    info!("  - {}", config.node.network_id);
     info!("‣ node public key:");
     info!("  - {}", node.id());
     info!("‣ node addresses:");

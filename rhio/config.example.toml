@@ -7,15 +7,19 @@
 # 2. Replace the example values with your own desired configuration. All values
 # in this template resemble the defaults
 
-# ﾟ･｡+☆
-# PORTS
-# ﾟ･｡+☆
+# ﾟ･｡+☆+｡
+# NETWORK
+# ﾟ･｡+☆+｡
 
 # Port for node-node communication and data replication. Defaults to 9102.
 #
 # When port is taken the node will automatically pick a random, free port.
 #
 # bind_port = 9102
+
+# Nodes will only communicate with each other if they know the same network id.
+#
+# network_id = "rhio-default-network-1"
 
 # ﾟ･｡+☆+｡･
 # IDENTITY
