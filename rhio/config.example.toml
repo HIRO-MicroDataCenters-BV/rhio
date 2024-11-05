@@ -15,7 +15,7 @@
 #
 # When port is taken the node will automatically pick a random, free port.
 #
-bind_port = 9102
+# bind_port = 9102
 
 # ﾟ･｡+☆+｡･
 # IDENTITY
