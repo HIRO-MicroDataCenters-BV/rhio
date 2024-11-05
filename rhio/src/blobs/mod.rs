@@ -8,26 +8,27 @@ use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
 use s3::Region;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
-use tokio_util::task::LocalPoolHandle;
+use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
-use crate::config::MinioConfig;
+use crate::config::S3Config;
+use crate::topic::Subscription;
+use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Blobs {
-    config: MinioConfig,
+    config: S3Config,
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Blobs {
-    pub fn new<S: Store>(config: MinioConfig, blobs_handler: BlobsHandler<S>) -> Self {
+    pub fn new<S: Store>(config: S3Config, blobs_handler: BlobsHandler<Subscription, S>) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
         let blobs_actor = BlobsActor::new(blobs_handler, blobs_actor_rx);
         let pool = LocalPoolHandle::new(1);

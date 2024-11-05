@@ -4,14 +4,17 @@ use anyhow::Result;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_core::{Body, Header, Operation};
-use p2panda_net::{AbortOnDropHandle, JoinErrToStr, Network};
+use p2panda_net::Network;
 use p2panda_store::MemoryStore;
 use rhio_core::{LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
 use crate::network::actor::{PandaActor, ToPandaActor};
+use crate::topic::Subscription;
+use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Panda {
@@ -21,7 +24,7 @@ pub struct Panda {
 }
 
 impl Panda {
-    pub fn new(network: Network, store: MemoryStore<LogId, RhioExtensions>) -> Self {
+    pub fn new(network: Network<Subscription>, store: MemoryStore<LogId, RhioExtensions>) -> Self {
         let (panda_actor_tx, panda_actor_rx) = mpsc::channel(256);
         let panda_actor = PandaActor::new(network, store, panda_actor_rx);
 

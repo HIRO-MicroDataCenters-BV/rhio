@@ -46,12 +46,12 @@ where
     let public_key = private_key.public_key();
     let log_id = LogId::new(subject);
 
-    let latest_operation = store.latest_operation(&public_key, &log_id).await?;
-
-    let (seq_num, backlink) = match latest_operation {
-        Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
-        None => (0, None),
-    };
+    // let latest_operation = store.latest_operation(&public_key, &log_id).await?;
+    //
+    // let (seq_num, backlink) = match latest_operation {
+    //     Some(operation) => (operation.header.seq_num + 1, Some(operation.hash)),
+    //     None => (0, None),
+    // };
 
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
@@ -70,8 +70,8 @@ where
         payload_size: body.as_ref().map_or(0, |body| body.size()),
         payload_hash: body.as_ref().map(|body| body.hash()),
         timestamp,
-        seq_num,
-        backlink,
+        seq_num: 0,
+        backlink: None,
         previous: vec![],
         extensions: Some(extensions),
     };
@@ -83,7 +83,7 @@ where
         body,
     };
 
-    store.insert_operation(&operation, &log_id).await?;
+    // store.insert_operation(&operation, &log_id).await?;
 
     Ok(operation)
 }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use p2panda_store::TopicMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -21,8 +20,8 @@ impl RhioTopicMap {
     }
 }
 
-impl TopicMap<[u8; 32], LogId> for RhioTopicMap {
-    fn get(&self, topic: &[u8; 32]) -> Option<LogId> {
-        self.0.get(topic).cloned()
-    }
-}
+// impl TopicMap<[u8; 32], LogId> for RhioTopicMap {
+//     fn get(&self, topic: &[u8; 32]) -> Option<LogId> {
+//         self.0.get(topic).cloned()
+//     }
+// }

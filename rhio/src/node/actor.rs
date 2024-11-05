@@ -1,23 +1,20 @@
 use anyhow::{anyhow, bail, Context, Result};
 use futures_util::stream::SelectAll;
 use p2panda_core::{Extension, Hash, Operation};
-use p2panda_net::ToBytes;
 use rhio_core::{decode_operation, encode_operation, DeprecatedSubject, RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::node::NodeControl;
+use crate::topic::Subscription;
 
 pub enum ToNodeActor {
     Subscribe {
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
+        subscription: Subscription,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -27,7 +24,6 @@ pub enum ToNodeActor {
 
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
-    node_control_rx: mpsc::Receiver<NodeControl>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<Operation<RhioExtensions>>>,
     nats: Nats,
@@ -36,16 +32,9 @@ pub struct NodeActor {
 }
 
 impl NodeActor {
-    pub fn new(
-        nats: Nats,
-        panda: Panda,
-        blobs: Blobs,
-        inbox: mpsc::Receiver<ToNodeActor>,
-        node_control_rx: mpsc::Receiver<NodeControl>,
-    ) -> Self {
+    pub fn new(nats: Nats, panda: Panda, blobs: Blobs, inbox: mpsc::Receiver<ToNodeActor>) -> Self {
         Self {
             nats,
-            node_control_rx,
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             panda,
@@ -89,11 +78,6 @@ impl NodeActor {
                         }
                     }
                 },
-                Some(command) = self.node_control_rx.recv() => {
-                    if let Err(err) = self.on_control_command(command).await {
-                        break Err(err);
-                    }
-                },
                 Some(Ok(event)) = self.nats_consumer_rx.next() => {
                     if let Err(err) = self.on_nats_event(event).await {
                         break Err(err);
@@ -117,12 +101,10 @@ impl NodeActor {
     async fn on_actor_message(&mut self, msg: ToNodeActor) -> Result<()> {
         match msg {
             ToNodeActor::Subscribe {
-                stream_name,
-                filter_subject,
-                topic,
+                subscription,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
+                let result = self.on_subscribe(subscription).await;
                 reply.send(result).ok();
             }
             ToNodeActor::Shutdown { .. } => {
@@ -133,24 +115,27 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Callback when the application decided to subscribe to a new NATS JetStream.
-    ///
-    /// This will create a NATS consumer which will start downloading all persisted, past data from
-    /// that given stream before it'll observe new messages coming in.
-    async fn on_subscribe(
-        &mut self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
-    ) -> Result<()> {
-        debug!("subscribe to nats stream {} ..", stream_name);
-        let nats_rx = self
-            .nats
-            .subscribe(stream_name, filter_subject, topic)
-            .await?;
-        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // trait which is required by `SelectAll`
-        self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+    /// Callback when the application decided to subscribe to a new NATS message stream or S3
+    /// bucket.
+    async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
+        match subscription {
+            Subscription::Bucket(bucket) => {
+                debug!("subscribe to s3 bucket {} ..", bucket);
+            }
+            Subscription::Subject(subject) => {
+                debug!("subscribe to nats stream {} ..", subject);
+            }
+        }
+
+        // @TODO: Remove this
+        // let nats_rx = self
+        //     .nats
+        //     .subscribe(stream_name, filter_subject, topic)
+        //     .await?;
+        // // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
+        // // trait which is required by `SelectAll`
+        // self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+
         Ok(())
     }
 
@@ -294,36 +279,36 @@ impl NodeActor {
         Ok(())
     }
 
-    async fn on_control_command(&self, command: NodeControl) -> Result<()> {
-        match command {
-            NodeControl::ImportBlob {
-                file_path,
-                reply_subject,
-            } => {
-                debug!(
-                    "received control command to import '{}'",
-                    file_path.display()
-                );
-                let hash = self.blobs.import_file(file_path.clone()).await?;
-                info!(
-                    "file import '{}' completed, the resulting hash is: {}",
-                    file_path.display(),
-                    hash
-                );
-
-                // If the control command requested a response via NATS Core, we will provide it!
-                if let Some(subject) = reply_subject {
-                    // Since NATS Core messages are never acknowledged ("fire and forget"), we set
-                    // the flag to "false" to never wait for an ACK
-                    self.nats
-                        .publish(false, subject.to_string(), hash.to_bytes())
-                        .await?;
-                }
-            }
-        }
-
-        Ok(())
-    }
+    // async fn on_control_command(&self, command: NodeControl) -> Result<()> {
+    //     match command {
+    //         NodeControl::ImportBlob {
+    //             file_path,
+    //             reply_subject,
+    //         } => {
+    //             debug!(
+    //                 "received control command to import '{}'",
+    //                 file_path.display()
+    //             );
+    //             let hash = self.blobs.import_file(file_path.clone()).await?;
+    //             info!(
+    //                 "file import '{}' completed, the resulting hash is: {}",
+    //                 file_path.display(),
+    //                 hash
+    //             );
+    //
+    //             // If the control command requested a response via NATS Core, we will provide it!
+    //             if let Some(subject) = reply_subject {
+    //                 // Since NATS Core messages are never acknowledged ("fire and forget"), we set
+    //                 // the flag to "false" to never wait for an ACK
+    //                 self.nats
+    //                     .publish(false, subject.to_string(), hash.to_bytes())
+    //                     .await?;
+    //             }
+    //         }
+    //     }
+    //
+    //     Ok(())
+    // }
 
     async fn shutdown(&self) -> Result<()> {
         self.nats.shutdown().await?;

@@ -1,8 +1,6 @@
+use p2panda_core::prune::PruneFlag;
 use p2panda_core::{Extension, Hash};
-use p2panda_engine::extensions::{PruneFlag, StreamName};
 use serde::{Deserialize, Serialize};
-
-use crate::LogId;
 
 /// NATS "subject" which are similar to p2panda or Kafka "topics".
 ///
@@ -39,21 +37,9 @@ impl Extension<DeprecatedSubject> for RhioExtensions {
     }
 }
 
-impl Extension<LogId> for RhioExtensions {
-    fn extract(&self) -> Option<LogId> {
-        self.subject.clone().map(|subject| LogId::new(&subject))
-    }
-}
-
 impl Extension<Hash> for RhioExtensions {
     fn extract(&self) -> Option<Hash> {
         self.blob_hash
-    }
-}
-
-impl Extension<StreamName> for RhioExtensions {
-    fn extract(&self) -> Option<StreamName> {
-        None
     }
 }
 
