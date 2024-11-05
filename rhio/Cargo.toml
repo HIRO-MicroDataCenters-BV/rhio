@@ -32,3 +32,6 @@ tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[dev-dependencies]
+figment = { version = "0.10.19", features = ["env", "toml", "test"] }

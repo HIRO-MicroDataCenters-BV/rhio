@@ -21,28 +21,23 @@ const DEFAULT_BIND_PORT: u16 = 9102;
 const DEFAULT_NETWORK_ID: &str = "rhio-default-network-1";
 
 /// Default HTTP API endpoint for MinIO server.
-pub const MINIO_ENDPOINT: &str = "http://localhost:9000";
+pub const S3_ENDPOINT: &str = "http://localhost:9000";
 
 /// Default S3 Region for MinIO blob store.
-pub const MINIO_REGION: &str = "eu-west-2";
-
-/// Default S3 bucket name for MinIO blob store.
-#[deprecated]
-pub const BUCKET_NAME: &str = "rhio";
+pub const S3_REGION: &str = "eu-west-2";
 
 /// Default endpoint for NATS server.
 pub const NATS_ENDPOINT: &str = "localhost:4222";
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Config {
-    pub blobs_dir: Option<PathBuf>,
-    #[serde(rename = "s3")]
-    pub minio: MinioConfig,
+    pub s3: S3Config,
     pub nats: NatsConfig,
     #[serde(flatten)]
     pub node: NodeConfig,
     pub log_level: Option<String>,
-    pub publish: Option<Vec<PublishConfig>>,
+    pub publish: Option<PublishConfig>,
+    pub subscribe: Option<SubscribeConfig>,
     #[deprecated]
     pub streams: Option<Vec<StreamConfig>>,
 }
@@ -73,20 +68,6 @@ struct Cli {
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key: Option<PathBuf>,
-
-    /// Path to file-system blob store to temporarily load blobs into when importing to MinIO
-    /// database.
-    ///
-    /// WARNING: When left empty, an in-memory blob store is used instead which might lead to data
-    /// corruption as blob hashes are not kept between restarts. Use the in-memory store only for
-    /// testing purposes.
-    // @TODO: This will be removed as soon as we've implemented a full MinIO storage backend. We
-    // currently need it to generate all bao-tree hashes before moving the data further to MinIO.
-    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
-    #[deprecated]
-    #[arg(short = 'b', long, value_name = "PATH")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    blobs_dir: Option<PathBuf>,
 
     /// Set log verbosity. Use this for learning more about how your node behaves or for debugging.
     ///
@@ -154,8 +135,8 @@ fn try_determine_config_file_path() -> Option<PathBuf> {
         .cloned()
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MinioConfig {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct S3Config {
     // @TODO(adz): We probably want to load this from some secure store / file instead?
     // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/59
     pub credentials: Option<Credentials>,
@@ -165,21 +146,21 @@ pub struct MinioConfig {
     pub region: String,
 }
 
-impl Default for MinioConfig {
+impl Default for S3Config {
     fn default() -> Self {
         Self {
             credentials: None,
-            bucket_name: BUCKET_NAME.to_string(),
-            endpoint: MINIO_ENDPOINT.to_string(),
-            region: MINIO_REGION.to_string(),
+            bucket_name: "".to_string(),
+            endpoint: S3_ENDPOINT.to_string(),
+            region: S3_REGION.to_string(),
         }
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NatsConfig {
     pub endpoint: String,
-    pub credentials: Option<NatsAuth>,
+    pub credentials: Option<NatsCredentials>,
 }
 
 impl Default for NatsConfig {
@@ -191,15 +172,15 @@ impl Default for NatsConfig {
     }
 }
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
-pub struct NatsAuth {
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NatsCredentials {
     pub nkey: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
     pub token: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub bind_port: u16,
     #[serde(rename = "nodes")]
@@ -220,7 +201,7 @@ impl Default for NodeConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct KnownNode {
     pub public_key: PublicKey,
     #[serde(rename = "endpoints")]
@@ -228,21 +209,167 @@ pub struct KnownNode {
 }
 
 #[deprecated]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StreamConfig {
     pub nats_stream_name: String,
     pub nats_filter_subject: Option<String>,
     pub external_topic: String,
 }
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
     pub s3_buckets: Vec<Bucket>,
     pub nats_subjects: Vec<Subject>,
 }
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubscribeConfig {
     pub s3_buckets: Vec<ScopedBucket>,
     pub nats_subjects: Vec<ScopedSubject>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use figment::providers::{Format, Serialized, Toml};
+    use figment::Figment;
+    use s3::creds::Credentials;
+
+    use crate::config::{
+        KnownNode, NatsConfig, NatsCredentials, NodeConfig, PublishConfig, S3Config,
+        SubscribeConfig,
+    };
+
+    use super::Config;
+
+    #[test]
+    fn parse_toml_file() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.toml",
+                r#"
+bind_port = 1112
+private_key_path = "/usr/app/rhio/private.key"
+network_id = "rhio-default-network-1"
+
+[s3]
+endpoint = "http://minio.svc.kubernetes.local"
+region = "eu-central-1"
+
+[s3.credentials]
+access_key = "access_key_test"
+secret_key = "secret_key_test"
+
+[nats]
+endpoint = "http://nats.svc.kubernetes.local"
+
+[nats.credentials]
+username = "username_test"
+password = "password_test"
+
+[[nodes]]
+public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+endpoints = [
+  "192.168.178.100:2022",
+  "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023",
+]
+
+[publish]
+s3_buckets = [
+  "local_bucket_1",
+  "local_bucket_2",
+]
+nats_subjects = [
+  "workload.berlin.energy",
+  "workload.rotterdam.energy",
+]
+
+[subscribe]
+s3_buckets = [
+  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1",
+  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2",
+]
+nats_subjects = [
+  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/workload.*.energy",
+  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/data.thehague.meta",
+]
+            "#,
+            )?;
+
+            let config: Config = Figment::from(Serialized::defaults(Config::default()))
+                .merge(Toml::file("config.toml"))
+                .extract()
+                .unwrap();
+
+            assert_eq!(
+                config,
+                Config {
+                    s3: S3Config {
+                        credentials: Some(Credentials {
+                            access_key: Some("access_key_test".into()),
+                            secret_key: Some("secret_key_test".into()),
+                            security_token: None,
+                            session_token: None,
+                            expiration: None
+                        }),
+                        bucket_name: String::new(),
+                        endpoint: "http://minio.svc.kubernetes.local".into(),
+                        region: "eu-central-1".into(),
+                    },
+                    nats: NatsConfig {
+                        endpoint: "http://nats.svc.kubernetes.local".into(),
+                        credentials: Some(NatsCredentials {
+                            nkey: None,
+                            username: Some("username_test".into()),
+                            password: Some("password_test".into()),
+                            token: None
+                        }),
+                    },
+                    node: NodeConfig {
+                        bind_port: 1112,
+                        known_nodes: vec![KnownNode {
+                            public_key:
+                                "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+                                    .parse()
+                                    .unwrap(),
+                            direct_addresses: vec![
+                                "192.168.178.100:2022".parse().unwrap(),
+                                "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023"
+                                    .parse()
+                                    .unwrap(),
+                            ],
+                        }],
+                        private_key: Some(PathBuf::new().join("/usr/app/rhio/private.key")),
+                        network_id: "rhio-default-network-1".into(),
+                    },
+                    log_level: None,
+                    publish: Some(PublishConfig {
+                        s3_buckets: vec!["local_bucket_1".into(), "local_bucket_2".into()],
+                        nats_subjects: vec![
+                            "workload.berlin.energy".parse().unwrap(),
+                            "workload.rotterdam.energy".parse().unwrap(),
+                        ],
+                    }),
+                    subscribe: Some(SubscribeConfig {
+                        s3_buckets: vec![
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1"
+                                .parse()
+                                .unwrap(),
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2"
+                                .parse()
+                                .unwrap(),
+                        ],
+                        nats_subjects: vec![
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/workload.*.energy".parse().unwrap(),
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/data.thehague.meta".parse().unwrap(),
+                        ],
+                    }),
+                    streams: None
+                }
+            );
+
+            Ok(())
+        });
+    }
 }
