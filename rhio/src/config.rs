@@ -201,6 +201,7 @@ pub struct NodeConfig {
     pub bind_port: u16,
     #[serde(rename = "nodes")]
     pub known_nodes: Vec<KnownNode>,
+    #[serde(rename = "private_key_path")]
     pub private_key: Option<PathBuf>,
 }
 

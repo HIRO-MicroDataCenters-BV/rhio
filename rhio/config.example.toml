@@ -31,7 +31,7 @@ bind_port = 9102
 # When no path is set, your node will generate an ephemeral private key on
 # every start up and _not_ persist it.
 #
-# private_key = "private-key.txt"
+# private_key_path = "private-key.txt"
 
 # ﾟ･
 # S3
