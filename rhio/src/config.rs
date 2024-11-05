@@ -80,6 +80,7 @@ struct Cli {
     // @TODO: This will be removed as soon as we've implemented a full MinIO storage backend. We
     // currently need it to generate all bao-tree hashes before moving the data further to MinIO.
     // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
+    #[deprecated]
     #[arg(short = 'b', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blobs_dir: Option<PathBuf>,

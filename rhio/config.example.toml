@@ -11,17 +11,17 @@
 # PORTS
 # ﾟ･｡+☆
 
-# Port for node-node communication and data replication. Defaults to 2022.
+# Port for node-node communication and data replication. Defaults to 9102.
 #
 # When port is taken the node will automatically pick a random, free port.
 #
-bind_port = 2022
+bind_port = 9102
 
 # ﾟ･｡+☆+｡･
 # IDENTITY
 # ﾟ･｡+☆+｡･
 
-# Path to persist the node's ed25519 private key file. The key is used to
+# Path to persist the node's Ed25519 private key file. The key is used to
 # identify the node towards other nodes during network discovery and
 # replication. This key is _not_ used to create and sign data.
 #
@@ -32,6 +32,37 @@ bind_port = 2022
 # every start up and _not_ persist it.
 #
 # private_key = "private-key.txt"
+
+# ﾟ･
+# S3
+# ﾟ･
+
+# Endpoint of the local S3-compatible Database (for example MinIO).
+#
+# [s3]
+# endpoint = "http://localhost:9000"
+# region = "eu-central-1"
+#
+# [s3.credentials]
+# access_key = "rhio"
+# secret_key = "rhio_password"
+
+# ﾟ･｡+
+# NATS
+# ﾟ･｡+
+
+# Endpoint of the local NATS Server with JetStreams enabled.
+#
+# [nats]
+# endpoint = "localhost:4222"
+#
+# [nats.credentials]
+# username = "rhio"
+# password = "rhio_password"
+#
+# Alternative authentication strategies:
+# nkey = "..."
+# token = "..."
 
 # ﾟ･｡+☆
 # NODES
@@ -45,59 +76,31 @@ bind_port = 2022
 #
 # [[nodes]]
 # public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
-# direct_addresses = [
-#   "192.168.178.100:2022",
-#   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023",
+# endpoints = [
+#   "192.168.178.100:9102",
+#   "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9103",
 # ]
 
 # ﾟ･｡+☆+｡
 # STREAMS
 # ﾟ･｡+☆+｡
 
-# Connect your NATS JetStreams to external nodes by specifying the name of the
-# stream and optionally filtering the stream by subject (wildcards are
-# allowed).
-#
-# Multiple streams can be defined here. Make sure that the stream is already
-# created on your server and follows the right configuration.
-#
-# The "external_topic" is required by p2panda to discover other nodes on the
-# network who are interested in the same messages from this stream. Make sure
-# that these topic identifiers match among nodes to be able to exchange data.
-#
-# [[streams]]
-# nats_stream_name = "icecreams"
-# nats_filter_subject = "icecreams.*.dropped"
-# external_topic = "dropped-icecreams"
+# [publish]
+# s3_buckets = [
+#   "local_bucket_1",
+#   "local_bucket_2",
+# ]
+# nats_subjects = [
+#   "workload.berlin.energy",
+#   "workload.rotterdam.energy",
+# ]
 
-# ﾟ･｡+☆
-# MINIO
-# ﾟ･｡+☆
-
-# Endpoint of the local MinIO S3 Database.
-#
-# Buckets are created automatically if they don't exist yet.
-#
-# [minio]
-# bucket_name = "rhio"
-# endpoint = "http://localhost:9000"
-# region = "eu-central-1"
-# credentials = { access_key = "rhio", secret_key = "rhio_password" }
-
-# Path to file-system blob store to load blobs into when importing
-# to MinIO database.
-#
-# WARNING: When left empty, an in-memory blob store is used instead which might
-# lead to data corruption as blob hashes are not kept between restarts. Use the
-# in-memory store only for testing purposes.
-#
-# blobs_dir = "blobs"
-
-# ﾟ･｡+
-# NATS
-# ﾟ･｡+
-
-# Endpoint of the local NATS Server with JetStreams enabled.
-#
-# [nats]
-# endpoint = "localhost:4222"
+# [subscribe]
+# s3_buckets = [
+#   "<public_key>/remote_bucket_1",
+#   "<public_key>/remote_bucket_2",
+# ]
+# nats_subjects = [
+#   "<public_key>/workload.*.energy",
+#   "<public_key>/data.thehague.meta",
+# ]
