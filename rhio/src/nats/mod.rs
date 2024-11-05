@@ -1,24 +1,20 @@
 mod actor;
 mod consumer;
 
-use std::path::PathBuf;
-use std::str::FromStr;
-
-use anyhow::{Context, Result};
-use async_nats::{Client, ConnectOptions};
+use anyhow::{bail, Context, Result};
+use async_nats::ConnectOptions;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
 use rhio_core::{DeprecatedSubject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
-use tokio_stream::StreamExt;
-use tracing::{error, warn};
+use tokio_util::task::AbortOnDropHandle;
+use tracing::error;
 
 use crate::config::Config;
 use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::JetStreamEvent;
-use crate::node::NodeControl;
+use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Nats {
@@ -28,22 +24,34 @@ pub struct Nats {
 }
 
 impl Nats {
-    pub async fn new(config: Config, node_control_tx: mpsc::Sender<NodeControl>) -> Result<Self> {
-        // @TODO: Add auth options to NATS client config.
-        // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/62
-        let nats_client =
-            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
-                .await
-                .context(format!(
-                    "connecting to NATS server {}",
-                    config.nats.endpoint
-                ))?;
+    pub async fn new(config: Config) -> Result<Self> {
+        let options = match config.nats.credentials {
+            Some(credentials) => {
+                match (
+                    credentials.nkey,
+                    credentials.token,
+                    credentials.username,
+                    credentials.password,
+                ) {
+                    (Some(nkey), None, None, None) => ConnectOptions::with_nkey(nkey),
+                    (None, Some(token), None, None) => ConnectOptions::with_token(token),
+                    (None, None, Some(username), Some(password)) => {
+                        ConnectOptions::with_user_and_password(username, password)
+                    }
+                    _ => bail!("ambigious nats credentials configuration"),
+                }
+            }
+            None => ConnectOptions::new(),
+        };
 
-        // Start a "standard" NATS Core subscription (at-most-once delivery) to receive "live"
-        // control commands for `rhio`
-        spawn_control_handler(nats_client.clone(), node_control_tx);
+        let nats_client = async_nats::connect_with_options(config.nats.endpoint.clone(), options)
+            .await
+            .context(format!(
+                "connecting to NATS server {}",
+                config.nats.endpoint
+            ))?;
 
-        // Start the main NATS JetStream actor to dynamically maintain "stream consumers"
+        // Start the main NATS JetStream actor to dynamically maintain "stream consumers".
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
@@ -118,41 +126,4 @@ impl Nats {
         reply_rx.await?;
         Ok(())
     }
-}
-
-// @TODO(adz): This might not be the ideal flow or place for it and serves as a "workaround". We
-// can keep it here until we've finished the full MinIO store backend implementation, even though
-// _some_ import control needs to be given in any case?
-// See related discussion: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/60
-fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<NodeControl>) {
-    tokio::spawn(async move {
-        let Ok(mut subscription) = nats_client.subscribe("rhio.*").await else {
-            error!("failed subscribing to minio control messages");
-            return;
-        };
-
-        while let Some(message) = subscription.next().await {
-            if message.subject.as_str() != "rhio.import" {
-                continue;
-            }
-
-            let Ok(file_path_str) = std::str::from_utf8(&message.payload) else {
-                warn!("failed parsing minio control message");
-                continue;
-            };
-
-            let Ok(file_path) = PathBuf::from_str(file_path_str);
-
-            if let Err(err) = node_control_tx
-                .send(NodeControl::ImportBlob {
-                    file_path,
-                    reply_subject: message.reply,
-                })
-                .await
-            {
-                error!("failed handling minio control message: {err}");
-                break;
-            }
-        }
-    });
 }
