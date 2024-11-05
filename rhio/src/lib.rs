@@ -1,8 +1,10 @@
 mod blobs;
-pub mod config;
+mod config;
 mod nats;
 mod network;
 mod node;
-pub mod tracing;
+mod topic;
+mod tracing;
 
-pub use node::Node;
+pub(crate) type JoinErrToStr =
+    Box<dyn Fn(tokio::task::JoinError) -> String + Send + Sync + 'static>;
