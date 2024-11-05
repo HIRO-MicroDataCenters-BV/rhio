@@ -11,7 +11,7 @@ use crate::LogId;
 /// semantic namespaces.
 ///
 /// Read more: https://docs.nats.io/nats-concepts/subjects
-pub type Subject = String;
+pub type DeprecatedSubject = String;
 
 pub type TopicId = [u8; 32];
 
@@ -19,7 +19,7 @@ pub type TopicId = [u8; 32];
 pub struct RhioExtensions {
     /// Mandatory field containing the NATS subject.
     #[serde(rename = "s")]
-    pub subject: Option<Subject>,
+    pub subject: Option<DeprecatedSubject>,
 
     /// Optional field for messages which announce new blobs in the network, identified by this
     /// hash. p2panda peers will connect to other nodes and replicate the blob on receipt.
@@ -33,8 +33,8 @@ pub struct RhioExtensions {
     pub prune_flag: Option<PruneFlag>,
 }
 
-impl Extension<Subject> for RhioExtensions {
-    fn extract(&self) -> Option<Subject> {
+impl Extension<DeprecatedSubject> for RhioExtensions {
+    fn extract(&self) -> Option<DeprecatedSubject> {
         self.subject.clone()
     }
 }

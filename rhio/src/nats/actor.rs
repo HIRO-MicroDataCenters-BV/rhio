@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
-use rhio_core::{Subject, TopicId};
+use rhio_core::{DeprecatedSubject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -19,7 +19,7 @@ pub enum ToNatsActor {
         wait_for_ack: bool,
 
         /// NATS subject to which this message is published to.
-        subject: Subject,
+        subject: DeprecatedSubject,
 
         /// Payload of message.
         payload: Vec<u8>,
@@ -147,7 +147,7 @@ impl NatsActor {
     async fn on_publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: DeprecatedSubject,
         payload: Vec<u8>,
     ) -> Result<()> {
         let server_ack = self.nats_jetstream.publish(subject, payload.into()).await?;

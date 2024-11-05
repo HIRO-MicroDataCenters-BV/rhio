@@ -9,7 +9,7 @@ use async_nats::{Client, ConnectOptions};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
-use rhio_core::{Subject, TopicId};
+use rhio_core::{DeprecatedSubject, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
@@ -95,7 +95,7 @@ impl Nats {
     pub async fn publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: DeprecatedSubject,
         payload: Vec<u8>,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();

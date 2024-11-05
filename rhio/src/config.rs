@@ -7,12 +7,15 @@ use directories::ProjectDirs;
 use figment::providers::{Env, Format, Serialized, Toml};
 use figment::Figment;
 use p2panda_core::PublicKey;
-use p2panda_net::config::DEFAULT_BIND_PORT;
+use rhio_core::{Bucket, ScopedBucket, ScopedSubject, Subject};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 /// Default file name of config.
 const CONFIG_FILE_NAME: &str = "config.toml";
+
+/// Default rhio port.
+const DEFAULT_BIND_PORT: u16 = 9102;
 
 /// Default HTTP API endpoint for MinIO server.
 pub const MINIO_ENDPOINT: &str = "http://localhost:9000";
@@ -21,6 +24,7 @@ pub const MINIO_ENDPOINT: &str = "http://localhost:9000";
 pub const MINIO_REGION: &str = "eu-west-2";
 
 /// Default S3 bucket name for MinIO blob store.
+#[deprecated]
 pub const BUCKET_NAME: &str = "rhio";
 
 /// Default endpoint for NATS server.
@@ -29,11 +33,14 @@ pub const NATS_ENDPOINT: &str = "localhost:4222";
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub blobs_dir: Option<PathBuf>,
+    #[serde(rename = "s3")]
     pub minio: MinioConfig,
     pub nats: NatsConfig,
     #[serde(flatten)]
     pub node: NodeConfig,
     pub log_level: Option<String>,
+    pub publish: Option<Vec<PublishConfig>>,
+    #[deprecated]
     pub streams: Option<Vec<StreamConfig>>,
 }
 
@@ -148,6 +155,7 @@ pub struct MinioConfig {
     // @TODO(adz): We probably want to load this from some secure store / file instead?
     // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/59
     pub credentials: Option<Credentials>,
+    #[deprecated]
     pub bucket_name: String,
     pub endpoint: String,
     pub region: String,
@@ -167,14 +175,24 @@ impl Default for MinioConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NatsConfig {
     pub endpoint: String,
+    pub credentials: Option<NatsAuth>,
 }
 
 impl Default for NatsConfig {
     fn default() -> Self {
         Self {
             endpoint: NATS_ENDPOINT.to_string(),
+            credentials: None,
         }
     }
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct NatsAuth {
+    pub nkey: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub token: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -198,12 +216,26 @@ impl Default for NodeConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KnownNode {
     pub public_key: PublicKey,
+    #[serde(rename = "endpoints")]
     pub direct_addresses: Vec<SocketAddr>,
 }
 
+#[deprecated]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamConfig {
     pub nats_stream_name: String,
     pub nats_filter_subject: Option<String>,
     pub external_topic: String,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct PublishConfig {
+    pub s3_buckets: Vec<Bucket>,
+    pub nats_subjects: Vec<Subject>,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct SubscribeConfig {
+    pub s3_buckets: Vec<ScopedBucket>,
+    pub nats_subjects: Vec<ScopedSubject>,
 }

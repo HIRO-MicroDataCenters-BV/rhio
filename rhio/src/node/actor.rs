@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use futures_util::stream::SelectAll;
 use p2panda_core::{Extension, Hash, Operation};
 use p2panda_net::ToBytes;
-use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, TopicId};
+use rhio_core::{decode_operation, encode_operation, DeprecatedSubject, RhioExtensions, TopicId};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -262,7 +262,7 @@ impl NodeActor {
 
         // Forward operation to NATS server for persistence and communication to other processes
         // subscribed to the same subject
-        let subject: Subject = operation
+        let subject: DeprecatedSubject = operation
             .header
             .extract()
             .ok_or(anyhow!("missing 'subject' field in header"))?;

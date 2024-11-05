@@ -8,7 +8,7 @@ use async_nats::jetstream::{Context as JetstreamContext, Message};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
-use rhio_core::{Subject, TopicId};
+use rhio_core::{DeprecatedSubject, TopicId};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
@@ -16,7 +16,7 @@ use tracing::error;
 
 pub type StreamName = String;
 
-pub type FilterSubject = Option<Subject>;
+pub type FilterSubject = Option<DeprecatedSubject>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConsumerId(StreamName, FilterSubject);
