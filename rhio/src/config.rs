@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 /// Default file name of config.
 const CONFIG_FILE_NAME: &str = "config.yaml";
 
+/// Default file path to private key file.
+const DEFAULT_PRIVATE_KEY_PATH: &str = "private.key";
+
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
 
@@ -65,7 +68,7 @@ struct Cli {
     /// Path to file containing hexadecimal-encoded Ed25519 private key.
     #[arg(short = 'k', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    private_key: Option<PathBuf>,
+    private_key_path: Option<PathBuf>,
 
     /// Set log verbosity. Use this for learning more about how your node behaves or for debugging.
     ///
@@ -181,7 +184,7 @@ pub struct NodeConfig {
     #[serde(rename = "nodes")]
     pub known_nodes: Vec<KnownNode>,
     #[serde(rename = "private_key_path")]
-    pub private_key: Option<PathBuf>,
+    pub private_key: PathBuf,
     pub network_id: String,
 }
 
@@ -190,7 +193,7 @@ impl Default for NodeConfig {
         Self {
             bind_port: DEFAULT_BIND_PORT,
             known_nodes: vec![],
-            private_key: None,
+            private_key: DEFAULT_PRIVATE_KEY_PATH.into(),
             network_id: DEFAULT_NETWORK_ID.to_string(),
         }
     }
@@ -319,7 +322,7 @@ subscribe:
                                     .unwrap(),
                             ],
                         }],
-                        private_key: Some(PathBuf::new().join("/usr/app/rhio/private.key")),
+                        private_key: PathBuf::new().join("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
                     },
                     log_level: None,

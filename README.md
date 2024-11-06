@@ -52,7 +52,7 @@ Options:
   -p, --bind-port <PORT>
           Bind port of rhio node
 
-  -k, --private-key-file <PATH>
+  -k, --private-key-path <PATH>
           Path to file containing hexadecimal-encoded Ed25519 private key
 
   -l, --log-level <LEVEL>

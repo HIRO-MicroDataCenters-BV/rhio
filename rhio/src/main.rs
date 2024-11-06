@@ -2,26 +2,22 @@ use anyhow::{Context, Result};
 use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
 use rhio::{Node, Publication, Subscription};
-use rhio_core::{
-    generate_ephemeral_private_key, generate_or_load_private_key, ScopedBucket, ScopedSubject,
-};
+use rhio_core::load_private_key_from_file;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = load_config()?;
-
     setup_tracing(config.log_level.clone());
 
-    let private_key = match &config.node.private_key {
-        Some(path) => generate_or_load_private_key(path.clone())
-            .context("Could not load private key from file")?,
-        None => generate_ephemeral_private_key(),
-    };
-
+    let private_key =
+        load_private_key_from_file(config.node.private_key.clone()).context(format!(
+            "could not load private key from file {}",
+            config.node.private_key.display(),
+        ))?;
     println!("{}", private_key.public_key());
 
-    let node = Node::spawn(config.clone(), private_key.clone()).await?;
+    let node = Node::spawn(config.clone(), private_key).await?;
 
     hello_rhio();
     let addresses: Vec<String> = node
