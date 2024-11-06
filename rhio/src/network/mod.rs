@@ -6,6 +6,7 @@ use futures_util::{FutureExt, TryFutureExt};
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
+use p2panda_sync::Topic;
 use rhio_core::{LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
@@ -44,18 +45,14 @@ impl Panda {
         }
     }
 
-    /// Subscribe to a gossip topic.
-    ///
-    /// Returns a sender for broadcasting messages to all peers subscribed to this topic, a
-    /// receiver where messages can be awaited, and future which resolves once the gossip overlay
-    /// is ready.
+    /// Subscribe to a topic stream in the network.
     pub async fn subscribe(
         &self,
-        topic: TopicId,
+        subscription: Subscription,
     ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
-            .send(ToPandaActor::Subscribe { topic, reply })
+            .send(ToPandaActor::Subscribe { subscription, reply })
             .await?;
         let rx = reply_rx.await?;
         Ok(rx)

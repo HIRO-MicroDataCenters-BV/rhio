@@ -6,7 +6,6 @@ use p2panda_core::PublicKey;
 use serde::{Deserialize, Serialize};
 
 const DELIMITER_TOKEN: &str = ".";
-const KEY_PREFIX_TOKEN: &str = "/";
 const WILDCARD_TOKEN: &str = "*";
 
 type Token = String;
@@ -111,6 +110,12 @@ impl ScopedSubject {
         self.1.clone()
     }
 
+    pub fn stream_name(&self) -> String {
+        // Must not have spaces, tabs or period . characters, for it to be used as a JetStream
+        // stream name (_not_ subject).
+        format!("rhio-{}", self.to_string().replace(DELIMITER_TOKEN, "-"))
+    }
+
     pub fn is_owner(&self, public_key: &PublicKey) -> bool {
         &self.0 == public_key
     }
@@ -126,7 +131,7 @@ impl ScopedSubject {
 
 impl fmt::Display for ScopedSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}{}", self.0, KEY_PREFIX_TOKEN, self.subject())
+        write!(f, "{}{}{}", self.0, DELIMITER_TOKEN, self.subject())
     }
 }
 
@@ -134,18 +139,17 @@ impl FromStr for ScopedSubject {
     type Err = anyhow::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = value.split(KEY_PREFIX_TOKEN).collect();
-        if parts.len() != 2 {
+        let Some((pre, post)) = value.split_once(DELIMITER_TOKEN) else {
             bail!(
-                "needs to have exactly one {} in rhio subject",
-                KEY_PREFIX_TOKEN
+                "needs to have at least one '{}'-delimiter in rhio subject",
+                DELIMITER_TOKEN,
             );
-        }
+        };
 
-        let public_key = PublicKey::from_str(parts[0])
+        let public_key = PublicKey::from_str(pre)
             .map_err(|err| anyhow!("invalid public key in rhio subject: {err}"))?;
 
-        Ok(Self(public_key, Subject::from_str(parts[1])?))
+        Ok(Self(public_key, Subject::from_str(post)?))
     }
 }
 
@@ -179,25 +183,23 @@ mod tests {
     #[test]
     fn serde() {
         let private_key = PrivateKey::new();
-        let subject = ScopedSubject::new(private_key.public_key(), "bla.*.blubb");
+        let public_key = private_key.public_key();
+        let subject = ScopedSubject::new(public_key, "bla.*.blubb");
 
         let mut bytes = Vec::new();
         ciborium::into_writer(&subject, &mut bytes).unwrap();
         let subject_again: ScopedSubject = ciborium::from_reader(&bytes[..]).unwrap();
 
         assert_eq!(subject, subject_again);
-        assert_eq!(
-            subject.to_string(),
-            format!("{}/bla.*.blubb", private_key.public_key())
-        );
+        assert_eq!(subject.to_string(), format!("{}.bla.*.blubb", public_key));
     }
 
     #[test]
     fn invalid_values() {
         let private_key = PrivateKey::new();
         let public_key = private_key.public_key();
-        assert!(ScopedSubject::from_str("invalid_public_key/boo.*").is_err());
-        assert!(ScopedSubject::from_str(&format!("{public_key}/boo.*/too_much")).is_err());
+        assert!(ScopedSubject::from_str("invalid_public_key.boo.*").is_err());
+        assert!(ScopedSubject::from_str(&format!("boo.*.{public_key}.wrongplace")).is_err());
         assert!(ScopedSubject::from_str(&public_key.to_string()).is_err());
     }
 
@@ -217,48 +219,48 @@ mod tests {
         };
 
         assert_filter(
-            format!("{public_key}/a.*"),
-            format!("{public_key}/a.b"),
+            format!("{public_key}.a.*"),
+            format!("{public_key}.a.b"),
             true,
         );
         assert_filter(
-            format!("{public_key}/a.*"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.a.*"),
+            format!("{public_key}.a.b.c"),
             false,
         );
         assert_filter(
-            format!("{public_key}/a.*.c"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.a.*.c"),
+            format!("{public_key}.a.b.c"),
             true,
         );
         assert_filter(
-            format!("{public_key}/*.*"),
-            format!("{public_key}/a.b"),
+            format!("{public_key}.*.*"),
+            format!("{public_key}.a.b"),
             true,
         );
         assert_filter(
-            format!("{public_key}/*.c"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.*.c"),
+            format!("{public_key}.a.b.c"),
             false,
         );
         assert_filter(
-            format!("{public_key}/*.*"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.*.*"),
+            format!("{public_key}.a.b.c"),
             false,
         );
         assert_filter(
-            format!("{public_key}/*.*.*"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.*.*.*"),
+            format!("{public_key}.a.b.c"),
             true,
         );
         assert_filter(
-            format!("{public_key}/a.b"),
-            format!("{public_key}/a.b.c"),
+            format!("{public_key}.a.b"),
+            format!("{public_key}.a.b.c"),
             false,
         );
         assert_filter(
-            format!("{public_key}/a.b.*"),
-            format!("{public_key}/a.*.c"),
+            format!("{public_key}.a.b.*"),
+            format!("{public_key}.a.*.c"),
             true,
         );
     }

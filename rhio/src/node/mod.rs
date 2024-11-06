@@ -10,7 +10,7 @@ use p2panda_blobs::{Blobs as BlobsHandler, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
 use p2panda_store::MemoryStore;
-use rhio_core::{LogId, RhioExtensions};
+use rhio_core::{Bucket, LogId, RhioExtensions, Subject};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -126,6 +126,14 @@ impl Node {
         self.direct_addresses.clone()
     }
 
+    pub async fn publish(&self, publication: Publication) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.node_actor_tx
+            .send(ToNodeActor::Publish { publication, reply })
+            .await?;
+        reply_rx.await?
+    }
+
     pub async fn subscribe(&self, subscription: Subscription) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx
@@ -147,4 +155,9 @@ impl Node {
         self.actor_handle.await.map_err(|err| anyhow!("{err}"))?;
         Ok(())
     }
+}
+
+pub enum Publication {
+    Bucket(Bucket),
+    Subject(Subject),
 }

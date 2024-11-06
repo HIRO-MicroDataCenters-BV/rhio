@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::Client as NatsClient;
-use rhio_core::{DeprecatedSubject, TopicId};
+use rhio_core::{ScopedSubject, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -19,7 +19,7 @@ pub enum ToNatsActor {
         wait_for_ack: bool,
 
         /// NATS subject to which this message is published to.
-        subject: DeprecatedSubject,
+        subject: Subject,
 
         /// Payload of message.
         payload: Vec<u8>,
@@ -28,20 +28,18 @@ pub enum ToNatsActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        /// NATS stream name.
-        stream_name: String,
-
         /// NATS subject filter.
         ///
         /// Streams can hold different subjects. By using a "subject filter" we're able to select only
         /// the ones we're interested in. This forms "filtered views" on top of streams.
-        filter_subject: Option<String>,
+        subject: ScopedSubject,
 
-        /// p2panda topic used to exchange the "filtered" NATS stream with external nodes.
+        /// p2panda topic id used to exchange the "filtered" NATS stream with external nodes over a
+        /// gossip overlay.
         ///
         /// While this is not strictly required for NATS JetStream we keep it here to inform other
-        /// parts of rhio about which topic is used for this stream.
-        topic: TopicId,
+        /// parts of rhio about which topic id is used for this stream.
+        topic_id: [u8; 32],
 
         /// Channel to receive all messages (old and new) from this subscription, including
         /// errors and "readiness" state.
@@ -125,12 +123,11 @@ impl NatsActor {
                 reply.send(result).ok();
             }
             ToNatsActor::Subscribe {
-                stream_name,
-                filter_subject,
-                topic,
+                subject,
+                topic_id,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
+                let result = self.on_subscribe(subject, topic_id).await;
                 reply.send(result).ok();
             }
             ToNatsActor::Shutdown { .. } => {
@@ -143,17 +140,20 @@ impl NatsActor {
 
     /// Publish a message inside an existing stream.
     ///
-    /// This method fails if the stream does not exist on the NATS server
+    /// This method fails if the stream does not exist on the NATS server.
     async fn on_publish(
         &self,
         wait_for_ack: bool,
-        subject: DeprecatedSubject,
+        subject: Subject,
         payload: Vec<u8>,
     ) -> Result<()> {
-        let server_ack = self.nats_jetstream.publish(subject, payload.into()).await?;
+        let server_ack = self
+            .nats_jetstream
+            .publish(subject.to_string(), payload.into())
+            .await?;
 
         // Wait until the server confirmed receiving this message, to make sure it got delivered
-        // and persisted
+        // and persisted.
         if wait_for_ack {
             server_ack.await.context("publish message to nats server")?;
         }
@@ -163,26 +163,26 @@ impl NatsActor {
 
     async fn on_subscribe(
         &mut self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
+        subject: ScopedSubject,
+        topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
-        if self.consumers.contains_key(&consumer_id) {
-            bail!(
-                "consumer for stream '{}' with filter subject '{}' is already registered",
-                stream_name,
-                filter_subject.unwrap_or_default()
-            );
-        }
+        // let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
+        // if self.consumers.contains_key(&consumer_id) {
+        //     bail!(
+        //         "consumer for stream '{}' with filter subject '{}' is already registered",
+        //         stream_name,
+        //         filter_subject.unwrap_or_default()
+        //     );
+        // }
+        //
+        // let mut consumer =
+        //     Consumer::new(&self.nats_jetstream, stream_name, filter_subject, topic).await?;
+        // let rx = consumer.subscribe();
+        //
+        // self.consumers.insert(consumer_id, consumer);
 
-        let mut consumer =
-            Consumer::new(&self.nats_jetstream, stream_name, filter_subject, topic).await?;
-        let rx = consumer.subscribe();
-
-        self.consumers.insert(consumer_id, consumer);
-
-        Ok(rx)
+        // Ok(rx)
+        todo!()
     }
 
     async fn shutdown(&mut self) -> Result<()> {

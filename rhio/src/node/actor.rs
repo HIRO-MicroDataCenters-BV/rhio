@@ -11,8 +11,13 @@ use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::topic::Subscription;
+use crate::node::Publication;
 
 pub enum ToNodeActor {
+    Publish {
+        publication: Publication,
+        reply: oneshot::Sender<Result<()>>,
+    },
     Subscribe {
         subscription: Subscription,
         reply: oneshot::Sender<Result<()>>,
@@ -100,6 +105,13 @@ impl NodeActor {
 
     async fn on_actor_message(&mut self, msg: ToNodeActor) -> Result<()> {
         match msg {
+            ToNodeActor::Publish {
+                publication,
+                reply,
+            } => {
+                let result = self.on_publish(publication).await;
+                reply.send(result).ok();
+            }
             ToNodeActor::Subscribe {
                 subscription,
                 reply,
@@ -115,6 +127,10 @@ impl NodeActor {
         Ok(())
     }
 
+    async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        Ok(())
+    }
+
     /// Callback when the application decided to subscribe to a new NATS message stream or S3
     /// bucket.
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
@@ -126,6 +142,8 @@ impl NodeActor {
                 debug!("subscribe to nats stream {} ..", subject);
             }
         }
+
+        // self.panda.subscribe(topic)
 
         // @TODO: Remove this
         // let nats_rx = self
@@ -184,12 +202,12 @@ impl NodeActor {
     ///
     /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
     async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
-        debug!("join gossip on topic {topic} ..");
-        let panda_rx = self.panda.subscribe(topic).await?;
-
-        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // trait which is required by `SelectAll`
-        self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
+        // debug!("join gossip on topic {topic} ..");
+        // let panda_rx = self.panda.subscribe(topic).await?;
+        //
+        // // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
+        // // trait which is required by `SelectAll`
+        // self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
         Ok(())
     }
 

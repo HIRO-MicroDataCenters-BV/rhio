@@ -6,7 +6,7 @@ mod node;
 mod topic;
 pub mod tracing;
 
-pub use node::Node;
+pub use node::{Node, Publication};
 pub use topic::Subscription;
 
 pub(crate) type JoinErrToStr =

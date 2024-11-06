@@ -3,18 +3,18 @@ use async_nats::error::Error;
 use async_nats::jetstream::consumer::push::{
     Config as ConsumerConfig, Messages, MessagesErrorKind,
 };
-use async_nats::jetstream::consumer::{AckPolicy, PushConsumer};
+use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::{DeprecatedSubject, TopicId};
+use rhio_core::{DeprecatedSubject, ScopedSubject};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
-use super::JoinErrToStr;
+use crate::JoinErrToStr;
 
 pub type StreamName = String;
 
@@ -34,7 +34,7 @@ pub enum ToConsumerActor {}
 #[derive(Debug, Clone)]
 pub enum JetStreamEvent {
     InitCompleted {
-        topic: TopicId,
+        topic_id: [u8; 32],
     },
     InitFailed {
         stream_name: StreamName,
@@ -47,7 +47,7 @@ pub enum JetStreamEvent {
     Message {
         is_init: bool,
         payload: Vec<u8>,
-        topic: TopicId,
+        topic_id: [u8; 32],
     },
 }
 
@@ -75,7 +75,7 @@ pub struct ConsumerActor {
     initial_stream_height: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
-    topic: TopicId,
+    topic_id: [u8; 32],
 }
 
 impl ConsumerActor {
@@ -85,7 +85,7 @@ impl ConsumerActor {
         messages: Messages,
         initial_stream_height: u64,
         stream_name: StreamName,
-        topic: TopicId,
+        topic_id: [u8; 32],
     ) -> Self {
         Self {
             subscribers_tx,
@@ -94,7 +94,7 @@ impl ConsumerActor {
             initial_stream_height,
             status: ConsumerStatus::Initializing,
             stream_name,
-            topic,
+            topic_id,
         }
     }
 
@@ -159,7 +159,7 @@ impl ConsumerActor {
         self.subscribers_tx.send(JetStreamEvent::Message {
             is_init: matches!(self.status, ConsumerStatus::Initializing),
             payload: message.payload.to_vec(),
-            topic: self.topic,
+            topic_id: self.topic_id,
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
@@ -174,8 +174,9 @@ impl ConsumerActor {
 
     fn on_init_complete(&mut self) -> Result<()> {
         self.status = ConsumerStatus::Streaming;
-        self.subscribers_tx
-            .send(JetStreamEvent::InitCompleted { topic: self.topic })?;
+        self.subscribers_tx.send(JetStreamEvent::InitCompleted {
+            topic_id: self.topic_id,
+        })?;
         Ok(())
     }
 }
@@ -183,7 +184,6 @@ impl ConsumerActor {
 #[derive(Debug, Clone)]
 pub struct Consumer {
     subscribers_tx: broadcast::Sender<JetStreamEvent>,
-    #[allow(dead_code)]
     consumer_actor_tx: mpsc::Sender<ToConsumerActor>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
@@ -192,29 +192,28 @@ pub struct Consumer {
 impl Consumer {
     /// Create a consumer of a NATS stream.
     ///
-    /// This method launches an async task and does the following work:
-    ///
-    /// 1. Create and connect consumer to existing NATS JetStream "stream" identified by name and
-    ///    optionally filtered with an "subject filter"
-    /// 2. Download all past (filtered) messages, which have been persisted in this stream
-    /// 3. Finally, continue streaming future messages
-    ///
     /// The consumers used here are push-based, "un-acking" and ephemeral, meaning that no state of
     /// the consumer is persisted on the NATS server and no message is marked as "read" to be able
     /// to re-play them again when the process restarts.
+    ///
+    /// Since NATS streams are also used for persistance with their own wide range of limit
+    /// configurations, rhio does not create any streams automatically but merely consumes them.
+    /// This allows rhio operators to have full flexibility over the nature of the stream. This is
+    /// why for every published subject a "stream name" needs to be mentioned.
     pub async fn new(
         context: &JetstreamContext,
+        subject: ScopedSubject,
         stream_name: StreamName,
-        filter_subject: FilterSubject,
-        topic: TopicId,
+        deliver_policy: DeliverPolicy,
+        topic_id: [u8; 32],
     ) -> Result<Self> {
         let mut consumer: PushConsumer = context
-            // Streams need to already be created on the server, if not, this method will fail
-            // here. Note that no checks are applied here for validating if the NATS stream
-            // configuration is compatible with rhio's design
-            .get_stream(&stream_name)
+            .get_stream(stream_name)
             .await
-            .context(format!("get '{}' stream from NATS server", stream_name))?
+            .context(format!(
+                "create or get '{}' stream from nats server",
+                subject.stream_name(),
+            ))?
             .create_consumer(ConsumerConfig {
                 // Setting a delivery subject is crucial for making this consumer push-based. We
                 // need to create a push based consumer as pull-based ones are required to
@@ -229,9 +228,16 @@ impl Consumer {
                 // .. it seems to not matter what the value inside this field is, we will still
                 // receive all messages from that stream, optionally filtered by "filter_subject"?
                 deliver_subject: "rhio".to_string(),
-                // We can optionally filter the given stream based on this subject filter, like
-                // this we can have different "views" on the same stream.
-                filter_subject: filter_subject.clone().unwrap_or_default(),
+                // Delivery policy is used differently in two separate contexts:
+                //
+                // 1. Live-Mode: We're only interested in upcoming messages as this consumer will
+                //    be used to forward NATS messages into the gossip overlay.
+                // 2. Sync: Here we want to load and exchange past messages, usually loading all
+                //    messages from after a given timestamp.
+                deliver_policy,
+                // We filter the given stream based on this subject filter, like this we can have
+                // different "views" on the same stream.
+                filter_subject: subject.to_string(),
                 // This is an ephemeral consumer which will not be persisted on the server / the
                 // progress of the consumer will not be remembered. We do this by _not_ setting
                 // "durable_name".
@@ -245,7 +251,7 @@ impl Consumer {
             .await
             .context(format!(
                 "create ephemeral jetstream consumer for '{}' stream",
-                stream_name
+                subject.stream_name(),
             ))?;
 
         // Retrieve info about the consumer to learn how many messages are currently persisted on
@@ -266,8 +272,8 @@ impl Consumer {
             consumer_actor_rx,
             messages,
             initial_stream_height,
-            stream_name,
-            topic,
+            subject.stream_name(),
+            topic_id,
         );
 
         let actor_handle = tokio::task::spawn(async move {

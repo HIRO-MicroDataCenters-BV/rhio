@@ -5,13 +5,13 @@ use anyhow::{bail, Context, Result};
 use async_nats::ConnectOptions;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::{DeprecatedSubject, TopicId};
+use rhio_core::{ScopedSubject, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
-use crate::config::Config;
+use crate::config::{Config, NatsCredentials};
 use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::JetStreamEvent;
 use crate::JoinErrToStr;
@@ -25,31 +25,14 @@ pub struct Nats {
 
 impl Nats {
     pub async fn new(config: Config) -> Result<Self> {
-        let options = match config.nats.credentials {
-            Some(credentials) => {
-                match (
-                    credentials.nkey,
-                    credentials.token,
-                    credentials.username,
-                    credentials.password,
-                ) {
-                    (Some(nkey), None, None, None) => ConnectOptions::with_nkey(nkey),
-                    (None, Some(token), None, None) => ConnectOptions::with_token(token),
-                    (None, None, Some(username), Some(password)) => {
-                        ConnectOptions::with_user_and_password(username, password)
-                    }
-                    _ => bail!("ambigious nats credentials configuration"),
-                }
-            }
-            None => ConnectOptions::new(),
-        };
-
-        let nats_client = async_nats::connect_with_options(config.nats.endpoint.clone(), options)
-            .await
-            .context(format!(
-                "connecting to NATS server {}",
-                config.nats.endpoint
-            ))?;
+        let nats_options = connect_options(config.nats.credentials.clone())?;
+        let nats_client =
+            async_nats::connect_with_options(config.nats.endpoint.clone(), nats_options)
+                .await
+                .context(format!(
+                    "connecting to NATS server {}",
+                    config.nats.endpoint
+                ))?;
 
         // Start the main NATS JetStream actor to dynamically maintain "stream consumers".
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
@@ -84,16 +67,14 @@ impl Nats {
     /// handling future messages. All past and future messages are sent to the returned stream.
     pub async fn subscribe(
         &self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
+        subject: ScopedSubject,
+        topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
-                stream_name,
-                filter_subject,
-                topic,
+                subject,
+                topic_id,
                 reply,
             })
             .await?;
@@ -103,7 +84,7 @@ impl Nats {
     pub async fn publish(
         &self,
         wait_for_ack: bool,
-        subject: DeprecatedSubject,
+        subject: Subject,
         payload: Vec<u8>,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
@@ -126,4 +107,26 @@ impl Nats {
         reply_rx.await?;
         Ok(())
     }
+}
+
+fn connect_options(config: Option<NatsCredentials>) -> Result<ConnectOptions> {
+    let Some(credentials) = config else {
+        return Ok(ConnectOptions::default());
+    };
+
+    let options = match (
+        credentials.nkey,
+        credentials.token,
+        credentials.username,
+        credentials.password,
+    ) {
+        (Some(nkey), None, None, None) => ConnectOptions::with_nkey(nkey),
+        (None, Some(token), None, None) => ConnectOptions::with_token(token),
+        (None, None, Some(username), Some(password)) => {
+            ConnectOptions::with_user_and_password(username, password)
+        }
+        _ => bail!("ambigious nats credentials configuration"),
+    };
+
+    Ok(options)
 }

@@ -26,7 +26,7 @@ pub enum ToPandaActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        topic: TopicId,
+        subscription: Subscription,
         reply: oneshot::Sender<broadcast::Receiver<Operation<RhioExtensions>>>,
     },
     Shutdown {
@@ -133,8 +133,11 @@ impl PandaActor {
                 let result = self.on_broadcast(header, body, topic).await;
                 reply.send(result).ok();
             }
-            ToPandaActor::Subscribe { topic, reply } => {
-                let result = self.on_subscribe(topic).await?;
+            ToPandaActor::Subscribe {
+                subscription,
+                reply,
+            } => {
+                let result = self.on_subscribe(subscription).await?;
                 reply.send(result).ok();
             }
             ToPandaActor::Shutdown { .. } => {
@@ -167,9 +170,10 @@ impl PandaActor {
 
     async fn on_subscribe(
         &mut self,
-        topic: TopicId,
+        subscription: Subscription,
     ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
-        // let (topic_tx, topic_rx) = self.network.subscribe(topic.into()).await?;
+        let (topic_tx, topic_rx, _) = self.network.subscribe(subscription).await?;
+
         //
         // // If we didn't already subscribe to this topic we need to insert the `tx` into the topic
         // // gossip map where we'll use it for broadcasting operations on the network, and we need

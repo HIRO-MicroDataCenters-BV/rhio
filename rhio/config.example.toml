@@ -105,6 +105,6 @@
 #   "<public_key>/remote_bucket_2",
 # ]
 # nats_subjects = [
-#   "<public_key>/workload.*.energy",
-#   "<public_key>/data.thehague.meta",
+#   "<public_key>.workload.*.energy",
+#   "<public_key>.data.thehague.meta",
 # ]
