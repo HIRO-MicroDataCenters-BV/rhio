@@ -19,6 +19,8 @@ async fn main() -> Result<()> {
         None => generate_ephemeral_private_key(),
     };
 
+    println!("{}", private_key.public_key());
+
     let node = Node::spawn(config.clone(), private_key.clone()).await?;
 
     hello_rhio();

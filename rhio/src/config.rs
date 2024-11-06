@@ -4,15 +4,15 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use clap::Parser;
 use directories::ProjectDirs;
-use figment::providers::{Env, Format, Serialized, Toml};
+use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
 use p2panda_core::PublicKey;
-use rhio_core::{Bucket, ScopedBucket, ScopedSubject, Subject};
+use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
 /// Default file name of config.
-const CONFIG_FILE_NAME: &str = "config.toml";
+const CONFIG_FILE_NAME: &str = "config.yaml";
 
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
@@ -38,8 +38,6 @@ pub struct Config {
     pub log_level: Option<String>,
     pub publish: Option<PublishConfig>,
     pub subscribe: Option<SubscribeConfig>,
-    #[deprecated]
-    pub streams: Option<Vec<StreamConfig>>,
 }
 
 #[derive(Parser, Serialize, Debug)]
@@ -50,11 +48,11 @@ pub struct Config {
     version
 )]
 struct Cli {
-    /// Path to "config.toml" file for further configuration.
+    /// Path to "config.yaml" file for further configuration.
     ///
-    /// When not set the program will try to find a `config.toml` file in the same folder the
+    /// When not set the program will try to find a `config.yaml` file in the same folder the
     /// program is executed in and otherwise in the regarding operation systems XDG config
-    /// directory ("$HOME/.config/rhio/config.toml" on Linux).
+    /// directory ("$HOME/.config/rhio/config.yaml" on Linux).
     #[arg(short = 'c', long, value_name = "PATH")]
     #[serde(skip_serializing_if = "Option::is_none")]
     config: Option<PathBuf>,
@@ -81,7 +79,7 @@ struct Cli {
     log_level: Option<String>,
 }
 
-/// Get configuration from 1. .toml file, 2. environment variables and 3. command line arguments
+/// Get configuration from 1. .yaml file, 2. environment variables and 3. command line arguments
 /// (in that order, meaning that later configuration sources take precedence over the earlier
 /// ones).
 ///
@@ -106,7 +104,7 @@ pub fn load_config() -> Result<Config> {
     let mut figment = Figment::from(Serialized::defaults(Config::default()));
 
     if let Some(path) = &config_file_path {
-        figment = figment.merge(Toml::file(path));
+        figment = figment.merge(Yaml::file(path));
     }
 
     let config: Config = figment
@@ -208,18 +206,10 @@ pub struct KnownNode {
     pub direct_addresses: Vec<SocketAddr>,
 }
 
-#[deprecated]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StreamConfig {
-    pub nats_stream_name: String,
-    pub nats_filter_subject: Option<String>,
-    pub external_topic: String,
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
     pub s3_buckets: Vec<Bucket>,
-    pub nats_subjects: Vec<Subject>,
+    pub nats_subjects: Vec<ScopedSubject>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -232,7 +222,7 @@ pub struct SubscribeConfig {
 mod tests {
     use std::path::PathBuf;
 
-    use figment::providers::{Format, Serialized, Toml};
+    use figment::providers::{Format, Serialized, Yaml};
     use figment::Figment;
     use s3::creds::Credentials;
 
@@ -247,58 +237,51 @@ mod tests {
     fn parse_toml_file() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
-                "config.toml",
+                "config.yaml",
                 r#"
-bind_port = 1112
-private_key_path = "/usr/app/rhio/private.key"
-network_id = "rhio-default-network-1"
+bind_port: 1112
+private_key_path: "/usr/app/rhio/private.key"
+network_id: "rhio-default-network-1"
 
-[s3]
-endpoint = "http://minio.svc.kubernetes.local"
-region = "eu-central-1"
+s3:
+    endpoint: "http://minio.svc.kubernetes.local"
+    region: "eu-central-1"
+    credentials:
+        access_key: "access_key_test"
+        secret_key: "secret_key_test"
 
-[s3.credentials]
-access_key = "access_key_test"
-secret_key = "secret_key_test"
+nats:
+    endpoint: "http://nats.svc.kubernetes.local"
+    credentials:
+        username: "username_test"
+        password: "password_test"
 
-[nats]
-endpoint = "http://nats.svc.kubernetes.local"
+nodes:
+    - public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+      endpoints:
+        - "192.168.178.100:1112"
+        - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
 
-[nats.credentials]
-username = "username_test"
-password = "password_test"
+publish:
+    s3_buckets:
+        - "local_bucket_1"
+        - "local_bucket_2"
+    nats_subjects:
+        - "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy"
+        - "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy"
 
-[[nodes]]
-public_key = "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
-endpoints = [
-  "192.168.178.100:2022",
-  "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023",
-]
-
-[publish]
-s3_buckets = [
-  "local_bucket_1",
-  "local_bucket_2",
-]
-nats_subjects = [
-  "workload.berlin.energy",
-  "workload.rotterdam.energy",
-]
-
-[subscribe]
-s3_buckets = [
-  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1",
-  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2",
-]
-nats_subjects = [
-  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/workload.*.energy",
-  "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/data.thehague.meta",
-]
+subscribe:
+    s3_buckets:
+      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1"
+      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2"
+    nats_subjects:
+      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy"
+      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta"
             "#,
             )?;
 
             let config: Config = Figment::from(Serialized::defaults(Config::default()))
-                .merge(Toml::file("config.toml"))
+                .merge(Yaml::file("config.yaml"))
                 .extract()
                 .unwrap();
 
@@ -334,8 +317,8 @@ nats_subjects = [
                                     .parse()
                                     .unwrap(),
                             direct_addresses: vec![
-                                "192.168.178.100:2022".parse().unwrap(),
-                                "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:2023"
+                                "192.168.178.100:1112".parse().unwrap(),
+                                "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
                                     .parse()
                                     .unwrap(),
                             ],
@@ -347,8 +330,8 @@ nats_subjects = [
                     publish: Some(PublishConfig {
                         s3_buckets: vec!["local_bucket_1".into(), "local_bucket_2".into()],
                         nats_subjects: vec![
-                            "workload.berlin.energy".parse().unwrap(),
-                            "workload.rotterdam.energy".parse().unwrap(),
+                            "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy".parse().unwrap(),
+                            "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy".parse().unwrap(),
                         ],
                     }),
                     subscribe: Some(SubscribeConfig {
@@ -361,11 +344,10 @@ nats_subjects = [
                                 .unwrap(),
                         ],
                         nats_subjects: vec![
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/workload.*.energy".parse().unwrap(),
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/data.thehague.meta".parse().unwrap(),
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy".parse().unwrap(),
+                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta".parse().unwrap(),
                         ],
                     }),
-                    streams: None
                 }
             );
 

@@ -160,9 +160,9 @@ impl NodeActor {
     /// Handler for incoming events from the NATS stream consumer.
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
-            JetStreamEvent::InitCompleted { topic, .. } => {
-                debug!("completed initialisation of stream");
-                self.on_nats_init_complete(topic).await?;
+            JetStreamEvent::InitCompleted { topic_id, .. } => {
+                // debug!("completed initialisation of stream");
+                // self.on_nats_init_complete(topic).await?;
             }
             JetStreamEvent::InitFailed {
                 stream_name,
@@ -184,11 +184,11 @@ impl NodeActor {
             }
             JetStreamEvent::Message {
                 is_init,
-                topic,
+                topic_id,
                 payload,
                 ..
             } => {
-                self.on_nats_message(is_init, topic, payload).await?;
+                // self.on_nats_message(is_init, topic, payload).await?;
             }
         }
 
@@ -201,7 +201,7 @@ impl NodeActor {
     /// in this stream.
     ///
     /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
-    async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
+    async fn on_nats_init_complete(&mut self, topic_id: [u8; 32]) -> Result<()> {
         // debug!("join gossip on topic {topic} ..");
         // let panda_rx = self.panda.subscribe(topic).await?;
         //
@@ -259,19 +259,18 @@ impl NodeActor {
     /// method they get forwarded to the NATS server for persistence and communication to other
     /// processes.
     async fn on_operation(&mut self, operation: Operation<RhioExtensions>) -> Result<()> {
-        // Check if operation contains interesting information for rhio, for example blob
-        // announcements
-        self.process_operation(&operation).await?;
-
-        // Forward operation to NATS server for persistence and communication to other processes
-        // subscribed to the same subject
-        let subject: DeprecatedSubject = operation
-            .header
-            .extract()
-            .ok_or(anyhow!("missing 'subject' field in header"))?;
-        let payload = encode_operation(operation.header, operation.body)?;
-        self.nats.publish(true, subject, payload).await?;
-
+        // // Check if operation contains interesting information for rhio, for example blob
+        // // announcements
+        // self.process_operation(&operation).await?;
+        //
+        // // Forward operation to NATS server for persistence and communication to other processes
+        // // subscribed to the same subject
+        // let subject: DeprecatedSubject = operation
+        //     .header
+        //     .extract()
+        //     .ok_or(anyhow!("missing 'subject' field in header"))?;
+        // let payload = encode_operation(operation.header, operation.body)?;
+        // self.nats.publish(true, subject, payload).await?;
         Ok(())
     }
 

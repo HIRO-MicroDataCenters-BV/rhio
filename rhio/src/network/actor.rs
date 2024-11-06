@@ -217,15 +217,16 @@ impl PandaActor {
         // }
 
         // Get a receiver where decoded, validated and ordered operations arriving on this topic will be sent.
-        let rx = if let Some(tx) = self.topic_subscribers_tx_map.get(&topic) {
-            tx.subscribe()
-        } else {
-            let (tx, rx) = broadcast::channel(128);
-            self.topic_subscribers_tx_map.insert(topic, tx);
-            rx
-        };
-
-        Ok(rx)
+        // let rx = if let Some(tx) = self.topic_subscribers_tx_map.get(&topic) {
+        //     tx.subscribe()
+        // } else {
+        //     let (tx, rx) = broadcast::channel(128);
+        //     self.topic_subscribers_tx_map.insert(topic, tx);
+        //     rx
+        // };
+        //
+        // Ok(rx)
+        todo!()
     }
 
     async fn shutdown(self) -> Result<()> {

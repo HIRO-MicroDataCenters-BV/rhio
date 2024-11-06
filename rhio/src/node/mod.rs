@@ -10,7 +10,7 @@ use p2panda_blobs::{Blobs as BlobsHandler, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
 use p2panda_store::MemoryStore;
-use rhio_core::{Bucket, LogId, RhioExtensions, Subject};
+use rhio_core::{Bucket, LogId, RhioExtensions, ScopedSubject, Subject};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -159,5 +159,5 @@ impl Node {
 
 pub enum Publication {
     Bucket(Bucket),
-    Subject(Subject),
+    Subject(ScopedSubject),
 }
