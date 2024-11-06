@@ -69,7 +69,7 @@ impl Node {
         let blobs = Blobs::new(config.s3.clone(), blobs_handler);
 
         // 3. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
-        //    p2panda data replication and gossipping
+        //    p2panda data replication and gossipping.
         let node_id = network.node_id();
         let direct_addresses = network
             .direct_addresses()

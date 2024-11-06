@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use rhio::config::load_config;
 use rhio::tracing::setup_tracing;
-use rhio::{config::load_config, Subscription};
-use rhio::{Node, Publication};
+use rhio::{Node, Subscription};
 use rhio_core::{
     generate_ephemeral_private_key, generate_or_load_private_key, ScopedBucket, ScopedSubject,
 };
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
         for subject in publish.nats_subjects {
             node.subscribe(Subscription::Subject(ScopedSubject::new(
                 node.id(),
-                &subject,
+                &subject.to_string(),
             )))
             .await?;
         }
