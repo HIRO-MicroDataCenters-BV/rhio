@@ -138,8 +138,6 @@ pub struct S3Config {
     // @TODO(adz): We probably want to load this from some secure store / file instead?
     // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/59
     pub credentials: Option<Credentials>,
-    #[deprecated]
-    pub bucket_name: String,
     pub endpoint: String,
     pub region: String,
 }
@@ -148,7 +146,6 @@ impl Default for S3Config {
     fn default() -> Self {
         Self {
             credentials: None,
-            bucket_name: "".to_string(),
             endpoint: S3_ENDPOINT.to_string(),
             region: S3_REGION.to_string(),
         }
@@ -296,7 +293,6 @@ subscribe:
                             session_token: None,
                             expiration: None
                         }),
-                        bucket_name: String::new(),
                         endpoint: "http://minio.svc.kubernetes.local".into(),
                         region: "eu-central-1".into(),
                     },

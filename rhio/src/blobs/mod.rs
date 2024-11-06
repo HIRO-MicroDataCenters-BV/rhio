@@ -68,7 +68,8 @@ impl Blobs {
             hash,
             self.config.region.clone(),
             self.config.endpoint.clone(),
-            self.config.bucket_name.clone(),
+            // @TODO: Remove this placeholder
+            "placeholder".to_string(),
         )
         .await?;
 
@@ -119,7 +120,8 @@ impl Blobs {
             hash,
             self.config.region.clone(),
             self.config.endpoint.clone(),
-            self.config.bucket_name.clone(),
+            // @TODO: Remove this placeholder
+            "placeholder".to_string(),
         )
         .await?;
 
