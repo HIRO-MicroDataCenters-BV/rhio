@@ -111,6 +111,10 @@ impl ScopedSubject {
         self.1.clone()
     }
 
+    pub fn is_owner(&self, public_key: &PublicKey) -> bool {
+        &self.0 == public_key
+    }
+
     pub fn is_matching(&self, other_subject: &ScopedSubject) -> bool {
         if self.0 != other_subject.0 {
             return false;

@@ -1,4 +1,4 @@
-use p2panda_core::Hash;
+use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::Topic;
 use rhio_core::{ScopedBucket, ScopedSubject};
@@ -15,6 +15,13 @@ impl Subscription {
         match self {
             Subscription::Bucket(_) => "bucket",
             Subscription::Subject(_) => "subject",
+        }
+    }
+
+    pub fn is_owner(&self, public_key: &PublicKey) -> bool {
+        match self {
+            Subscription::Bucket(bucket) => bucket.is_owner(public_key),
+            Subscription::Subject(subject) => subject.is_owner(public_key),
         }
     }
 }

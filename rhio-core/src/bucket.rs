@@ -28,6 +28,10 @@ impl ScopedBucket {
     pub fn bucket_name(&self) -> Bucket {
         self.1.clone()
     }
+
+    pub fn is_owner(&self, public_key: &PublicKey) -> bool {
+        &self.0 == public_key
+    }
 }
 
 impl fmt::Display for ScopedBucket {

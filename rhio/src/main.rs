@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use rhio::tracing::setup_tracing;
-use rhio::Node;
 use rhio::{config::load_config, Subscription};
-use rhio_core::{generate_ephemeral_private_key, generate_or_load_private_key};
+use rhio::{Node, Publication};
+use rhio_core::{
+    generate_ephemeral_private_key, generate_or_load_private_key, ScopedBucket, ScopedSubject,
+};
 use tracing::info;
 
 #[tokio::main]
@@ -33,6 +35,24 @@ async fn main() -> Result<()> {
     for address in addresses {
         info!("  - {}", address);
     }
+
+    // For data we're publishing we subscribe to the same data stream as all other peers. On this
+    // level we don't distinct if the data is ours or someone else's, it only counts that we can
+    // support the network with it and that we have an interest in it.
+    if let Some(publish) = config.publish {
+        for bucket in publish.s3_buckets {
+            node.subscribe(Subscription::Bucket(ScopedBucket::new(node.id(), &bucket)))
+                .await?;
+        }
+
+        for subject in publish.nats_subjects {
+            node.subscribe(Subscription::Subject(ScopedSubject::new(
+                node.id(),
+                &subject,
+            )))
+            .await?;
+        }
+    };
 
     if let Some(subscribe) = config.subscribe {
         for bucket in subscribe.s3_buckets {
