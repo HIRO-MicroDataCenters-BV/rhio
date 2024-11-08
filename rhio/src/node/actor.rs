@@ -1,21 +1,19 @@
-use std::intrinsics::unreachable;
-
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::stream::SelectAll;
-use p2panda_core::{Extension, Hash, Operation};
+use p2panda_core::Operation;
 use p2panda_net::TopicId;
-use rhio_core::{decode_operation, RhioExtensions};
+use rhio_core::RhioExtensions;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info};
+use tracing::error;
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::node::Publication;
-use crate::topic::Subscription;
+use crate::topic::{Query, Subscription};
 
 pub enum ToNodeActor {
     Publish {
@@ -129,6 +127,10 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        let topic_query: Query = publication.clone().into();
+        let topic_id = topic_query.id();
+        self.panda.subscribe(topic_query).await?;
+
         let nats_rx = match publication {
             Publication::Bucket { bucket_name } => todo!(),
             Publication::Subject {
@@ -140,7 +142,7 @@ impl NodeActor {
                         stream_name.clone(),
                         subject.clone(),
                         DeliverPolicy::New,
-                        publication.id().clone(),
+                        topic_id,
                     )
                     .await?
             }
@@ -173,11 +175,10 @@ impl NodeActor {
     /// Handler for incoming events from the NATS stream consumer.
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
-            JetStreamEvent::InitCompleted { .. } => {
-                unreachable!("we do not handle sync sessions here");
-            }
-            JetStreamEvent::InitFailed { .. } => {
-                unreachable!("we do not handle sync sessions here");
+            JetStreamEvent::Message {
+                topic_id, payload, ..
+            } => {
+                self.on_nats_message(topic_id, payload).await?;
             }
             JetStreamEvent::StreamFailed {
                 stream_name,
@@ -186,10 +187,11 @@ impl NodeActor {
             } => {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
-            JetStreamEvent::Message {
-                topic_id, payload, ..
-            } => {
-                self.on_nats_message(topic, payload).await?;
+            JetStreamEvent::InitCompleted { .. } => {
+                unreachable!("we do not handle sync sessions here");
+            }
+            JetStreamEvent::InitFailed { .. } => {
+                unreachable!("we do not handle sync sessions here");
             }
         }
 
@@ -201,10 +203,9 @@ impl NodeActor {
     /// From here we're broadcasting the NATS messages in the related gossip overlay network.
     async fn on_nats_message(&mut self, topic_id: [u8; 32], payload: Vec<u8>) -> Result<()> {
         self.panda
-            .broadcast(header, body, topic)
+            .broadcast(payload, topic_id)
             .await
             .context("broadcast incoming operation from nats")?;
-
         Ok(())
     }
 

@@ -16,7 +16,7 @@ use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
 use crate::config::S3Config;
-use crate::topic::Subscription;
+use crate::topic::Query;
 use crate::JoinErrToStr;
 
 #[derive(Debug)]
@@ -28,7 +28,7 @@ pub struct Blobs {
 }
 
 impl Blobs {
-    pub fn new<S: Store>(config: S3Config, blobs_handler: BlobsHandler<Subscription, S>) -> Self {
+    pub fn new<S: Store>(config: S3Config, blobs_handler: BlobsHandler<Query, S>) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
         let blobs_actor = BlobsActor::new(blobs_handler, blobs_actor_rx);
         let pool = LocalPoolHandle::new(1);

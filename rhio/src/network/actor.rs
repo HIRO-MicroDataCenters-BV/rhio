@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::pin::Pin;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use p2panda_core::{Body, Header, Operation};
 use p2panda_net::network::ToNetwork;
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
-use rhio_core::{encode_operation, LogId, RhioExtensions, TopicId};
+use rhio_core::{LogId, RhioExtensions, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::{Stream, StreamExt, StreamMap};
 use tracing::error;
 
-use crate::topic::Subscription;
+use crate::topic::{Query, Subscription};
 
 pub enum ToPandaActor {
     Ingest {
@@ -25,7 +25,7 @@ pub enum ToPandaActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        subscription: Subscription,
+        query: Query,
         reply: oneshot::Sender<broadcast::Receiver<Operation<RhioExtensions>>>,
     },
     Shutdown {
@@ -35,7 +35,7 @@ pub enum ToPandaActor {
 
 pub struct PandaActor {
     /// p2panda-net network.
-    network: Network<Subscription>,
+    network: Network<Query>,
 
     /// In memory p2panda store.
     store: MemoryStore<LogId, RhioExtensions>,
@@ -58,7 +58,7 @@ pub struct PandaActor {
 
 impl PandaActor {
     pub fn new(
-        network: Network<Subscription>,
+        network: Network<Query>,
         store: MemoryStore<LogId, RhioExtensions>,
         inbox: mpsc::Receiver<ToPandaActor>,
     ) -> Self {
@@ -131,11 +131,8 @@ impl PandaActor {
                 let result = self.on_broadcast(payload, topic_id).await;
                 reply.send(result).ok();
             }
-            ToPandaActor::Subscribe {
-                subscription,
-                reply,
-            } => {
-                let result = self.on_subscribe(subscription).await?;
+            ToPandaActor::Subscribe { query, reply } => {
+                let result = self.on_subscribe(query).await?;
                 reply.send(result).ok();
             }
             ToPandaActor::Shutdown { .. } => {
@@ -163,9 +160,9 @@ impl PandaActor {
 
     async fn on_subscribe(
         &mut self,
-        subscription: Subscription,
+        query: Query,
     ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
-        let (topic_tx, topic_rx, _) = self.network.subscribe(subscription).await?;
+        let (topic_tx, topic_rx, _) = self.network.subscribe(query).await?;
 
         //
         // // If we didn't already subscribe to this topic we need to insert the `tx` into the topic

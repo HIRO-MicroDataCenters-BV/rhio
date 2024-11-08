@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tracing::error;
 
-use crate::topic::Subscription;
+use crate::topic::Query;
 
 pub enum ToBlobsActor {
     ImportFile {
@@ -39,14 +39,14 @@ where
     S: Store,
 {
     inbox: mpsc::Receiver<ToBlobsActor>,
-    blobs: BlobsHandler<Subscription, S>,
+    blobs: BlobsHandler<Query, S>,
 }
 
 impl<S> BlobsActor<S>
 where
     S: Store,
 {
-    pub fn new(blobs: BlobsHandler<Subscription, S>, inbox: mpsc::Receiver<ToBlobsActor>) -> Self {
+    pub fn new(blobs: BlobsHandler<Query, S>, inbox: mpsc::Receiver<ToBlobsActor>) -> Self {
         Self { inbox, blobs }
     }
 

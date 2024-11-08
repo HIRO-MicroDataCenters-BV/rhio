@@ -7,14 +7,14 @@ use p2panda_core::{Body, Header, Operation};
 use p2panda_net::Network;
 use p2panda_store::MemoryStore;
 use p2panda_sync::Topic;
-use rhio_core::{LogId, RhioExtensions, TopicId};
+use rhio_core::{LogId, RhioExtensions};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
 use crate::network::actor::{PandaActor, ToPandaActor};
-use crate::topic::Subscription;
+use crate::topic::{Query, Subscription};
 use crate::JoinErrToStr;
 
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct Panda {
 }
 
 impl Panda {
-    pub fn new(network: Network<Subscription>, store: MemoryStore<LogId, RhioExtensions>) -> Self {
+    pub fn new(network: Network<Query>, store: MemoryStore<LogId, RhioExtensions>) -> Self {
         let (panda_actor_tx, panda_actor_rx) = mpsc::channel(256);
         let panda_actor = PandaActor::new(network, store, panda_actor_rx);
 
@@ -48,14 +48,11 @@ impl Panda {
     /// Subscribe to a topic stream in the network.
     pub async fn subscribe(
         &self,
-        subscription: Subscription,
+        query: Query,
     ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
-            .send(ToPandaActor::Subscribe {
-                subscription,
-                reply,
-            })
+            .send(ToPandaActor::Subscribe { query, reply })
             .await?;
         let rx = reply_rx.await?;
         Ok(rx)
