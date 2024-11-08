@@ -1,27 +1,35 @@
 use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::Topic;
-use rhio_core::{ScopedBucket, ScopedSubject};
+use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
 use serde::{Deserialize, Serialize};
 
+use crate::nats::StreamName;
+
+/// Announces interest in certain data from other peers in the network.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Subscription {
-    Bucket(ScopedBucket),
-    Subject(ScopedSubject),
+    Bucket {
+        bucket: ScopedBucket,
+    },
+    Subject {
+        stream_name: StreamName,
+        subject: ScopedSubject,
+    },
 }
 
 impl Subscription {
     pub fn prefix(&self) -> &str {
         match self {
-            Subscription::Bucket(_) => "bucket",
-            Subscription::Subject(_) => "subject",
+            Subscription::Bucket { .. } => "bucket",
+            Subscription::Subject { .. } => "subject",
         }
     }
 
     pub fn is_owner(&self, public_key: &PublicKey) -> bool {
         match self {
-            Subscription::Bucket(bucket) => bucket.is_owner(public_key),
-            Subscription::Subject(subject) => subject.is_owner(public_key),
+            Subscription::Bucket { bucket } => bucket.is_owner(public_key),
+            Subscription::Subject { subject, .. } => subject.is_owner(public_key),
         }
     }
 }
@@ -30,15 +38,59 @@ impl Subscription {
 /// message stream.
 impl Topic for Subscription {}
 
-/// For gossip ("live-mode") we're subscribing to all S3 bucket data or all NATS messages from this
-/// author.
+/// For gossip ("live-mode") we're subscribing to all S3 data from this _bucket name_ or all NATS
+/// messages from this _author_.
 impl TopicId for Subscription {
     fn id(&self) -> [u8; 32] {
-        let public_key = match self {
-            Subscription::Bucket(scoped_bucket) => scoped_bucket.public_key(),
-            Subscription::Subject(scoped_subject) => scoped_subject.public_key(),
+        let hash = match self {
+            Subscription::Bucket { bucket } => {
+                Hash::new(format!("{}{}", self.prefix(), bucket.bucket_name()))
+            }
+            Subscription::Subject { subject, .. } => {
+                Hash::new(format!("{}{}", self.prefix(), subject.public_key()))
+            }
         };
-        *Hash::new(format!("{}{}", self.prefix(), public_key)).as_bytes()
+
+        *hash.as_bytes()
+    }
+}
+
+/// Shares data from us with other peers in the network.
+///
+/// Publications join gossip overlays and need to have a topic id for them as well. A `Topic`
+/// implementation is not necessary as no sync (catching up on past data) takes place when only
+/// publishing.
+pub enum Publication {
+    Bucket {
+        bucket_name: Bucket,
+    },
+    Subject {
+        stream_name: StreamName,
+        subject: ScopedSubject,
+    },
+}
+
+impl Publication {
+    pub fn prefix(&self) -> &str {
+        match self {
+            Publication::Bucket { .. } => "bucket",
+            Publication::Subject { .. } => "subject",
+        }
+    }
+}
+
+impl TopicId for Publication {
+    fn id(&self) -> [u8; 32] {
+        let hash = match self {
+            Publication::Bucket { bucket_name } => {
+                Hash::new(format!("{}{}", self.prefix(), bucket_name))
+            }
+            Publication::Subject { subject, .. } => {
+                Hash::new(format!("{}{}", self.prefix(), subject.public_key()))
+            }
+        };
+
+        *hash.as_bytes()
     }
 }
 
@@ -55,15 +107,34 @@ mod tests {
         let public_key_1 = PrivateKey::new().public_key();
         let public_key_2 = PrivateKey::new().public_key();
 
-        let subscription_1 = Subscription::Bucket(ScopedBucket::new(public_key_1, "icecreams"));
-        let subscription_2 = Subscription::Bucket(ScopedBucket::new(public_key_1, "airplanes"));
-        assert_eq!(subscription_1.id(), subscription_2.id());
+        // Buckets use "bucket name" as gossip topic id.
+        let subscription_0 = Subscription::Bucket {
+            bucket: ScopedBucket::new(public_key_2, "icecreams"),
+        };
+        let subscription_1 = Subscription::Bucket {
+            bucket: ScopedBucket::new(public_key_1, "icecreams"),
+        };
+        let subscription_2 = Subscription::Bucket {
+            bucket: ScopedBucket::new(public_key_1, "airplanes"),
+        };
+        assert_eq!(subscription_0.id(), subscription_1.id());
+        assert_ne!(subscription_1.id(), subscription_2.id());
 
-        let subscription_3 = Subscription::Subject(ScopedSubject::new(public_key_1, "*.*.color"));
+        // NATS subjects use public key as gossip topic id.
+        let subscription_3 = Subscription::Subject {
+            stream_name: "data".into(),
+            subject: ScopedSubject::new(public_key_1, "*.*.color"),
+        };
         assert_ne!(subscription_3.id(), subscription_1.id());
 
-        let subscription_4 = Subscription::Subject(ScopedSubject::new(public_key_1, "tree.pine.*"));
-        let subscription_5 = Subscription::Subject(ScopedSubject::new(public_key_2, "tree.pine.*"));
+        let subscription_4 = Subscription::Subject {
+            stream_name: "data".into(),
+            subject: ScopedSubject::new(public_key_1, "tree.pine.*"),
+        };
+        let subscription_5 = Subscription::Subject {
+            stream_name: "data".into(),
+            subject: ScopedSubject::new(public_key_2, "tree.pine.*"),
+        };
         assert_eq!(subscription_3.id(), subscription_4.id());
         assert_ne!(subscription_4.id(), subscription_5.id());
     }

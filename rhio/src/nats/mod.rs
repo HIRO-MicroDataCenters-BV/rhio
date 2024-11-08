@@ -2,6 +2,7 @@ mod actor;
 mod consumer;
 
 use anyhow::{bail, Context, Result};
+use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::ConnectOptions;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
@@ -13,7 +14,7 @@ use tracing::error;
 
 use crate::config::{Config, NatsCredentials};
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::JetStreamEvent;
+pub use crate::nats::consumer::{JetStreamEvent, StreamName};
 use crate::JoinErrToStr;
 
 #[derive(Debug)]
@@ -58,22 +59,26 @@ impl Nats {
     /// provided by the NATS server.
     ///
     /// All consumers in rhio are push-based, ephemeral and do not ack when a message was received.
-    /// With this design we can download all past messages from the stream before we can receive
-    /// future messages and rely on NATS as our persistence layer.
+    /// With this design we can download any past messages from the stream at any point.
     ///
     /// This method creates a consumer and fails if something goes wrong. It proceeds with
-    /// downloading all past data from the server; the returned channel can be used to await when
-    /// that download has been finished. Finally it keeps the consumer alive in the background for
-    /// handling future messages. All past and future messages are sent to the returned stream.
+    /// downloading all past data from the server when configured like that via a "delivery
+    /// policy"; the returned channel can be used to await when that download has been finished.
+    /// Finally it keeps the consumer alive in the background for handling future messages. All
+    /// past and future messages are sent to the returned stream.
     pub async fn subscribe(
         &self,
+        stream_name: StreamName,
         subject: ScopedSubject,
+        deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
+                stream_name,
                 subject,
+                deliver_policy,
                 topic_id,
                 reply,
             })

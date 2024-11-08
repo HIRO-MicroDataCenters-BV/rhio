@@ -208,6 +208,9 @@ impl Consumer {
         topic_id: [u8; 32],
     ) -> Result<Self> {
         let mut consumer: PushConsumer = context
+            // Streams need to already be created on the server, if not, this method will fail
+            // here. Note that no checks are applied here for validating if the NATS stream
+            // configuration is compatible with rhio's design.
             .get_stream(stream_name)
             .await
             .context(format!(
@@ -228,12 +231,16 @@ impl Consumer {
                 // .. it seems to not matter what the value inside this field is, we will still
                 // receive all messages from that stream, optionally filtered by "filter_subject"?
                 deliver_subject: "rhio".to_string(),
-                // Delivery policy is used differently in two separate contexts:
+                // For rhio two different delivery policies are configured:
                 //
-                // 1. Live-Mode: We're only interested in upcoming messages as this consumer will
-                //    be used to forward NATS messages into the gossip overlay.
-                // 2. Sync: Here we want to load and exchange past messages, usually loading all
-                //    messages from after a given timestamp.
+                // 1. Live-Mode: We're only interested in _upcoming_ messages as this consumer will
+                //    only be used to forward NATS messages into the gossip overlay. This happens
+                //    when a rhio node decided to "publish" a NATS subject, the created consumer
+                //    lives as long as the process.
+                // 2. Sync-Session: Here we want to load and exchange _past_ messages, usually
+                //    loading all messages from after a given timestamp. This happens when a remote
+                //    rhio node requests data from a NATS subject from us, the created consumer
+                //    lives as long as the sync session with this remote peer.
                 deliver_policy,
                 // We filter the given stream based on this subject filter, like this we can have
                 // different "views" on the same stream.

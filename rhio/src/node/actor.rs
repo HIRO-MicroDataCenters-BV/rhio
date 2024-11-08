@@ -1,7 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
+use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::stream::SelectAll;
 use p2panda_core::{Extension, Hash, Operation};
-use rhio_core::{decode_operation, encode_operation, DeprecatedSubject, RhioExtensions, TopicId};
+use p2panda_net::TopicId;
+use rhio_core::{decode_operation, RhioExtensions};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -10,8 +12,8 @@ use tracing::{debug, error};
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::topic::Subscription;
 use crate::node::Publication;
+use crate::topic::Subscription;
 
 pub enum ToNodeActor {
     Publish {
@@ -105,10 +107,7 @@ impl NodeActor {
 
     async fn on_actor_message(&mut self, msg: ToNodeActor) -> Result<()> {
         match msg {
-            ToNodeActor::Publish {
-                publication,
-                reply,
-            } => {
+            ToNodeActor::Publish { publication, reply } => {
                 let result = self.on_publish(publication).await;
                 reply.send(result).ok();
             }
@@ -128,21 +127,29 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        match publication {
+            Publication::Bucket { bucket_name } => todo!(),
+            Publication::Subject {
+                ref stream_name,
+                ref subject,
+            } => {
+                self.nats
+                    .subscribe(
+                        stream_name.clone(),
+                        subject.clone(),
+                        DeliverPolicy::New,
+                        publication.id().clone(),
+                    )
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 
     /// Callback when the application decided to subscribe to a new NATS message stream or S3
     /// bucket.
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
-        match subscription {
-            Subscription::Bucket(bucket) => {
-                debug!("subscribe to s3 bucket {} ..", bucket);
-            }
-            Subscription::Subject(subject) => {
-                debug!("subscribe to nats stream {} ..", subject);
-            }
-        }
-
         // self.panda.subscribe(topic)
 
         // @TODO: Remove this
@@ -221,34 +228,34 @@ impl NodeActor {
     async fn on_nats_message(
         &mut self,
         is_init: bool,
-        topic: TopicId,
+        topic: [u8; 32],
         payload: Vec<u8>,
     ) -> Result<()> {
-        let (header, body) =
-            decode_operation(&payload).context("decode incoming operation via nats")?;
-        let operation = self
-            .panda
-            .ingest(header.clone(), body.clone())
-            .await
-            .context("ingest incoming operation via nats")?;
-
-        // Only forward the messages to external nodes _after_ initialisation (that is, downloading
-        // all persisted, past messages first)
-        if !is_init {
-            // @TODO(adz): For now we're naively just broadcasting the message further to other
-            // nodes, without checking if nodes came in late. This should be changed as soon as
-            // `p2panda-sync` is in place.
-            self.panda
-                .broadcast(header, body, topic)
-                .await
-                .context("broadcast incoming operation from nats")?;
-        }
-
-        // Check if operation contains interesting information for rhio, for example blob
-        // announcements
-        self.process_operation(&operation)
-            .await
-            .context("process incoming operation from nats")?;
+        // let (header, body) =
+        //     decode_operation(&payload).context("decode incoming operation via nats")?;
+        // let operation = self
+        //     .panda
+        //     .ingest(header.clone(), body.clone())
+        //     .await
+        //     .context("ingest incoming operation via nats")?;
+        //
+        // // Only forward the messages to external nodes _after_ initialisation (that is, downloading
+        // // all persisted, past messages first)
+        // if !is_init {
+        //     // @TODO(adz): For now we're naively just broadcasting the message further to other
+        //     // nodes, without checking if nodes came in late. This should be changed as soon as
+        //     // `p2panda-sync` is in place.
+        //     self.panda
+        //         .broadcast(header, body, topic)
+        //         .await
+        //         .context("broadcast incoming operation from nats")?;
+        // }
+        //
+        // // Check if operation contains interesting information for rhio, for example blob
+        // // announcements
+        // self.process_operation(&operation)
+        //     .await
+        //     .context("process incoming operation from nats")?;
 
         Ok(())
     }
@@ -280,19 +287,19 @@ impl NodeActor {
     /// Every operation which passes rhio from either the NATS JetStream or p2panda network gets
     /// processed at least once.
     async fn process_operation(&mut self, operation: &Operation<RhioExtensions>) -> Result<()> {
-        let blob: Option<Hash> = operation.header.extract();
-        if let Some(hash) = blob {
-            match self.blobs.download_blob(hash).await {
-                // @TODO(adz): Would be nice here to identify if we already had that blob at this
-                // stage. This message will also pop up if no download happened (we had it
-                // already).
-                Ok(_) => debug!("syncing blob {} completed", hash),
-                Err(err) => {
-                    error!("failed syncing storing blob {}", hash);
-                    return Err(err);
-                }
-            }
-        }
+        // let blob: Option<Hash> = operation.header.extract();
+        // if let Some(hash) = blob {
+        //     match self.blobs.download_blob(hash).await {
+        //         // @TODO(adz): Would be nice here to identify if we already had that blob at this
+        //         // stage. This message will also pop up if no download happened (we had it
+        //         // already).
+        //         Ok(_) => debug!("syncing blob {} completed", hash),
+        //         Err(err) => {
+        //             error!("failed syncing storing blob {}", hash);
+        //             return Err(err);
+        //         }
+        //     }
+        // }
         Ok(())
     }
 

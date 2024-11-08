@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rhio::config::load_config;
+use rhio::config::{load_config, NatsSubject};
 use rhio::tracing::setup_tracing;
 use rhio::{Node, Publication, Subscription};
 use rhio_core::load_private_key_from_file;
@@ -35,22 +35,38 @@ async fn main() -> Result<()> {
     }
 
     if let Some(publish) = config.publish {
-        for bucket in publish.s3_buckets {
-            node.publish(Publication::Bucket(bucket)).await?;
+        for bucket_name in publish.s3_buckets {
+            node.publish(Publication::Bucket { bucket_name }).await?;
         }
 
-        for subject in publish.nats_subjects {
-            node.publish(Publication::Subject(subject)).await?;
+        for NatsSubject {
+            stream_name,
+            subject,
+        } in publish.nats_subjects
+        {
+            node.publish(Publication::Subject {
+                stream_name,
+                subject,
+            })
+            .await?;
         }
     };
 
     if let Some(subscribe) = config.subscribe {
         for bucket in subscribe.s3_buckets {
-            node.subscribe(Subscription::Bucket(bucket)).await?;
+            node.subscribe(Subscription::Bucket { bucket }).await?;
         }
 
-        for subject in subscribe.nats_subjects {
-            node.subscribe(Subscription::Subject(subject)).await?;
+        for NatsSubject {
+            stream_name,
+            subject,
+        } in subscribe.nats_subjects
+        {
+            node.subscribe(Subscription::Subject {
+                stream_name,
+                subject,
+            })
+            .await?;
         }
     };
 

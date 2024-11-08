@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Context, Result};
-use async_nats::jetstream::Context as JetstreamContext;
+use anyhow::{Context, Result};
+use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
 use async_nats::Client as NatsClient;
 use rhio_core::{ScopedSubject, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
-use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent};
+use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName};
 
 pub enum ToNatsActor {
     Publish {
@@ -28,11 +28,33 @@ pub enum ToNatsActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        /// NATS subject filter.
+        /// NATS stream name.
         ///
-        /// Streams can hold different subjects. By using a "subject filter" we're able to select only
-        /// the ones we're interested in. This forms "filtered views" on top of streams.
+        /// Streams need to already be created on the server, if not, this method will fail here.
+        /// Note that no checks are applied here for validating if the NATS stream configuration is
+        /// compatible with rhio's design.
+        stream_name: StreamName,
+
+        /// NATS subject filter configuration for the stream consumer.
+        ///
+        /// Streams can hold different subjects. By using a "subject filter" we're able to
+        /// "consume" only the ones we're interested in. This forms "filtered views" on top of
+        /// streams.
         subject: ScopedSubject,
+
+        /// Consumer delivery policy.
+        ///
+        /// For rhio two different delivery policies are configured:
+        ///
+        /// 1. Live-Mode: We're only interested in _upcoming_ messages as this consumer will only
+        ///    be used to forward NATS messages into the gossip overlay. This happens when a rhio
+        ///    node decided to "publish" a NATS subject, the created consumer lives as long as the
+        ///    process.
+        /// 2. Sync-Session: Here we want to load and exchange _past_ messages, usually loading all
+        ///    messages from after a given timestamp. This happens when a remote rhio node requests
+        ///    data from a NATS subject from us, the created consumer lives as long as the sync
+        ///    session with this remote peer.
+        deliver_policy: DeliverPolicy,
 
         /// p2panda topic id used to exchange the "filtered" NATS stream with external nodes over a
         /// gossip overlay.
@@ -123,11 +145,15 @@ impl NatsActor {
                 reply.send(result).ok();
             }
             ToNatsActor::Subscribe {
+                stream_name,
                 subject,
+                deliver_policy,
                 topic_id,
                 reply,
             } => {
-                let result = self.on_subscribe(subject, topic_id).await;
+                let result = self
+                    .on_subscribe(stream_name, subject, deliver_policy, topic_id)
+                    .await;
                 reply.send(result).ok();
             }
             ToNatsActor::Shutdown { .. } => {
@@ -163,7 +189,9 @@ impl NatsActor {
 
     async fn on_subscribe(
         &mut self,
+        stream_name: StreamName,
         subject: ScopedSubject,
+        deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
         // let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());

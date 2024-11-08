@@ -10,7 +10,7 @@ use p2panda_blobs::{Blobs as BlobsHandler, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
 use p2panda_store::MemoryStore;
-use rhio_core::{Bucket, LogId, RhioExtensions, ScopedSubject, Subject};
+use rhio_core::{LogId, RhioExtensions};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -21,7 +21,7 @@ use crate::config::Config;
 use crate::nats::Nats;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
-use crate::topic::Subscription;
+use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
 
 pub struct Node {
@@ -155,9 +155,4 @@ impl Node {
         self.actor_handle.await.map_err(|err| anyhow!("{err}"))?;
         Ok(())
     }
-}
-
-pub enum Publication {
-    Bucket(Bucket),
-    Subject(ScopedSubject),
 }

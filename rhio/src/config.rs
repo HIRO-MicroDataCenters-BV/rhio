@@ -11,6 +11,8 @@ use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
+use crate::nats::StreamName;
+
 /// Default file name of config.
 const CONFIG_FILE_NAME: &str = "config.yaml";
 
@@ -209,13 +211,20 @@ pub struct KnownNode {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
     pub s3_buckets: Vec<Bucket>,
-    pub nats_subjects: Vec<ScopedSubject>,
+    pub nats_subjects: Vec<NatsSubject>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubscribeConfig {
     pub s3_buckets: Vec<ScopedBucket>,
-    pub nats_subjects: Vec<ScopedSubject>,
+    pub nats_subjects: Vec<NatsSubject>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NatsSubject {
+    #[serde(rename = "stream")]
+    pub stream_name: StreamName,
+    pub subject: ScopedSubject,
 }
 
 #[cfg(test)]
@@ -231,7 +240,7 @@ mod tests {
         SubscribeConfig,
     };
 
-    use super::Config;
+    use super::{Config, NatsSubject};
 
     #[test]
     fn parse_toml_file() {
@@ -267,16 +276,20 @@ publish:
         - "local_bucket_1"
         - "local_bucket_2"
     nats_subjects:
-        - "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy"
-        - "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy"
+        - subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy"
+          stream: "workload"
+        - subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy"
+          stream: "workload"
 
 subscribe:
     s3_buckets:
       - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1"
       - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2"
     nats_subjects:
-      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy"
-      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta"
+      - subject: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy"
+        stream: "workload"
+      - subject: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta"
+        stream: "data"
             "#,
             )?;
 
@@ -329,8 +342,14 @@ subscribe:
                     publish: Some(PublishConfig {
                         s3_buckets: vec!["local_bucket_1".into(), "local_bucket_2".into()],
                         nats_subjects: vec![
-                            "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy".parse().unwrap(),
-                            "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy".parse().unwrap(),
+                            NatsSubject {
+                                stream_name: "workload".into(),
+                            subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy".parse().unwrap(),
+                            },
+                            NatsSubject {
+                                stream_name: "workload".into(),
+                            subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy".parse().unwrap(),
+                            }
                         ],
                     }),
                     subscribe: Some(SubscribeConfig {
@@ -343,8 +362,15 @@ subscribe:
                                 .unwrap(),
                         ],
                         nats_subjects: vec![
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy".parse().unwrap(),
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta".parse().unwrap(),
+                            NatsSubject {
+                                stream_name: "workload".into(),
+                                subject:                             "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy".parse().unwrap(),
+
+                            },
+                            NatsSubject {
+                                stream_name: "data".into(),
+                                subject:                             "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta".parse().unwrap(),
+                            },
                         ],
                     }),
                 }
