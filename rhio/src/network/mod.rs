@@ -52,7 +52,10 @@ impl Panda {
     ) -> Result<broadcast::Receiver<Operation<RhioExtensions>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
-            .send(ToPandaActor::Subscribe { subscription, reply })
+            .send(ToPandaActor::Subscribe {
+                subscription,
+                reply,
+            })
             .await?;
         let rx = reply_rx.await?;
         Ok(rx)
@@ -75,23 +78,13 @@ impl Panda {
         reply_rx.await?
     }
 
-    /// Broadcasts an operation in the gossip overlay-network scoped by topic.
-    // @TODO(adz): This should eventually be replaced with another logic when `p2panda-sync` is in
-    // place, some connection mananger will pick up other peers, replicate with them and then move
-    // into gossip mode.
-    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/61
-    pub async fn broadcast(
-        &self,
-        header: Header<RhioExtensions>,
-        body: Option<Body>,
-        topic: TopicId,
-    ) -> Result<()> {
+    /// Broadcasts an operation in the gossip overlay-network scoped by topic id.
+    pub async fn broadcast(&self, payload: Vec<u8>, topic_id: [u8; 32]) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
             .send(ToPandaActor::Broadcast {
-                header,
-                body,
-                topic,
+                payload,
+                topic_id,
                 reply,
             })
             .await?;

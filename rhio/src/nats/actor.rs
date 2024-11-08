@@ -190,27 +190,31 @@ impl NatsActor {
     async fn on_subscribe(
         &mut self,
         stream_name: StreamName,
-        subject: ScopedSubject,
+        filter_subject: ScopedSubject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        // let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
-        // if self.consumers.contains_key(&consumer_id) {
-        //     bail!(
-        //         "consumer for stream '{}' with filter subject '{}' is already registered",
-        //         stream_name,
-        //         filter_subject.unwrap_or_default()
-        //     );
-        // }
-        //
-        // let mut consumer =
-        //     Consumer::new(&self.nats_jetstream, stream_name, filter_subject, topic).await?;
-        // let rx = consumer.subscribe();
-        //
-        // self.consumers.insert(consumer_id, consumer);
+        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
 
-        // Ok(rx)
-        todo!()
+        // Make sure we're only creating one consumer per stream name and subject pair.
+        let rx = match self.consumers.get_mut(&consumer_id) {
+            Some(consumer) => consumer.subscribe(),
+            None => {
+                let mut consumer = Consumer::new(
+                    &self.nats_jetstream,
+                    stream_name,
+                    filter_subject,
+                    deliver_policy,
+                    topic_id,
+                )
+                .await?;
+                let rx = consumer.subscribe();
+                self.consumers.insert(consumer_id, consumer);
+                rx
+            }
+        };
+
+        Ok(rx)
     }
 
     async fn shutdown(&mut self) -> Result<()> {

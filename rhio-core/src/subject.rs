@@ -110,12 +110,6 @@ impl ScopedSubject {
         self.1.clone()
     }
 
-    pub fn stream_name(&self) -> String {
-        // Must not have spaces, tabs or period . characters, for it to be used as a JetStream
-        // stream name (_not_ subject).
-        format!("rhio-{}", self.to_string().replace(DELIMITER_TOKEN, "-"))
-    }
-
     pub fn is_owner(&self, public_key: &PublicKey) -> bool {
         &self.0 == public_key
     }

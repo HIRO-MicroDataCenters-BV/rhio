@@ -1,3 +1,5 @@
+use std::intrinsics::unreachable;
+
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::stream::SelectAll;
@@ -7,7 +9,7 @@ use rhio_core::{decode_operation, RhioExtensions};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
@@ -127,7 +129,7 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
-        match publication {
+        let nats_rx = match publication {
             Publication::Bucket { bucket_name } => todo!(),
             Publication::Subject {
                 ref stream_name,
@@ -140,9 +142,13 @@ impl NodeActor {
                         DeliverPolicy::New,
                         publication.id().clone(),
                     )
-                    .await?;
+                    .await?
             }
-        }
+        };
+
+        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
+        // trait which is required by `SelectAll`.
+        self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
 
         Ok(())
     }
@@ -167,20 +173,11 @@ impl NodeActor {
     /// Handler for incoming events from the NATS stream consumer.
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
-            JetStreamEvent::InitCompleted { topic_id, .. } => {
-                // debug!("completed initialisation of stream");
-                // self.on_nats_init_complete(topic).await?;
+            JetStreamEvent::InitCompleted { .. } => {
+                unreachable!("we do not handle sync sessions here");
             }
-            JetStreamEvent::InitFailed {
-                stream_name,
-                reason,
-                ..
-            } => {
-                bail!(
-                    "initialisation of stream '{}' failed: {}",
-                    stream_name,
-                    reason
-                );
+            JetStreamEvent::InitFailed { .. } => {
+                unreachable!("we do not handle sync sessions here");
             }
             JetStreamEvent::StreamFailed {
                 stream_name,
@@ -190,72 +187,23 @@ impl NodeActor {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
             JetStreamEvent::Message {
-                is_init,
-                topic_id,
-                payload,
-                ..
+                topic_id, payload, ..
             } => {
-                // self.on_nats_message(is_init, topic, payload).await?;
+                self.on_nats_message(topic, payload).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Callback when a NATS consumer has successfully streamed all persisted, past messages.
-    ///
-    /// From this point on we can join the p2panda gossip overlay for that given (filtered) subject
-    /// in this stream.
-    ///
-    /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
-    async fn on_nats_init_complete(&mut self, topic_id: [u8; 32]) -> Result<()> {
-        // debug!("join gossip on topic {topic} ..");
-        // let panda_rx = self.panda.subscribe(topic).await?;
-        //
-        // // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // // trait which is required by `SelectAll`
-        // self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
-        Ok(())
-    }
-
     /// Handler for incoming messages from the NATS JetStream consumer.
     ///
-    /// Messages should contain p2panda operations which are decoded and validated here. When these
-    /// steps have been successful, the operation is stored in the in-memory cache of rhio.
-    ///
-    /// From here these operations are replicated further to other nodes via the sync protocol and
-    /// gossip broadcast.
-    async fn on_nats_message(
-        &mut self,
-        is_init: bool,
-        topic: [u8; 32],
-        payload: Vec<u8>,
-    ) -> Result<()> {
-        // let (header, body) =
-        //     decode_operation(&payload).context("decode incoming operation via nats")?;
-        // let operation = self
-        //     .panda
-        //     .ingest(header.clone(), body.clone())
-        //     .await
-        //     .context("ingest incoming operation via nats")?;
-        //
-        // // Only forward the messages to external nodes _after_ initialisation (that is, downloading
-        // // all persisted, past messages first)
-        // if !is_init {
-        //     // @TODO(adz): For now we're naively just broadcasting the message further to other
-        //     // nodes, without checking if nodes came in late. This should be changed as soon as
-        //     // `p2panda-sync` is in place.
-        //     self.panda
-        //         .broadcast(header, body, topic)
-        //         .await
-        //         .context("broadcast incoming operation from nats")?;
-        // }
-        //
-        // // Check if operation contains interesting information for rhio, for example blob
-        // // announcements
-        // self.process_operation(&operation)
-        //     .await
-        //     .context("process incoming operation from nats")?;
+    /// From here we're broadcasting the NATS messages in the related gossip overlay network.
+    async fn on_nats_message(&mut self, topic_id: [u8; 32], payload: Vec<u8>) -> Result<()> {
+        self.panda
+            .broadcast(header, body, topic)
+            .await
+            .context("broadcast incoming operation from nats")?;
 
         Ok(())
     }

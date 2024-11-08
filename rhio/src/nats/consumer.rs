@@ -7,8 +7,8 @@ use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, PushConsumer};
 use async_nats::jetstream::{Context as JetstreamContext, Message};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::{DeprecatedSubject, ScopedSubject};
-use tokio::sync::{broadcast, mpsc};
+use rhio_core::ScopedSubject;
+use tokio::sync::broadcast;
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
@@ -18,18 +18,14 @@ use crate::JoinErrToStr;
 
 pub type StreamName = String;
 
-pub type FilterSubject = Option<DeprecatedSubject>;
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ConsumerId(StreamName, FilterSubject);
+pub struct ConsumerId(StreamName, String);
 
 impl ConsumerId {
-    pub fn new(stream_name: String, filter_subject: Option<String>) -> Self {
+    pub fn new(stream_name: String, filter_subject: String) -> Self {
         Self(stream_name, filter_subject)
     }
 }
-
-pub enum ToConsumerActor {}
 
 #[derive(Debug, Clone)]
 pub enum JetStreamEvent {
@@ -69,8 +65,6 @@ enum ConsumerStatus {
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor {
     subscribers_tx: broadcast::Sender<JetStreamEvent>,
-    #[allow(dead_code)]
-    inbox: mpsc::Receiver<ToConsumerActor>,
     messages: Messages,
     initial_stream_height: u64,
     status: ConsumerStatus,
@@ -81,7 +75,6 @@ pub struct ConsumerActor {
 impl ConsumerActor {
     pub fn new(
         subscribers_tx: broadcast::Sender<JetStreamEvent>,
-        inbox: mpsc::Receiver<ToConsumerActor>,
         messages: Messages,
         initial_stream_height: u64,
         stream_name: StreamName,
@@ -89,7 +82,6 @@ impl ConsumerActor {
     ) -> Self {
         Self {
             subscribers_tx,
-            inbox,
             messages,
             initial_stream_height,
             status: ConsumerStatus::Initializing,
@@ -184,7 +176,6 @@ impl ConsumerActor {
 #[derive(Debug, Clone)]
 pub struct Consumer {
     subscribers_tx: broadcast::Sender<JetStreamEvent>,
-    consumer_actor_tx: mpsc::Sender<ToConsumerActor>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
@@ -202,8 +193,8 @@ impl Consumer {
     /// why for every published subject a "stream name" needs to be mentioned.
     pub async fn new(
         context: &JetstreamContext,
-        subject: ScopedSubject,
         stream_name: StreamName,
+        filter_subject: ScopedSubject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<Self> {
@@ -211,11 +202,11 @@ impl Consumer {
             // Streams need to already be created on the server, if not, this method will fail
             // here. Note that no checks are applied here for validating if the NATS stream
             // configuration is compatible with rhio's design.
-            .get_stream(stream_name)
+            .get_stream(&stream_name)
             .await
             .context(format!(
                 "create or get '{}' stream from nats server",
-                subject.stream_name(),
+                stream_name,
             ))?
             .create_consumer(ConsumerConfig {
                 // Setting a delivery subject is crucial for making this consumer push-based. We
@@ -244,7 +235,7 @@ impl Consumer {
                 deliver_policy,
                 // We filter the given stream based on this subject filter, like this we can have
                 // different "views" on the same stream.
-                filter_subject: subject.to_string(),
+                filter_subject: filter_subject.to_string(),
                 // This is an ephemeral consumer which will not be persisted on the server / the
                 // progress of the consumer will not be remembered. We do this by _not_ setting
                 // "durable_name".
@@ -258,7 +249,7 @@ impl Consumer {
             .await
             .context(format!(
                 "create ephemeral jetstream consumer for '{}' stream",
-                subject.stream_name(),
+                stream_name,
             ))?;
 
         // Retrieve info about the consumer to learn how many messages are currently persisted on
@@ -271,15 +262,13 @@ impl Consumer {
 
         let messages = consumer.messages().await.context("get message stream")?;
 
-        let (consumer_actor_tx, consumer_actor_rx) = mpsc::channel(64);
         let (subscribers_tx, _) = broadcast::channel(256);
 
         let consumer_actor = ConsumerActor::new(
             subscribers_tx.clone(),
-            consumer_actor_rx,
             messages,
             initial_stream_height,
-            subject.stream_name(),
+            stream_name,
             topic_id,
         );
 
@@ -295,7 +284,6 @@ impl Consumer {
 
         let consumer = Self {
             subscribers_tx,
-            consumer_actor_tx,
             actor_handle: actor_drop_handle,
         };
 

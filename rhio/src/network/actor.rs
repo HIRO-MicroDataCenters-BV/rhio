@@ -20,9 +20,8 @@ pub enum ToPandaActor {
         reply: oneshot::Sender<Result<Operation<RhioExtensions>>>,
     },
     Broadcast {
-        topic: TopicId,
-        header: Header<RhioExtensions>,
-        body: Option<Body>,
+        payload: Vec<u8>,
+        topic_id: [u8; 32],
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
@@ -125,12 +124,11 @@ impl PandaActor {
                 // reply.send(result).ok();
             }
             ToPandaActor::Broadcast {
-                header,
-                body,
-                topic,
+                payload,
+                topic_id,
                 reply,
             } => {
-                let result = self.on_broadcast(header, body, topic).await;
+                let result = self.on_broadcast(payload, topic_id).await;
                 reply.send(result).ok();
             }
             ToPandaActor::Subscribe {
@@ -148,23 +146,18 @@ impl PandaActor {
         Ok(true)
     }
 
-    async fn on_broadcast(
-        &mut self,
-        header: Header<RhioExtensions>,
-        body: Option<Body>,
-        topic: TopicId,
-    ) -> Result<()> {
-        match self.topic_gossip_tx_map.get_mut(&topic) {
-            Some(tx) => {
-                let bytes = encode_operation(header, body)?;
-                tx.send(ToNetwork::Message { bytes }).await
-            }
-            None => {
-                return Err(anyhow!(
-                    "attempted to send operation on unknown topic {topic:?}"
-                ))
-            }
-        }?;
+    async fn on_broadcast(&mut self, payload: Vec<u8>, topic_id: [u8; 32]) -> Result<()> {
+        // match self.topic_gossip_tx_map.get_mut(&topic) {
+        //     Some(tx) => {
+        //         let bytes = encode_operation(header, body)?;
+        //         tx.send(ToNetwork::Message { bytes }).await
+        //     }
+        //     None => {
+        //         return Err(anyhow!(
+        //             "attempted to send operation on unknown topic {topic:?}"
+        //         ))
+        //     }
+        // }?;
         Ok(())
     }
 
