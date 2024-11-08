@@ -90,13 +90,17 @@
 #     - "local_bucket_1"
 #     - "local_bucket_2"
 #   nats_subjects:
-#     - "<public_key>.workload.berlin.energy"
-#     - "<public_key>.workload.rotterdam.energy"
-# 
+#     - subject: "<public_key>.workload.berlin.energy"
+#       stream: "workload"
+#     - subject: "<public_key>.workload.rotterdam.energy"
+#       stream: "workload"
+#
 # subscribe:
 #   s3_buckets:
 #     - "<public_key>/remote_bucket_1"
 #     - "<public_key>/remote_bucket_2"
 #   nats_subjects:
-#     - "<public_key>.workload.*.energy"
-#     - "<public_key>.data.thehague.meta"
+#     - subject: "<public_key>.workload.*.energy"
+#       stream: "workload"
+#     - subject: "<public_key>.data.thehague.meta"
+#       stream: "data"
