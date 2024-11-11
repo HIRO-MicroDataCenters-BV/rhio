@@ -155,11 +155,7 @@ impl NodeActor {
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
         self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
-        let p2panda_topic_rx = BroadcastStream::new(network_rx);
-
-        // @TODO: Messages coming from the p2p gossip overlay do not necessarily fit the NATS
-        // subject filtering logic and need to be excluded here.
-        self.p2panda_topic_rx.push(p2panda_topic_rx);
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
 
         Ok(())
     }
