@@ -189,9 +189,12 @@ impl NodeActor {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
             JetStreamEvent::InitCompleted { .. } => {
-                // We do not handle sync sessions here
+                // We do not handle sync sessions here but this event get's anyhow called, even
+                // when we're setting `DeliverPolicy` to `New`. This is why we're simply just
+                // ignoring it ..
             }
             JetStreamEvent::InitFailed { .. } => {
+                // .. though an error during "init" we should definitely never receive.
                 unreachable!("we do not handle sync sessions here");
             }
         }
