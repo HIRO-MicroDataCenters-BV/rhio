@@ -1,9 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::stream::SelectAll;
-use p2panda_core::Operation;
+use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
-use rhio_core::RhioExtensions;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -32,7 +31,7 @@ pub enum ToNodeActor {
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
-    p2panda_topic_rx: SelectAll<BroadcastStream<Operation<RhioExtensions>>>,
+    p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     nats: Nats,
     panda: Panda,
     blobs: Blobs,
@@ -90,8 +89,8 @@ impl NodeActor {
                         break Err(err);
                     }
                 },
-                Some(Ok(operation)) = self.p2panda_topic_rx.next() => {
-                    if let Err(err) = self.on_operation(operation).await {
+                Some(Ok(event)) = self.p2panda_topic_rx.next() => {
+                    if let Err(err) = self.on_network_event(event).await {
                         break Err(err);
                     }
                 },
@@ -129,7 +128,7 @@ impl NodeActor {
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
         let topic_query: Query = publication.clone().into();
         let topic_id = topic_query.id();
-        self.panda.subscribe(topic_query).await?;
+        let network_rx = self.panda.subscribe(topic_query).await?;
 
         let nats_rx = match publication {
             Publication::Bucket { bucket_name } => todo!(),
@@ -151,6 +150,7 @@ impl NodeActor {
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
         self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
 
         Ok(())
     }
@@ -209,79 +209,11 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Handler for incoming p2panda operations from the p2p network.
-    ///
-    /// Operations at this stage are already validated and stored in the in-memory cache. In this
-    /// method they get forwarded to the NATS server for persistence and communication to other
-    /// processes.
-    async fn on_operation(&mut self, operation: Operation<RhioExtensions>) -> Result<()> {
-        // // Check if operation contains interesting information for rhio, for example blob
-        // // announcements
-        // self.process_operation(&operation).await?;
-        //
-        // // Forward operation to NATS server for persistence and communication to other processes
-        // // subscribed to the same subject
-        // let subject: DeprecatedSubject = operation
-        //     .header
-        //     .extract()
-        //     .ok_or(anyhow!("missing 'subject' field in header"))?;
-        // let payload = encode_operation(operation.header, operation.body)?;
+    /// Handler for incoming events from the p2p network.
+    async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
         // self.nats.publish(true, subject, payload).await?;
         Ok(())
     }
-
-    /// Looks at operation to identify if it causes any side-effects in rhio, for example
-    /// announcing new blobs.
-    ///
-    /// Every operation which passes rhio from either the NATS JetStream or p2panda network gets
-    /// processed at least once.
-    async fn process_operation(&mut self, operation: &Operation<RhioExtensions>) -> Result<()> {
-        // let blob: Option<Hash> = operation.header.extract();
-        // if let Some(hash) = blob {
-        //     match self.blobs.download_blob(hash).await {
-        //         // @TODO(adz): Would be nice here to identify if we already had that blob at this
-        //         // stage. This message will also pop up if no download happened (we had it
-        //         // already).
-        //         Ok(_) => debug!("syncing blob {} completed", hash),
-        //         Err(err) => {
-        //             error!("failed syncing storing blob {}", hash);
-        //             return Err(err);
-        //         }
-        //     }
-        // }
-        Ok(())
-    }
-
-    // async fn on_control_command(&self, command: NodeControl) -> Result<()> {
-    //     match command {
-    //         NodeControl::ImportBlob {
-    //             file_path,
-    //             reply_subject,
-    //         } => {
-    //             debug!(
-    //                 "received control command to import '{}'",
-    //                 file_path.display()
-    //             );
-    //             let hash = self.blobs.import_file(file_path.clone()).await?;
-    //             info!(
-    //                 "file import '{}' completed, the resulting hash is: {}",
-    //                 file_path.display(),
-    //                 hash
-    //             );
-    //
-    //             // If the control command requested a response via NATS Core, we will provide it!
-    //             if let Some(subject) = reply_subject {
-    //                 // Since NATS Core messages are never acknowledged ("fire and forget"), we set
-    //                 // the flag to "false" to never wait for an ACK
-    //                 self.nats
-    //                     .publish(false, subject.to_string(), hash.to_bytes())
-    //                     .await?;
-    //             }
-    //         }
-    //     }
-    //
-    //     Ok(())
-    // }
 
     async fn shutdown(&self) -> Result<()> {
         self.nats.shutdown().await?;
