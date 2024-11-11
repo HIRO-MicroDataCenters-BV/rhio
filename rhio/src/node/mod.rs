@@ -9,8 +9,6 @@ use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::{Blobs as BlobsHandler, MemoryStore as BlobsMemoryStore};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
-use p2panda_store::MemoryStore;
-use rhio_core::{LogId, RhioExtensions};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -52,7 +50,7 @@ impl Node {
             ));
         }
 
-        let store = MemoryStore::<LogId, RhioExtensions>::new();
+        // let store = MemoryStore::<LogId, RhioExtensions>::new();
         // @TODO
         // let sync_protocol = LogHeightSyncProtocol {
         //     topic_map,
@@ -75,7 +73,7 @@ impl Node {
             .direct_addresses()
             .await
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
-        let panda = Panda::new(network, store);
+        let panda = Panda::new(network);
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
         //    interested in. The NATS jetstream is the p2panda persistence and transport layer and

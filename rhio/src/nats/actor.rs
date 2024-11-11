@@ -194,9 +194,8 @@ impl NatsActor {
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
-
         // Make sure we're only creating one consumer per stream name and subject pair.
+        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
         let rx = match self.consumers.get_mut(&consumer_id) {
             Some(consumer) => consumer.subscribe(),
             None => {
@@ -213,7 +212,6 @@ impl NatsActor {
                 rx
             }
         };
-
         Ok(rx)
     }
 
