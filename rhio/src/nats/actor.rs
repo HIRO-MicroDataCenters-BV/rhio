@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
-use async_nats::Client as NatsClient;
-use rhio_core::{ScopedSubject, Subject};
+use async_nats::{Client as NatsClient, HeaderMap};
+use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::error;
 
@@ -19,10 +20,13 @@ pub enum ToNatsActor {
         wait_for_ack: bool,
 
         /// NATS subject to which this message is published to.
-        subject: Subject,
+        subject: String,
 
         /// Payload of message.
         payload: Vec<u8>,
+
+        /// NATS headers of message.
+        headers: Option<HeaderMap>,
 
         /// Channel to receive result. Can fail if server did not acknowledge message in time.
         reply: oneshot::Sender<Result<()>>,
@@ -138,10 +142,13 @@ impl NatsActor {
             ToNatsActor::Publish {
                 wait_for_ack,
                 subject,
+                headers,
                 payload,
                 reply,
             } => {
-                let result = self.on_publish(wait_for_ack, subject, payload).await;
+                let result = self
+                    .on_publish(wait_for_ack, subject, headers, payload)
+                    .await;
                 reply.send(result).ok();
             }
             ToNatsActor::Subscribe {
@@ -170,13 +177,15 @@ impl NatsActor {
     async fn on_publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: String,
+        headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
-        let server_ack = self
-            .nats_jetstream
-            .publish(subject.to_string(), payload.into())
-            .await?;
+        let mut publish = Publish::build().payload(payload.into());
+        if let Some(headers) = headers {
+            publish = publish.headers(headers);
+        }
+        let server_ack = self.nats_jetstream.send_publish(subject, publish).await?;
 
         // Wait until the server confirmed receiving this message, to make sure it got delivered
         // and persisted.

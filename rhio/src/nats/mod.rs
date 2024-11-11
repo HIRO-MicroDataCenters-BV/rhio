@@ -3,7 +3,7 @@ mod consumer;
 
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
-use async_nats::ConnectOptions;
+use async_nats::{ConnectOptions, HeaderMap};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use rhio_core::{ScopedSubject, Subject};
@@ -89,7 +89,8 @@ impl Nats {
     pub async fn publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: String,
+        headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
@@ -97,6 +98,7 @@ impl Nats {
             .send(ToNatsActor::Publish {
                 wait_for_ack,
                 subject,
+                headers,
                 payload,
                 reply,
             })

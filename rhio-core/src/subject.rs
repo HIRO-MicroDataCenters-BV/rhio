@@ -2,6 +2,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail};
+use async_nats::subject::Subject as NatsSubject;
 use p2panda_core::PublicKey;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,14 @@ impl FromStr for Subject {
     }
 }
 
+impl TryFrom<NatsSubject> for Subject {
+    type Error = anyhow::Error;
+
+    fn try_from(value: NatsSubject) -> Result<Self, Self::Error> {
+        Self::from_str(&value.to_string())
+    }
+}
+
 impl Serialize for Subject {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -126,6 +135,14 @@ impl ScopedSubject {
 impl fmt::Display for ScopedSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}{}", self.0, DELIMITER_TOKEN, self.subject())
+    }
+}
+
+impl TryFrom<NatsSubject> for ScopedSubject {
+    type Error = anyhow::Error;
+
+    fn try_from(value: NatsSubject) -> Result<Self, Self::Error> {
+        Self::from_str(&value.to_string())
     }
 }
 

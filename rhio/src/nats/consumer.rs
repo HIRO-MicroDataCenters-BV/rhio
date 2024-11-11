@@ -4,7 +4,8 @@ use async_nats::jetstream::consumer::push::{
     Config as ConsumerConfig, Messages, MessagesErrorKind,
 };
 use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, PushConsumer};
-use async_nats::jetstream::{Context as JetstreamContext, Message};
+use async_nats::jetstream::{Context as JetstreamContext, Message as MessageWithContext};
+use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use rhio_core::ScopedSubject;
@@ -42,7 +43,7 @@ pub enum JetStreamEvent {
     },
     Message {
         is_init: bool,
-        payload: Vec<u8>,
+        message: NatsMessage,
         topic_id: [u8; 32],
     },
 }
@@ -116,7 +117,7 @@ impl ConsumerActor {
 
     async fn on_message(
         &mut self,
-        message: Result<Message, Error<MessagesErrorKind>>,
+        message: Result<MessageWithContext, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         if let Err(err) = self.on_message_inner(message).await {
             error!("consuming nats stream failed: {err}");
@@ -144,13 +145,13 @@ impl ConsumerActor {
 
     async fn on_message_inner(
         &mut self,
-        message: Result<Message, Error<MessagesErrorKind>>,
+        message: Result<MessageWithContext, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         let message = message?;
 
         self.subscribers_tx.send(JetStreamEvent::Message {
             is_init: matches!(self.status, ConsumerStatus::Initializing),
-            payload: message.payload.to_vec(),
+            message: message.message.clone(),
             topic_id: self.topic_id,
         })?;
 

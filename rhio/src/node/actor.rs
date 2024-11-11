@@ -1,8 +1,11 @@
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
+use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
+use rhio_core::message::NetworkPayload;
+use rhio_core::{NetworkMessage, ScopedSubject};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -30,6 +33,7 @@ pub enum ToNodeActor {
 
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
+    subscriptions: Vec<Subscription>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     nats: Nats,
@@ -41,6 +45,7 @@ impl NodeActor {
     pub fn new(nats: Nats, panda: Panda, blobs: Blobs, inbox: mpsc::Receiver<ToNodeActor>) -> Self {
         Self {
             nats,
+            subscriptions: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             panda,
@@ -131,7 +136,7 @@ impl NodeActor {
         let network_rx = self.panda.subscribe(topic_query).await?;
 
         let nats_rx = match publication {
-            Publication::Bucket { bucket_name } => todo!(),
+            Publication::Bucket { bucket_name: _ } => todo!(),
             Publication::Subject {
                 ref stream_name,
                 ref subject,
@@ -171,9 +176,9 @@ impl NodeActor {
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
             JetStreamEvent::Message {
-                topic_id, payload, ..
+                topic_id, message, ..
             } => {
-                self.on_nats_message(topic_id, payload).await?;
+                self.on_nats_message(topic_id, message).await?;
             }
             JetStreamEvent::StreamFailed {
                 stream_name,
@@ -196,9 +201,10 @@ impl NodeActor {
     /// Handler for incoming messages from the NATS JetStream consumer.
     ///
     /// From here we're broadcasting the NATS messages in the related gossip overlay network.
-    async fn on_nats_message(&mut self, topic_id: [u8; 32], payload: Vec<u8>) -> Result<()> {
+    async fn on_nats_message(&mut self, topic_id: [u8; 32], message: NatsMessage) -> Result<()> {
+        let network_message = NetworkMessage::new_nats(message);
         self.panda
-            .broadcast(payload, topic_id)
+            .broadcast(network_message.to_bytes(), topic_id)
             .await
             .context("broadcast incoming operation from nats")?;
         Ok(())
@@ -206,7 +212,34 @@ impl NodeActor {
 
     /// Handler for incoming events from the p2p network.
     async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
-        // self.nats.publish(true, subject, payload).await?;
+        let bytes = match event {
+            FromNetwork::GossipMessage { bytes, .. } => bytes,
+            FromNetwork::SyncMessage { header, .. } => header,
+        };
+
+        let network_message = NetworkMessage::from_bytes(&bytes)?;
+        match network_message.payload {
+            NetworkPayload::BlobAnnouncement(_scoped_bucket) => todo!(),
+            NetworkPayload::NatsMessage(message) => {
+                // Filter out all incoming messages we're not subscribed to. This can happen
+                // especially when receiving messages over the gossip overlay as they are not
+                // necessarily for us.
+                let subject = message.subject.clone().try_into()?;
+                if !is_matching(&self.subscriptions, &subject) {
+                    return Ok(());
+                }
+
+                self.nats
+                    .publish(
+                        true,
+                        message.subject.to_string(),
+                        message.headers,
+                        message.payload.to_vec(),
+                    )
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -216,4 +249,20 @@ impl NodeActor {
         self.blobs.shutdown().await?;
         Ok(())
     }
+}
+
+fn is_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> bool {
+    for subscription in subscriptions {
+        match subscription {
+            Subscription::Bucket { .. } => continue,
+            Subscription::Subject { subject, .. } => {
+                if subject.is_matching(incoming) {
+                    return true;
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+    false
 }
