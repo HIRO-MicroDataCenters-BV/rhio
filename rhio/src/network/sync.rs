@@ -4,12 +4,23 @@ use async_trait::async_trait;
 use futures_util::{AsyncRead, AsyncWrite, Sink, SinkExt};
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol, Topic};
+use tokio::sync::mpsc;
 use tracing::debug;
+
+use crate::nats::Nats;
 
 static SYNC_PROTOCOL_NAME: &str = "rhio-sync-v1";
 
 #[derive(Clone, Debug)]
-pub struct RhioSyncProtocol {}
+pub struct RhioSyncProtocol {
+    nats: Nats,
+}
+
+impl RhioSyncProtocol {
+    pub fn new(nats: Nats) -> Self {
+        Self { nats }
+    }
+}
 
 #[async_trait]
 impl<'a, T> SyncProtocol<T, 'a> for RhioSyncProtocol

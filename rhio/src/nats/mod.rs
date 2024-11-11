@@ -6,7 +6,7 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{ConnectOptions, HeaderMap};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::{ScopedSubject, Subject};
+use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -17,7 +17,7 @@ use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::{JetStreamEvent, StreamName};
 use crate::JoinErrToStr;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Nats {
     nats_actor_tx: mpsc::Sender<ToNatsActor>,
     #[allow(dead_code)]

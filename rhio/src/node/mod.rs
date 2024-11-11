@@ -34,7 +34,11 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        // 1. Configure rhio network.
+        // 1. Connect with NATS client to server and consume streams over "subjects" we're
+        //    interested in.
+        let nats = Nats::new(config.clone()).await?;
+
+        // 2. Configure rhio network.
         let network_id_hash = Hash::new(config.node.network_id.as_bytes());
         let network_id = network_id_hash.as_bytes();
         let mut network_config = NetworkConfig {
@@ -51,19 +55,19 @@ impl Node {
             ));
         }
 
-        let sync_protocol = RhioSyncProtocol {};
+        let sync_protocol = RhioSyncProtocol::new(nats.clone());
 
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())
             .sync(sync_protocol);
 
-        // 2. Configure and set up blob store and connection handlers for blob replication.
+        // 3. Configure and set up blob store and connection handlers for blob replication.
         // @TODO: Will be removed soon.
         let blob_store = BlobsMemoryStore::new();
         let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
         let blobs = Blobs::new(config.s3.clone(), blobs_handler);
 
-        // 3. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
+        // 4. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
         //    data replication and gossipping.
         let node_id = network.node_id();
         let direct_addresses = network
@@ -71,10 +75,6 @@ impl Node {
             .await
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
         let panda = Panda::new(network);
-
-        // 4. Connect with NATS client to server and consume streams over "subjects" we're
-        //    interested in.
-        let nats = Nats::new(config.clone()).await?;
 
         // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
         //    and NATS JetStream consumers.
