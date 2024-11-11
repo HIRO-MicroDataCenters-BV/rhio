@@ -17,6 +17,7 @@ use tracing::error;
 use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
+use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::topic::{Publication, Subscription};
@@ -50,15 +51,11 @@ impl Node {
             ));
         }
 
-        // let store = MemoryStore::<LogId, RhioExtensions>::new();
-        // @TODO
-        // let sync_protocol = LogHeightSyncProtocol {
-        //     topic_map,
-        //     store: store.clone(),
-        // };
+        let sync_protocol = RhioSyncProtocol {};
 
-        let builder = NetworkBuilder::from_config(network_config).private_key(private_key.clone());
-        // .sync(sync_protocol);
+        let builder = NetworkBuilder::from_config(network_config)
+            .private_key(private_key.clone())
+            .sync(sync_protocol);
 
         // 2. Configure and set up blob store and connection handlers for blob replication.
         // @TODO: Will be removed soon.
@@ -67,7 +64,7 @@ impl Node {
         let blobs = Blobs::new(config.s3.clone(), blobs_handler);
 
         // 3. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
-        //    p2panda data replication and gossipping.
+        //    data replication and gossipping.
         let node_id = network.node_id();
         let direct_addresses = network
             .direct_addresses()
@@ -76,8 +73,7 @@ impl Node {
         let panda = Panda::new(network);
 
         // 4. Connect with NATS client to server and consume streams over "subjects" we're
-        //    interested in. The NATS jetstream is the p2panda persistence and transport layer and
-        //    holds all past and future operations.
+        //    interested in.
         let nats = Nats::new(config.clone()).await?;
 
         // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
