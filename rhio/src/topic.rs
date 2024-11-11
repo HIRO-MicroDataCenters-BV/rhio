@@ -58,11 +58,19 @@ pub enum Query {
         stream_name: StreamName,
         subject: ScopedSubject,
     },
+    // @TODO(adz): p2panda's API currently does not allow an explicit way to _not_ sync with other
+    // peers. We're using this hacky workaround to indicate in the topic that we're not interested
+    // in syncing. The custom rhio sync implementation will check this before and abort the sync
+    // process if this value is set.
+    NoSync {
+        public_key: PublicKey,
+    },
 }
 
 impl Query {
     fn prefix(&self) -> &str {
         match self {
+            Self::NoSync { .. } => "no-sync",
             Self::Bucket { .. } => "bucket",
             Self::Subject { .. } => "subject",
         }
@@ -110,6 +118,7 @@ impl Topic for Query {}
 impl TopicId for Query {
     fn id(&self) -> [u8; 32] {
         let hash = match self {
+            Self::NoSync { public_key } => Hash::new(format!("{}{}", self.prefix(), public_key)),
             Self::Bucket { bucket_name } => Hash::new(format!("{}{}", self.prefix(), bucket_name)),
             Self::Subject { subject, .. } => {
                 Hash::new(format!("{}{}", self.prefix(), subject.public_key()))

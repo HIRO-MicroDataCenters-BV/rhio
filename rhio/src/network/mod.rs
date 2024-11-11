@@ -1,4 +1,5 @@
 mod actor;
+mod sync;
 
 use anyhow::Result;
 use futures_util::future::{MapErr, Shared};
