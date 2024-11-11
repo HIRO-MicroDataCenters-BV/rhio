@@ -210,13 +210,17 @@ pub struct KnownNode {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
+    #[serde(default)]
     pub s3_buckets: Vec<Bucket>,
+    #[serde(default)]
     pub nats_subjects: Vec<NatsSubject>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubscribeConfig {
+    #[serde(default)]
     pub s3_buckets: Vec<ScopedBucket>,
+    #[serde(default)]
     pub nats_subjects: Vec<NatsSubject>,
 }
 
