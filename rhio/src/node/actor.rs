@@ -167,6 +167,7 @@ impl NodeActor {
     /// Callback when the application decided to subscribe to a new NATS message stream or S3
     /// bucket.
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
+        self.subscriptions.push(subscription.clone());
         let network_rx = self.panda.subscribe(subscription.into()).await?;
         self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
         Ok(())
@@ -188,7 +189,7 @@ impl NodeActor {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
             JetStreamEvent::InitCompleted { .. } => {
-                unreachable!("we do not handle sync sessions here");
+                // We do not handle sync sessions here
             }
             JetStreamEvent::InitFailed { .. } => {
                 unreachable!("we do not handle sync sessions here");
