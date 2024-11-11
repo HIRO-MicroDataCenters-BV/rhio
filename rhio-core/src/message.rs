@@ -33,7 +33,7 @@ impl NetworkMessage {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        ciborium::into_writer(&self, &mut bytes).expect("encoding header");
+        ciborium::into_writer(&self, &mut bytes).expect("encoding network message");
         bytes
     }
 
