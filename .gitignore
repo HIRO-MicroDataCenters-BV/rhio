@@ -1,2 +1,5 @@
 target
 ./blobs
+config*.yaml
+!config.example.yaml
+private-key*
