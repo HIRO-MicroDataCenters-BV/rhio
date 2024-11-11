@@ -150,7 +150,11 @@ impl NodeActor {
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
         self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
-        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+        let p2panda_topic_rx = BroadcastStream::new(network_rx);
+
+        // @TODO: Messages coming from the p2p gossip overlay do not necessarily fit the NATS
+        // subject filtering logic and need to be excluded here.
+        self.p2panda_topic_rx.push(p2panda_topic_rx);
 
         Ok(())
     }
@@ -158,17 +162,8 @@ impl NodeActor {
     /// Callback when the application decided to subscribe to a new NATS message stream or S3
     /// bucket.
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
-        // self.panda.subscribe(topic)
-
-        // @TODO: Remove this
-        // let nats_rx = self
-        //     .nats
-        //     .subscribe(stream_name, filter_subject, topic)
-        //     .await?;
-        // // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // // trait which is required by `SelectAll`
-        // self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
-
+        let network_rx = self.panda.subscribe(subscription.into()).await?;
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
         Ok(())
     }
 
