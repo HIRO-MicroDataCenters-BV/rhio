@@ -15,7 +15,6 @@ async fn main() -> Result<()> {
             "could not load private key from file {}",
             config.node.private_key.display(),
         ))?;
-    println!("{}", private_key.public_key());
 
     let node = Node::spawn(config.clone(), private_key).await?;
 
