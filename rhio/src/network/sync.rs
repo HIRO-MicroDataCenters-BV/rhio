@@ -10,24 +10,22 @@ use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::TopicId;
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
-use rhio_core::NetworkMessage;
+use rhio_core::{NetworkMessage, ScopedSubject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
-use tracing::debug;
+use tracing::{debug, span, Level};
 
 use crate::config::Config;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::topic::Query;
 
 static SYNC_PROTOCOL_NAME: &str = "rhio-sync-v1";
-static NATS_FROM_RHIO_HEADER: &str = "X-Rhio-From-Sync";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Query(Query),
     NatsHave(Vec<Hash>),
     NatsMessages(Vec<NetworkMessage>),
-    SyncDone,
 }
 
 #[derive(Clone, Debug)]
@@ -46,52 +44,35 @@ impl RhioSyncProtocol {
         }
     }
 
+    /// Download all NATS messages we have for that subject and return them as a stream.
     async fn nats_stream(
         &self,
         stream_name: String,
-        query: Query,
+        subject: &ScopedSubject,
+        topic_id: [u8; 32],
     ) -> Result<BoxStream<Result<NatsMessage, SyncError>>, SyncError> {
-        let nats_rx = match query {
-            Query::Bucket { bucket_name: _ } => todo!(),
-            Query::Subject { ref subject } => {
-                debug!(
-                    "attempt downloading all messages from NATS stream={} for subject={}",
-                    stream_name, subject
-                );
-                self.nats
-                    .subscribe(
-                        stream_name,
-                        subject.to_owned(),
-                        DeliverPolicy::All,
-                        query.id(),
-                    )
-                    .await
-                    .map_err(|err| {
-                        SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
-                    })?
-            }
-            Query::NoSyncSubject { .. } => {
-                unreachable!("we've already returned before no-sync option")
-            }
-        };
+        let nats_rx = self
+            .nats
+            .subscribe(
+                stream_name,
+                subject.to_owned(),
+                DeliverPolicy::All,
+                topic_id,
+            )
+            .await
+            .map_err(|err| {
+                SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
+            })?;
 
         let nats_stream = BroadcastStream::new(nats_rx)
             .take_while(|event| {
+                // Take messages from stream until we've reached all currently known messages, do
+                // not wait for upcoming, future messages.
                 future::ready(!matches!(event, Ok(JetStreamEvent::InitCompleted { .. })))
             })
             .filter_map(|message| async {
                 match message {
-                    Ok(JetStreamEvent::Message { message, .. }) => {
-                        if let Some(ref headers) = message.headers {
-                            if headers.get(NATS_FROM_RHIO_HEADER).is_some() {
-                                None
-                            } else {
-                                Some(Ok(message))
-                            }
-                        } else {
-                            Some(Ok(message))
-                        }
-                    }
+                    Ok(JetStreamEvent::Message { message, .. }) => Some(Ok(message)),
                     Ok(JetStreamEvent::InitFailed { reason, .. }) => {
                         Some(Err(SyncError::Critical(format!(
                             "could not download all past messages from nats server: {reason}"
@@ -128,11 +109,13 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         rx: Box<&'a mut (dyn AsyncRead + Send + Unpin)>,
         mut app_tx: Box<&'a mut (dyn Sink<FromSync<Query>, Error = SyncError> + Send + Unpin)>,
     ) -> Result<(), SyncError> {
+        let span = span!(Level::DEBUG, "initiator", query = %query);
+
         let mut sink = into_cbor_sink(tx);
         let mut stream = into_cbor_stream(rx);
 
         // 1. Send sync query over to other peer so they'll learn what we want from them.
-        debug!("initiator sending sync query {}", query);
+        debug!(parent: &span, "sending sync query {query}");
         app_tx
             .send(FromSync::HandshakeSuccess(query.clone()))
             .await?;
@@ -144,6 +127,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         // The current p2panda API does not give any control to turn off syncing for some data
         // stream subscriptions, this is why we're doing it this hacky way.
         if matches!(query, Query::NoSyncSubject { .. }) {
+            debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
@@ -170,12 +154,16 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // Download all NATS messages we have from the server for this subject and hash
                 // them each. We send all hashes over to the other peer so they can determine and
                 // send us what we don't have.
-                let nats_stream = self.nats_stream(stream_name, query).await?;
+                let nats_stream = self.nats_stream(stream_name, subject, query.id()).await?;
                 let nats_stream = nats_stream.map(|event| match event {
                     Ok(message) => Ok(Hash::new(&message.payload)),
                     Err(err) => Err(err),
                 });
                 let nats_message_hashes: Vec<Hash> = nats_stream.try_collect().await?;
+                debug!(parent: &span,
+                    "downloaded {} NATS messages",
+                    nats_message_hashes.len()
+                );
 
                 sink.send(Message::NatsHave(nats_message_hashes)).await?;
 
@@ -189,6 +177,11 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     ));
                 };
 
+                debug!(parent: &span,
+                    "received {} new NATS messages from remote peer",
+                    nats_messages.len()
+                );
+
                 for nats_message in nats_messages {
                     app_tx
                         .send(FromSync::Data(nats_message.to_bytes(), None))
@@ -200,13 +193,11 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             }
         }
 
-        sink.send(Message::SyncDone).await?;
-
         // Flush all bytes so that no messages are lost.
         sink.flush().await?;
         app_tx.flush().await?;
 
-        debug!("sync session finished");
+        debug!(parent: &span, "sync session finished");
 
         Ok(())
     }
@@ -230,16 +221,19 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             ));
         };
 
+        let span = span!(Level::DEBUG, "acceptor", query = %query);
+        debug!(parent: &span, "received sync query {}", query);
+
         app_tx
             .send(FromSync::HandshakeSuccess(query.clone()))
             .await?;
-        debug!("acceptor received sync query {}", query);
 
         // The other peer might tell us sometimes that they _don't_ want to sync.
         //
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
         if matches!(query, Query::NoSyncSubject { .. }) {
+            debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
@@ -273,14 +267,22 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     ));
                 };
 
+                debug!(parent: &span,
+                    "received {} hashes from remote peer",
+                    nats_message_hashes.len()
+                );
+
                 // Inform the other peer politely that we need to end here as we can't provide for
                 // this subject by sending them an empty array back.
                 let Some(stream_name) = stream_name else {
+                    debug!(parent: &span,
+                        "can't provide data, politely send empty array back",
+                    );
                     sink.send(Message::NatsMessages(vec![])).await?;
                     return Ok(());
                 };
 
-                let nats_stream = self.nats_stream(stream_name, query).await?;
+                let nats_stream = self.nats_stream(stream_name, subject, query.id()).await?;
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
                         Ok(message) => {
@@ -299,7 +301,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     }
                 });
                 let nats_messages: Vec<NetworkMessage> = nats_stream.try_collect().await?;
-                debug!("acceptor downloaded {} NATS messages", nats_messages.len());
+                debug!(parent: &span, "downloaded {} NATS messages", nats_messages.len());
 
                 sink.send(Message::NatsMessages(nats_messages)).await?;
             }
@@ -308,20 +310,11 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             }
         }
 
-        let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
-            "incoming message stream ended prematurely".into(),
-        ))??;
-        let Message::SyncDone = message else {
-            return Err(SyncError::UnexpectedBehaviour(
-                "did not receive expected message".into(),
-            ));
-        };
-
         // Flush all bytes so that no messages are lost.
         sink.flush().await?;
         app_tx.flush().await?;
 
-        debug!("sync session finished");
+        debug!(parent: &span, "sync session finished");
 
         Ok(())
     }

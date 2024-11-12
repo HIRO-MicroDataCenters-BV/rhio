@@ -96,12 +96,12 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::Bucket { bucket_name } => {
-                write!(f, "{}, bucket_name={}", self.prefix(), bucket_name)
+                write!(f, "s3 bucket_name={}", bucket_name)
             }
             Query::Subject { subject } => {
-                write!(f, "{}, subject={}", self.prefix(), subject)
+                write!(f, "nats subject={}", subject)
             }
-            Query::NoSyncSubject { .. } => write!(f, "{}", self.prefix()),
+            Query::NoSyncSubject { .. } => write!(f, "no-sync"),
         }
     }
 }

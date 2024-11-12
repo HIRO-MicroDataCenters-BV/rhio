@@ -203,11 +203,11 @@ impl NatsActor {
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        // Make sure we're only creating one consumer per stream name and subject pair.
-        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
-        let rx = match self.consumers.get_mut(&consumer_id) {
-            Some(consumer) => consumer.subscribe(),
-            None => {
+        match deliver_policy {
+            DeliverPolicy::All => {
+                // Consumers who are used to download _all_ messages are only used once per sync
+                // session. We shouldn't re-use them later, as every sync session wants to download
+                // all messages again.
                 let mut consumer = Consumer::new(
                     &self.nats_jetstream,
                     stream_name,
@@ -217,11 +217,32 @@ impl NatsActor {
                 )
                 .await?;
                 let rx = consumer.subscribe();
-                self.consumers.insert(consumer_id, consumer);
-                rx
+                Ok(rx)
             }
-        };
-        Ok(rx)
+            DeliverPolicy::New => {
+                // Make sure we're only creating one consumer per stream name and subject pair when
+                // using NATS consumer for _new_ messages.
+                let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
+                let rx = match self.consumers.get_mut(&consumer_id) {
+                    Some(consumer) => consumer.subscribe(),
+                    None => {
+                        let mut consumer = Consumer::new(
+                            &self.nats_jetstream,
+                            stream_name,
+                            filter_subject,
+                            deliver_policy,
+                            topic_id,
+                        )
+                        .await?;
+                        let rx = consumer.subscribe();
+                        self.consumers.insert(consumer_id, consumer);
+                        rx
+                    }
+                };
+                Ok(rx)
+            }
+            _ => unimplemented!("no other delivery policies are used in rhio"),
+        }
     }
 
     async fn shutdown(&mut self) -> Result<()> {
