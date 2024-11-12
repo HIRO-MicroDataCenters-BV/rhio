@@ -55,7 +55,8 @@ impl Node {
             ));
         }
 
-        let sync_protocol = RhioSyncProtocol::new(nats.clone(), private_key.clone());
+        let sync_protocol =
+            RhioSyncProtocol::new(config.clone(), nats.clone(), private_key.clone());
 
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())

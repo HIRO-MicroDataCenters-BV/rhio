@@ -131,23 +131,29 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
-        let topic_query: Query = publication.clone().into();
+        let topic_query = match &publication {
+            Publication::Bucket { bucket_name: _ } => todo!(),
+            // When publishing we don't want to sync but only gossip. Only subscribing peers will
+            // want to initiate sync sessions with us.
+            //
+            // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
+            // implementation for more details.
+            Publication::Subject { subject, .. } => Query::NoSync {
+                public_key: subject.public_key(),
+            },
+        };
+
         let topic_id = topic_query.id();
         let network_rx = self.panda.subscribe(topic_query).await?;
 
         let nats_rx = match publication {
             Publication::Bucket { bucket_name: _ } => todo!(),
             Publication::Subject {
-                ref stream_name,
-                ref subject,
+                stream_name,
+                subject,
             } => {
                 self.nats
-                    .subscribe(
-                        stream_name.clone(),
-                        subject.clone(),
-                        DeliverPolicy::New,
-                        topic_id,
-                    )
+                    .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
                     .await?
             }
         };
