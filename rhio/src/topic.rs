@@ -67,7 +67,8 @@ impl Query {
         match self {
             Self::Bucket { .. } => "bucket",
             Self::Subject { .. } => "subject",
-            Self::NoSync { .. } => "no-sync",
+            // @TODO: We might need a variant for bucket and subject for "no sync"
+            Self::NoSync { .. } => "subject",
         }
     }
 }
