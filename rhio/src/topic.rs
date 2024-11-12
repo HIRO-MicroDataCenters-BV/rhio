@@ -59,7 +59,7 @@ pub enum Query {
     // peers. We're using this hacky workaround to indicate in the topic that we're not interested
     // in syncing. The custom rhio sync implementation will check this before and abort the sync
     // process if this value is set.
-    NoSync { public_key: PublicKey },
+    NoSyncSubject { public_key: PublicKey },
 }
 
 impl Query {
@@ -67,8 +67,7 @@ impl Query {
         match self {
             Self::Bucket { .. } => "bucket",
             Self::Subject { .. } => "subject",
-            // @TODO: We might need a variant for bucket and subject for "no sync"
-            Self::NoSync { .. } => "subject",
+            Self::NoSyncSubject { .. } => "subject",
         }
     }
 }
@@ -102,7 +101,7 @@ impl fmt::Display for Query {
             Query::Subject { subject } => {
                 write!(f, "{}, subject={}", self.prefix(), subject)
             }
-            Query::NoSync { .. } => write!(f, "{}", self.prefix()),
+            Query::NoSyncSubject { .. } => write!(f, "{}", self.prefix()),
         }
     }
 }
@@ -120,7 +119,9 @@ impl TopicId for Query {
             Self::Subject { subject, .. } => {
                 Hash::new(format!("{}{}", self.prefix(), subject.public_key()))
             }
-            Self::NoSync { public_key } => Hash::new(format!("{}{}", self.prefix(), public_key)),
+            Self::NoSyncSubject { public_key } => {
+                Hash::new(format!("{}{}", self.prefix(), public_key))
+            }
         };
 
         *hash.as_bytes()

@@ -69,7 +69,7 @@ impl RhioSyncProtocol {
                         SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
                     })?
             }
-            Query::NoSync { .. } => unreachable!("we've already returned before NoSync option"),
+            Query::NoSyncSubject { .. } => unreachable!("we've already returned before NoSync option"),
         };
 
         let nats_stream = BroadcastStream::new(nats_rx)
@@ -133,7 +133,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSync { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. }) {
             sink.flush().await?;
             app_tx.flush().await?;
             return Ok(());
@@ -187,7 +187,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     }
                 };
             }
-            Query::NoSync { .. } => unreachable!(),
+            Query::NoSyncSubject { .. } => unreachable!(),
         }
 
         // Flush all bytes so that no messages are lost.
@@ -230,7 +230,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSync { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. }) {
             return Ok(());
         }
 
@@ -294,7 +294,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     }
                 }
             }
-            Query::NoSync { .. } => unreachable!("we've already returned before NoSync option"),
+            Query::NoSyncSubject { .. } => unreachable!("we've already returned before NoSync option"),
         }
 
         // Flush all bytes so that no messages are lost.

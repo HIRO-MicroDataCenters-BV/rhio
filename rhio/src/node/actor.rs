@@ -138,7 +138,7 @@ impl NodeActor {
             //
             // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
             // implementation for more details.
-            Publication::Subject { subject, .. } => Query::NoSync {
+            Publication::Subject { subject, .. } => Query::NoSyncSubject {
                 public_key: subject.public_key(),
             },
         };
