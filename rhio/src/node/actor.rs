@@ -9,7 +9,7 @@ use rhio_core::{NetworkMessage, ScopedSubject};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
@@ -219,8 +219,31 @@ impl NodeActor {
     /// Handler for incoming events from the p2p network.
     async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
         let bytes = match event {
-            FromNetwork::GossipMessage { bytes, .. } => bytes,
-            FromNetwork::SyncMessage { header, .. } => header,
+            FromNetwork::GossipMessage {
+                bytes,
+                delivered_from,
+            } => {
+                debug!(
+                    source = "gossip",
+                    bytes = bytes.len(),
+                    delivered_from = %delivered_from,
+                    "received network message"
+                );
+                bytes
+            }
+            FromNetwork::SyncMessage {
+                header,
+                delivered_from,
+                ..
+            } => {
+                debug!(
+                    source = "sync",
+                    bytes = header.len(),
+                    delivered_from = %delivered_from,
+                    "received network message"
+                );
+                header
+            }
         };
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;

@@ -6,7 +6,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext
 use async_nats::{Client as NatsClient, HeaderMap};
 use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName};
 
@@ -171,9 +171,7 @@ impl NatsActor {
         Ok(())
     }
 
-    /// Publish a message inside an existing stream.
-    ///
-    /// This method fails if the stream does not exist on the NATS server.
+    /// Publish a message to the NATS server.
     async fn on_publish(
         &self,
         wait_for_ack: bool,
@@ -181,6 +179,8 @@ impl NatsActor {
         headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
+        debug!(subject = %subject, bytes = payload.len(), "publish NATS message");
+
         let mut publish = Publish::build().payload(payload.into());
         if let Some(headers) = headers {
             publish = publish.headers(headers);
@@ -203,6 +203,18 @@ impl NatsActor {
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
+        let deliver_policy_str = match deliver_policy {
+            DeliverPolicy::All => "all",
+            DeliverPolicy::New => "new",
+            _ => unimplemented!(),
+        };
+        debug!(
+            stream = %stream_name,
+            subject = %filter_subject,
+            deliver_policy = deliver_policy_str,
+            "create consumer for NATS stream"
+        );
+
         match deliver_policy {
             DeliverPolicy::All => {
                 // Consumers who are used to download _all_ messages are only used once per sync
