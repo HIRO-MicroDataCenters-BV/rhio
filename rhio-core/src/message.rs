@@ -86,7 +86,6 @@ mod tests {
             )),
             signature: None,
         };
-        println!("{}", hex::encode(header.to_bytes()));
         assert!(!header.verify(&public_key));
         header.sign(&private_key);
         assert!(header.verify(&public_key));

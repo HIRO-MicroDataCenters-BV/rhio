@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::error;
+use tracing::{error, span, trace, Level, Span};
 
 use crate::JoinErrToStr;
 
@@ -30,21 +30,27 @@ impl ConsumerId {
 
 #[derive(Debug, Clone)]
 pub enum JetStreamEvent {
+    /// Finished downloading all _past_ messages from NATS JetStream consumer.
+    ///
+    /// This event is especially used when setting the Delivery Policy to "All".
     InitCompleted {
+        #[allow(dead_code)]
         topic_id: [u8; 32],
     },
-    InitFailed {
-        stream_name: StreamName,
-        reason: String,
-    },
-    StreamFailed {
-        stream_name: StreamName,
-        reason: String,
-    },
+
+    /// Received a message from NATS JetStream consumer.
+    ///
+    /// This includes both past and new messages.
     Message {
         is_init: bool,
         message: NatsMessage,
         topic_id: [u8; 32],
+    },
+
+    /// NATS JetStream consumer failed.
+    Failed {
+        stream_name: StreamName,
+        reason: String,
     },
 }
 
@@ -71,6 +77,7 @@ pub struct ConsumerActor {
     status: ConsumerStatus,
     stream_name: StreamName,
     topic_id: [u8; 32],
+    _span: Span,
 }
 
 impl ConsumerActor {
@@ -80,6 +87,7 @@ impl ConsumerActor {
         initial_stream_height: u64,
         stream_name: StreamName,
         topic_id: [u8; 32],
+        _span: Span,
     ) -> Self {
         Self {
             subscribers_tx,
@@ -88,29 +96,31 @@ impl ConsumerActor {
             status: ConsumerStatus::Initializing,
             stream_name,
             topic_id,
+            _span,
         }
     }
 
     pub async fn run(mut self) -> Result<()> {
+        trace!(parent: &self._span, "start consumer");
         let result = self.run_inner().await;
         drop(self);
         result
     }
 
     async fn run_inner(&mut self) -> Result<()> {
-        // Do not wait for incoming messages for initialization if there is none
+        // Do not wait for incoming past messages during initialization if there is none.
         if self.initial_stream_height == 0 {
             self.on_init_complete()?;
         }
 
         loop {
-            tokio::select! {
-                biased;
-                Some(message) = self.messages.next() => {
+            match self.messages.next().await {
+                Some(message) => {
                     if let Err(err) = self.on_message(message).await {
                         break Err(err);
                     }
-                },
+                }
+                None => break Ok(()),
             }
         }
     }
@@ -120,27 +130,18 @@ impl ConsumerActor {
         message: Result<MessageWithContext, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         if let Err(err) = self.on_message_inner(message).await {
-            error!("consuming nats stream failed: {err}");
+            error!(parent: &self._span, "consuming nats stream failed: {err}");
 
-            match self.status {
-                ConsumerStatus::Initializing => {
-                    self.subscribers_tx.send(JetStreamEvent::InitFailed {
-                        stream_name: self.stream_name.clone(),
-                        reason: err.to_string(),
-                    })?;
-                }
-                _ => {
-                    self.subscribers_tx.send(JetStreamEvent::StreamFailed {
-                        stream_name: self.stream_name.clone(),
-                        reason: err.to_string(),
-                    })?;
-                }
-            }
-
+            self.subscribers_tx.send(JetStreamEvent::Failed {
+                stream_name: self.stream_name.clone(),
+                reason: err.to_string(),
+            })?;
             self.status = ConsumerStatus::Failed;
-        }
 
-        Ok(())
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     async fn on_message_inner(
@@ -157,20 +158,30 @@ impl ConsumerActor {
 
         if matches!(self.status, ConsumerStatus::Initializing) {
             let info = message.info().map_err(|err| anyhow!(err))?;
-            if info.stream_sequence >= self.initial_stream_height {
+            trace!(parent: &self._span, num_pending = info.pending, "received message during init phase");
+            if info.pending >= self.initial_stream_height {
                 self.on_init_complete()?;
             }
+        } else {
+            trace!(parent: &self._span, "received message");
         }
 
         Ok(())
     }
 
     fn on_init_complete(&mut self) -> Result<()> {
+        trace!(parent: &self._span, "completed initialization phase");
         self.status = ConsumerStatus::Streaming;
         self.subscribers_tx.send(JetStreamEvent::InitCompleted {
             topic_id: self.topic_id,
         })?;
         Ok(())
+    }
+}
+
+impl Drop for ConsumerActor {
+    fn drop(&mut self) {
+        trace!(parent: &self._span, "drop consumer");
     }
 }
 
@@ -255,15 +266,29 @@ impl Consumer {
 
         // Retrieve info about the consumer to learn how many messages are currently persisted on
         // the server (number of "pending messages"). These are the messages we need to download
-        // first before we can continue
-        let initial_stream_height = {
-            let consumer_info = consumer.info().await?;
-            consumer_info.num_pending
-        };
+        // first before we can continue.
+        let consumer_info = consumer.info().await?;
+        let consumer_name = consumer_info.name.clone();
+        let initial_stream_height = consumer_info.num_pending;
 
         let messages = consumer.messages().await.context("get message stream")?;
 
         let (subscribers_tx, _) = broadcast::channel(256);
+
+        let span = span!(Level::TRACE, "consumer", id = %consumer_name);
+        let deliver_policy_str = match deliver_policy {
+            DeliverPolicy::All => "all",
+            DeliverPolicy::New => "new",
+            _ => unimplemented!(),
+        };
+        trace!(
+            parent: &span,
+            stream = %stream_name,
+            subject = %filter_subject,
+            deliver_policy = deliver_policy_str,
+            num_pending = initial_stream_height,
+            "create consumer for NATS"
+        );
 
         let consumer_actor = ConsumerActor::new(
             subscribers_tx.clone(),
@@ -271,6 +296,7 @@ impl Consumer {
             initial_stream_height,
             stream_name,
             topic_id,
+            span,
         );
 
         let actor_handle = tokio::task::spawn(async move {

@@ -19,8 +19,6 @@ use crate::config::Config;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::topic::Query;
 
-static SYNC_PROTOCOL_NAME: &str = "rhio-sync-v1";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     Query(Query),
@@ -35,71 +33,10 @@ pub struct RhioSyncProtocol {
     private_key: PrivateKey,
 }
 
-impl RhioSyncProtocol {
-    pub fn new(config: Config, nats: Nats, private_key: PrivateKey) -> Self {
-        Self {
-            config,
-            nats,
-            private_key,
-        }
-    }
-
-    /// Download all NATS messages we have for that subject and return them as a stream.
-    async fn nats_stream(
-        &self,
-        stream_name: String,
-        subject: &ScopedSubject,
-        topic_id: [u8; 32],
-    ) -> Result<BoxStream<Result<NatsMessage, SyncError>>, SyncError> {
-        let nats_rx = self
-            .nats
-            .subscribe(
-                stream_name,
-                subject.to_owned(),
-                DeliverPolicy::All,
-                topic_id,
-            )
-            .await
-            .map_err(|err| {
-                SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
-            })?;
-
-        let nats_stream = BroadcastStream::new(nats_rx)
-            .take_while(|event| {
-                // Take messages from stream until we've reached all currently known messages, do
-                // not wait for upcoming, future messages.
-                future::ready(!matches!(event, Ok(JetStreamEvent::InitCompleted { .. })))
-            })
-            .filter_map(|message| async {
-                match message {
-                    Ok(JetStreamEvent::Message { message, .. }) => Some(Ok(message)),
-                    Ok(JetStreamEvent::InitFailed { reason, .. }) => {
-                        Some(Err(SyncError::Critical(format!(
-                            "could not download all past messages from nats server: {reason}"
-                        ))))
-                    }
-                    Ok(JetStreamEvent::StreamFailed { reason, .. }) => {
-                        Some(Err(SyncError::Critical(format!(
-                            "could not download all past messages from nats server: {reason}"
-                        ))))
-                    }
-                    Err(err) => Some(Err(SyncError::Critical(format!(
-                        "broadcast stream failed: {err}"
-                    )))),
-                    Ok(JetStreamEvent::InitCompleted { .. }) => {
-                        unreachable!("init complete events got filtered out before")
-                    }
-                }
-            });
-
-        Ok(Box::pin(nats_stream))
-    }
-}
-
 #[async_trait]
 impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
     fn name(&self) -> &'static str {
-        SYNC_PROTOCOL_NAME
+        "rhio-sync-v1"
     }
 
     async fn initiate(
@@ -317,5 +254,59 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         debug!(parent: &span, "sync session finished");
 
         Ok(())
+    }
+}
+
+impl RhioSyncProtocol {
+    pub fn new(config: Config, nats: Nats, private_key: PrivateKey) -> Self {
+        Self {
+            config,
+            nats,
+            private_key,
+        }
+    }
+
+    /// Download all NATS messages we have for that subject and return them as a stream.
+    async fn nats_stream(
+        &self,
+        stream_name: String,
+        subject: &ScopedSubject,
+        topic_id: [u8; 32],
+    ) -> Result<BoxStream<Result<NatsMessage, SyncError>>, SyncError> {
+        let nats_rx = self
+            .nats
+            .subscribe(
+                stream_name,
+                subject.to_owned(),
+                DeliverPolicy::All,
+                topic_id,
+            )
+            .await
+            .map_err(|err| {
+                SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
+            })?;
+
+        let nats_stream = BroadcastStream::new(nats_rx)
+            .take_while(|event| {
+                // Take messages from stream until we've reached all currently known messages, do
+                // not wait for upcoming, future messages.
+                future::ready(!matches!(event, Ok(JetStreamEvent::InitCompleted { .. })))
+            })
+            .filter_map(|message| async {
+                match message {
+                    Ok(JetStreamEvent::Message { message, .. }) => Some(Ok(message)),
+                    Ok(JetStreamEvent::Failed { reason, .. }) => Some(Err(SyncError::Critical(
+                        format!("could not download all past messages from nats server: {reason}"),
+                    ))),
+                    Err(err) => Some(Err(SyncError::Critical(format!(
+                        "broadcast stream failed: {err}"
+                    )))),
+                    Ok(JetStreamEvent::InitCompleted { .. }) => {
+                        unreachable!("init complete events got filtered out before")
+                    }
+                }
+            });
+
+        Ok(Box::pin(nats_stream))
     }
 }

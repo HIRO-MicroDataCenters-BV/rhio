@@ -179,11 +179,13 @@ impl NodeActor {
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
             JetStreamEvent::Message {
-                topic_id, message, ..
+                topic_id,
+                message,
+                is_init,
             } => {
-                self.on_nats_message(topic_id, message).await?;
+                self.on_nats_message(is_init, topic_id, message).await?;
             }
-            JetStreamEvent::StreamFailed {
+            JetStreamEvent::Failed {
                 stream_name,
                 reason,
                 ..
@@ -191,13 +193,9 @@ impl NodeActor {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
             JetStreamEvent::InitCompleted { .. } => {
-                // We do not handle sync sessions here but this event get's anyhow called, even
-                // when we're setting `DeliverPolicy` to `New`. This is why we're simply just
-                // ignoring it ..
-            }
-            JetStreamEvent::InitFailed { .. } => {
-                // .. though an error during "init" we should definitely never receive.
-                unreachable!("we do not handle sync sessions here");
+                // We do not handle sync sessions here which download all past messages first
+                // ("initialization"). This event get's anyhow called. This is why we're simply
+                // just ignoring it.
             }
         }
 
@@ -207,7 +205,19 @@ impl NodeActor {
     /// Handler for incoming messages from the NATS JetStream consumer.
     ///
     /// From here we're broadcasting the NATS messages in the related gossip overlay network.
-    async fn on_nats_message(&mut self, topic_id: [u8; 32], message: NatsMessage) -> Result<()> {
+    async fn on_nats_message(
+        &mut self,
+        is_init: bool,
+        topic_id: [u8; 32],
+        message: NatsMessage,
+    ) -> Result<()> {
+        // Ignore messages when they're from the past, at this point we're only forwarding new
+        // messages.
+        if is_init {
+            return Ok(());
+        }
+
+        debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
         let network_message = NetworkMessage::new_nats(message);
         self.panda
             .broadcast(network_message.to_bytes(), topic_id)

@@ -203,18 +203,6 @@ impl NatsActor {
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        let deliver_policy_str = match deliver_policy {
-            DeliverPolicy::All => "all",
-            DeliverPolicy::New => "new",
-            _ => unimplemented!(),
-        };
-        debug!(
-            stream = %stream_name,
-            subject = %filter_subject,
-            deliver_policy = deliver_policy_str,
-            "create consumer for NATS stream"
-        );
-
         match deliver_policy {
             DeliverPolicy::All => {
                 // Consumers who are used to download _all_ messages are only used once per sync
@@ -253,7 +241,7 @@ impl NatsActor {
                 };
                 Ok(rx)
             }
-            _ => unimplemented!("no other delivery policies are used in rhio"),
+            _ => unimplemented!("other delivery policies are not used in rhio"),
         }
     }
 
