@@ -235,7 +235,10 @@ impl Consumer {
                 // .. it seems to not matter what the value inside this field is, we will still
                 // receive all messages from that stream, optionally filtered by "filter_subject"?
                 deliver_subject: {
-                    // @TODO: Add a note here
+                    // @NOTE(adz): Another thing I couldn't find documented was that if this
+                    // delivery subject is the same across consumers, they'll all consume messages
+                    // at the same time, which we avoid here by giving each consumer an unique,
+                    // random identifier:
                     let random_deliver_subject: u32 = random();
                     format!("rhio-{random_deliver_subject}")
                 },

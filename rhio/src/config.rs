@@ -140,8 +140,6 @@ fn try_determine_config_file_path() -> Option<PathBuf> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct S3Config {
-    // @TODO(adz): We probably want to load this from some secure store / file instead?
-    // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/59
     pub credentials: Option<Credentials>,
     pub endpoint: String,
     pub region: String,
