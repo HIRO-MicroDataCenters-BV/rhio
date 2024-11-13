@@ -1,5 +1,4 @@
 mod actor;
-mod control;
 
 use std::net::SocketAddr;
 

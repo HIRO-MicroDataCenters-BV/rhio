@@ -25,6 +25,7 @@ p2panda-engine = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f
 p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 p2panda-store = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
+rand = "0.8.5"
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.34.0"
 serde = { version = "1.0.203", features = ["derive"] }

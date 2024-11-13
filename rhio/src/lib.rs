@@ -1,3 +1,4 @@
+#[allow(dead_code, unused, unused_imports)]
 mod blobs;
 pub mod config;
 mod nats;

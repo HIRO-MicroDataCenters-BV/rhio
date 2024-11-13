@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::nats::StreamName;
 
 /// Announces interest in certain data from other peers in the network.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Subscription {
     Bucket {
@@ -40,6 +41,7 @@ impl Subscription {
 ///
 /// Publications join gossip overlays and need to have a topic id for them as well, no sync takes
 /// place.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Publication {
     Bucket {

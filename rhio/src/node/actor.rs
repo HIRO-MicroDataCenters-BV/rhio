@@ -146,7 +146,7 @@ impl NodeActor {
         let topic_id = topic_query.id();
         let network_rx = self.panda.subscribe(topic_query).await?;
 
-        let nats_rx = match publication {
+        let (_, nats_rx) = match publication {
             Publication::Bucket { bucket_name: _ } => todo!(),
             Publication::Subject {
                 stream_name,

@@ -76,7 +76,7 @@ impl TryFrom<NatsSubject> for Subject {
     type Error = anyhow::Error;
 
     fn try_from(value: NatsSubject) -> Result<Self, Self::Error> {
-        Self::from_str(&value.to_string())
+        Self::from_str(&value)
     }
 }
 
@@ -142,7 +142,7 @@ impl TryFrom<NatsSubject> for ScopedSubject {
     type Error = anyhow::Error;
 
     fn try_from(value: NatsSubject) -> Result<Self, Self::Error> {
-        Self::from_str(&value.to_string())
+        Self::from_str(&value)
     }
 }
 

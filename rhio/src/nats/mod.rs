@@ -14,7 +14,7 @@ use tracing::error;
 
 use crate::config::{Config, NatsCredentials};
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::{JetStreamEvent, StreamName};
+pub use crate::nats::consumer::{ConsumerId, JetStreamEvent, StreamName};
 use crate::JoinErrToStr;
 
 #[derive(Clone, Debug)]
@@ -72,7 +72,7 @@ impl Nats {
         subject: ScopedSubject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
-    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
+    ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
@@ -84,6 +84,13 @@ impl Nats {
             })
             .await?;
         reply_rx.await?
+    }
+
+    pub async fn unsubscribe(&self, consumer_id: ConsumerId) -> Result<()> {
+        self.nats_actor_tx
+            .send(ToNatsActor::Unsubscribe { consumer_id })
+            .await?;
+        Ok(())
     }
 
     pub async fn publish(

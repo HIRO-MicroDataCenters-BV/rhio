@@ -3925,6 +3925,7 @@ dependencies = [
  "p2panda-net",
  "p2panda-store",
  "p2panda-sync",
+ "rand 0.8.5",
  "rhio-core",
  "rust-s3",
  "serde",

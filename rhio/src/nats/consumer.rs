@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_nats::error::Error;
 use async_nats::jetstream::consumer::push::{
     Config as ConsumerConfig, Messages, MessagesErrorKind,
@@ -8,6 +8,7 @@ use async_nats::jetstream::{Context as JetstreamContext, Message as MessageWithC
 use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
+use rand::random;
 use rhio_core::ScopedSubject;
 use tokio::sync::broadcast;
 use tokio::task::JoinError;
@@ -73,7 +74,7 @@ enum ConsumerStatus {
 pub struct ConsumerActor {
     subscribers_tx: broadcast::Sender<JetStreamEvent>,
     messages: Messages,
-    initial_stream_height: u64,
+    num_pending: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
     topic_id: [u8; 32],
@@ -84,7 +85,7 @@ impl ConsumerActor {
     pub fn new(
         subscribers_tx: broadcast::Sender<JetStreamEvent>,
         messages: Messages,
-        initial_stream_height: u64,
+        num_pending: u64,
         stream_name: StreamName,
         topic_id: [u8; 32],
         _span: Span,
@@ -92,7 +93,7 @@ impl ConsumerActor {
         Self {
             subscribers_tx,
             messages,
-            initial_stream_height,
+            num_pending,
             status: ConsumerStatus::Initializing,
             stream_name,
             topic_id,
@@ -109,7 +110,7 @@ impl ConsumerActor {
 
     async fn run_inner(&mut self) -> Result<()> {
         // Do not wait for incoming past messages during initialization if there is none.
-        if self.initial_stream_height == 0 {
+        if self.num_pending == 0 {
             self.on_init_complete()?;
         }
 
@@ -157,13 +158,13 @@ impl ConsumerActor {
         })?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
-            let info = message.info().map_err(|err| anyhow!(err))?;
-            trace!(parent: &self._span, num_pending = info.pending, "received message during init phase");
-            if info.pending >= self.initial_stream_height {
+            self.num_pending -= 1;
+            trace!(parent: &self._span, payload = ?message.payload, num_pending = self.num_pending, is_init = true, "message");
+            if self.num_pending == 0 {
                 self.on_init_complete()?;
             }
         } else {
-            trace!(parent: &self._span, "received message");
+            trace!(parent: &self._span, payload = ?message.payload, "message");
         }
 
         Ok(())
@@ -233,7 +234,11 @@ impl Consumer {
                 //
                 // .. it seems to not matter what the value inside this field is, we will still
                 // receive all messages from that stream, optionally filtered by "filter_subject"?
-                deliver_subject: "rhio".to_string(),
+                deliver_subject: {
+                    // @TODO: Add a note here
+                    let random_deliver_subject: u32 = random();
+                    format!("rhio-{random_deliver_subject}")
+                },
                 // For rhio two different delivery policies are configured:
                 //
                 // 1. Live-Mode: We're only interested in _upcoming_ messages as this consumer will
@@ -269,7 +274,7 @@ impl Consumer {
         // first before we can continue.
         let consumer_info = consumer.info().await?;
         let consumer_name = consumer_info.name.clone();
-        let initial_stream_height = consumer_info.num_pending;
+        let num_pending = consumer_info.num_pending;
 
         let messages = consumer.messages().await.context("get message stream")?;
 
@@ -286,14 +291,14 @@ impl Consumer {
             stream = %stream_name,
             subject = %filter_subject,
             deliver_policy = deliver_policy_str,
-            num_pending = initial_stream_height,
+            num_pending = num_pending,
             "create consumer for NATS"
         );
 
         let consumer_actor = ConsumerActor::new(
             subscribers_tx.clone(),
             messages,
-            initial_stream_height,
+            num_pending,
             stream_name,
             topic_id,
             span,

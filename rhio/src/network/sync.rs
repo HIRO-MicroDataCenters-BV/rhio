@@ -16,7 +16,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, span, Level};
 
 use crate::config::Config;
-use crate::nats::{JetStreamEvent, Nats};
+use crate::nats::{ConsumerId, JetStreamEvent, Nats};
 use crate::topic::Query;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,12 +91,19 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // Download all NATS messages we have from the server for this subject and hash
                 // them each. We send all hashes over to the other peer so they can determine and
                 // send us what we don't have.
-                let nats_stream = self.nats_stream(stream_name, subject, query.id()).await?;
+                let (consumer_id, nats_stream) =
+                    self.nats_stream(stream_name, subject, query.id()).await?;
                 let nats_stream = nats_stream.map(|event| match event {
                     Ok(message) => Ok(Hash::new(&message.payload)),
                     Err(err) => Err(err),
                 });
-                let nats_message_hashes: Vec<Hash> = nats_stream.try_collect().await?;
+                let nats_message_hashes: Result<Vec<Hash>, SyncError> =
+                    nats_stream.try_collect().await;
+
+                // Clean up consumer on error or success.
+                self.unsubscribe_nats_stream(consumer_id).await?;
+                let nats_message_hashes = nats_message_hashes?;
+
                 debug!(parent: &span,
                     "downloaded {} NATS messages",
                     nats_message_hashes.len()
@@ -219,7 +226,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     return Ok(());
                 };
 
-                let nats_stream = self.nats_stream(stream_name, subject, query.id()).await?;
+                let (consumer_id, nats_stream) =
+                    self.nats_stream(stream_name, subject, query.id()).await?;
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
                         Ok(message) => {
@@ -237,7 +245,13 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         Err(err) => Some(Err(err)),
                     }
                 });
-                let nats_messages: Vec<NetworkMessage> = nats_stream.try_collect().await?;
+                let nats_messages: Result<Vec<NetworkMessage>, SyncError> =
+                    nats_stream.try_collect().await;
+
+                // Clear up consumer after error or success.
+                self.unsubscribe_nats_stream(consumer_id).await?;
+                let nats_messages = nats_messages?;
+
                 debug!(parent: &span, "downloaded {} NATS messages", nats_messages.len());
 
                 sink.send(Message::NatsMessages(nats_messages)).await?;
@@ -272,8 +286,8 @@ impl RhioSyncProtocol {
         stream_name: String,
         subject: &ScopedSubject,
         topic_id: [u8; 32],
-    ) -> Result<BoxStream<Result<NatsMessage, SyncError>>, SyncError> {
-        let nats_rx = self
+    ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
+        let (consumer_id, nats_rx) = self
             .nats
             .subscribe(
                 stream_name,
@@ -307,6 +321,13 @@ impl RhioSyncProtocol {
                 }
             });
 
-        Ok(Box::pin(nats_stream))
+        Ok((consumer_id, Box::pin(nats_stream)))
+    }
+
+    async fn unsubscribe_nats_stream(&self, consumer_id: ConsumerId) -> Result<(), SyncError> {
+        self.nats.unsubscribe(consumer_id).await.map_err(|err| {
+            SyncError::Critical(format!("can't unsubscribe from NATS stream: {}", err))
+        })?;
+        Ok(())
     }
 }

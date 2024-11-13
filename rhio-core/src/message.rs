@@ -27,7 +27,7 @@ impl NetworkMessage {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let message: Self = ciborium::from_reader(&bytes[..])?;
+        let message: Self = ciborium::from_reader(bytes)?;
         Ok(message)
     }
 
@@ -57,6 +57,7 @@ impl NetworkMessage {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum NetworkPayload {

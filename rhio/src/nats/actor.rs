@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
 use async_nats::{Client as NatsClient, HeaderMap};
+use rand::random;
 use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error};
@@ -73,7 +74,10 @@ pub enum ToNatsActor {
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. The channel will eventually send an event to the
         /// user to signal when the initialization has finished.
-        reply: oneshot::Sender<Result<broadcast::Receiver<JetStreamEvent>>>,
+        reply: oneshot::Sender<Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)>>,
+    },
+    Unsubscribe {
+        consumer_id: ConsumerId,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -163,6 +167,9 @@ impl NatsActor {
                     .await;
                 reply.send(result).ok();
             }
+            ToNatsActor::Unsubscribe { consumer_id } => {
+                self.on_unsubscribe(consumer_id).await?;
+            }
             ToNatsActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
             }
@@ -202,12 +209,17 @@ impl NatsActor {
         filter_subject: ScopedSubject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
-    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
+    ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
         match deliver_policy {
             DeliverPolicy::All => {
                 // Consumers who are used to download _all_ messages are only used once per sync
                 // session. We shouldn't re-use them later, as every sync session wants to download
-                // all messages again.
+                // all messages again. This is why we a) give them a random identifier to avoid
+                // re-use b) do not allow to re-subscribe to it.
+                let random_id: u32 = random();
+                let consumer_id =
+                    ConsumerId::new(stream_name.clone(), format!("{filter_subject}-{random_id}"));
+
                 let mut consumer = Consumer::new(
                     &self.nats_jetstream,
                     stream_name,
@@ -216,8 +228,10 @@ impl NatsActor {
                     topic_id,
                 )
                 .await?;
+
                 let rx = consumer.subscribe();
-                Ok(rx)
+                self.consumers.insert(consumer_id.clone(), consumer);
+                Ok((consumer_id, rx))
             }
             DeliverPolicy::New => {
                 // Make sure we're only creating one consumer per stream name and subject pair when
@@ -235,14 +249,21 @@ impl NatsActor {
                         )
                         .await?;
                         let rx = consumer.subscribe();
-                        self.consumers.insert(consumer_id, consumer);
+                        self.consumers.insert(consumer_id.clone(), consumer);
                         rx
                     }
                 };
-                Ok(rx)
+                Ok((consumer_id, rx))
             }
             _ => unimplemented!("other delivery policies are not used in rhio"),
         }
+    }
+
+    async fn on_unsubscribe(&mut self, consumer_id: ConsumerId) -> Result<()> {
+        self.consumers
+            .remove(&consumer_id)
+            .ok_or(anyhow!("tried to remove unknown consumer"))?;
+        Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<()> {
