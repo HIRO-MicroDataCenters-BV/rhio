@@ -245,7 +245,7 @@ mod tests {
     use super::{Config, NatsSubject};
 
     #[test]
-    fn parse_toml_file() {
+    fn parse_yaml_file() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
                 "config.yaml",

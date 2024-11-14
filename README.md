@@ -32,8 +32,8 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 
 ## Usage
 
-1. Copy the [configuration file](/rhio/config.example.toml) and adjust it to your setup: `cp config.example.toml config.toml`
-2. Run the `rhio` process via `rhio -c config.toml`
+1. Copy the [configuration file](/rhio/config.example.yaml) and adjust it to your setup: `cp config.example.yaml config.yaml`
+2. Run the `rhio` process via `rhio -c config.yaml`
 3. The process can be further configured via ENV vars or command line arguments:
 
 ```
@@ -43,11 +43,11 @@ Usage: rhio [OPTIONS]
 
 Options:
   -c, --config <PATH>
-          Path to "config.toml" file for further configuration.
+          Path to "config.yaml" file for further configuration.
 
-          When not set the program will try to find a `config.toml` file in the same folder the program is
+          When not set the program will try to find a `config.yaml` file in the same folder the program is
           executed in and otherwise in the regarding operation systems XDG config directory
-          ("$HOME/.config/rhio/config.toml" on Linux).
+          ("$HOME/.config/rhio/config.yaml" on Linux).
 
   -p, --bind-port <PORT>
           Bind port of rhio node
@@ -99,7 +99,7 @@ Large files of any size can be imported into the local MinIO database which will
 cargo run
 
 # Pass additional arguments to `rhio`
-cargo run -- --config config.toml
+cargo run -- --config config.yaml
 ```
 2. Configure log level
 ```bash
