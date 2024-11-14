@@ -32,7 +32,7 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 
 ## Usage
 
-1. Copy the [configuration file](/rhio/config.example.yaml) and adjust it to your setup: `cp config.example.yaml config.yaml`
+1. Copy the [configuration file](config.example.yaml) and adjust it to your setup: `cp config.example.yaml config.yaml`
 2. Run the `rhio` process via `rhio -c config.yaml`
 3. The process can be further configured via ENV vars or command line arguments:
 
