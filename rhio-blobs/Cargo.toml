@@ -1,0 +1,19 @@
+[package]
+name = "rhio-blobs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.93"
+bytes = "1.8.0"
+futures-lite = "2.5.0"
+iroh-blobs = "0.25.0"
+iroh-io = {version = "0.6.1", features = ["x-http"]}
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "v2" }
+rust-s3 = { version = "0.34.0", features = ["tokio"] }
+thiserror = "2.0.3"
+tracing = "0.1.40"
+url = "2.5.3"
+
+[lints]
+workspace = true
