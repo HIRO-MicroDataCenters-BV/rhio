@@ -18,7 +18,7 @@ use iroh_blobs::{store::Store, BlobFormat, Hash, HashAndFormat};
 use iroh_blobs::{Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
-use tracing::{warn};
+use tracing::warn;
 
 use crate::bao_file::BaoFileHandle;
 use crate::paths::Paths;

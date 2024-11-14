@@ -150,7 +150,7 @@ impl S3File {
     }
 
     /// Complete the multipart upload.
-    /// 
+    ///
     /// This method _must_ be called after all bytes were uploaded via `write_all_at` in order to
     /// upload any remaining bytes and finalize the multipart upload.
     pub async fn complete(&mut self) -> Result<()> {
