@@ -1,26 +1,23 @@
 mod actor;
 mod consumer;
 
-use std::path::PathBuf;
-use std::str::FromStr;
-
-use anyhow::{Context, Result};
-use async_nats::{Client, ConnectOptions};
+use anyhow::{bail, Context, Result};
+use async_nats::jetstream::consumer::DeliverPolicy;
+use async_nats::{ConnectOptions, HeaderMap};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_net::{AbortOnDropHandle, JoinErrToStr};
-use rhio_core::{Subject, TopicId};
+use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
-use tokio_stream::StreamExt;
-use tracing::{error, warn};
+use tokio_util::task::AbortOnDropHandle;
+use tracing::error;
 
-use crate::config::Config;
+use crate::config::{Config, NatsCredentials};
 use crate::nats::actor::{NatsActor, ToNatsActor};
-pub use crate::nats::consumer::JetStreamEvent;
-use crate::node::NodeControl;
+pub use crate::nats::consumer::{ConsumerId, JetStreamEvent, StreamName};
+use crate::JoinErrToStr;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Nats {
     nats_actor_tx: mpsc::Sender<ToNatsActor>,
     #[allow(dead_code)]
@@ -28,22 +25,17 @@ pub struct Nats {
 }
 
 impl Nats {
-    pub async fn new(config: Config, node_control_tx: mpsc::Sender<NodeControl>) -> Result<Self> {
-        // @TODO: Add auth options to NATS client config.
-        // See related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/62
+    pub async fn new(config: Config) -> Result<Self> {
+        let nats_options = connect_options(config.nats.credentials.clone())?;
         let nats_client =
-            async_nats::connect_with_options(config.nats.endpoint.clone(), ConnectOptions::new())
+            async_nats::connect_with_options(config.nats.endpoint.clone(), nats_options)
                 .await
                 .context(format!(
                     "connecting to NATS server {}",
                     config.nats.endpoint
                 ))?;
 
-        // Start a "standard" NATS Core subscription (at-most-once delivery) to receive "live"
-        // control commands for `rhio`
-        spawn_control_handler(nats_client.clone(), node_control_tx);
-
-        // Start the main NATS JetStream actor to dynamically maintain "stream consumers"
+        // Start the main NATS JetStream actor to dynamically maintain "stream consumers".
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
@@ -67,35 +59,45 @@ impl Nats {
     /// provided by the NATS server.
     ///
     /// All consumers in rhio are push-based, ephemeral and do not ack when a message was received.
-    /// With this design we can download all past messages from the stream before we can receive
-    /// future messages and rely on NATS as our persistence layer.
+    /// With this design we can download any past messages from the stream at any point.
     ///
     /// This method creates a consumer and fails if something goes wrong. It proceeds with
-    /// downloading all past data from the server; the returned channel can be used to await when
-    /// that download has been finished. Finally it keeps the consumer alive in the background for
-    /// handling future messages. All past and future messages are sent to the returned stream.
+    /// downloading all past data from the server when configured like that via a "delivery
+    /// policy"; the returned channel can be used to await when that download has been finished.
+    /// Finally it keeps the consumer alive in the background for handling future messages. All
+    /// past and future messages are sent to the returned stream.
     pub async fn subscribe(
         &self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
-    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
+        stream_name: StreamName,
+        subject: ScopedSubject,
+        deliver_policy: DeliverPolicy,
+        topic_id: [u8; 32],
+    ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
         let (reply, reply_rx) = oneshot::channel();
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
                 stream_name,
-                filter_subject,
-                topic,
+                subject,
+                deliver_policy,
+                topic_id,
                 reply,
             })
             .await?;
         reply_rx.await?
     }
 
+    pub async fn unsubscribe(&self, consumer_id: ConsumerId) -> Result<()> {
+        self.nats_actor_tx
+            .send(ToNatsActor::Unsubscribe { consumer_id })
+            .await?;
+        Ok(())
+    }
+
     pub async fn publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: String,
+        headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
@@ -103,6 +105,7 @@ impl Nats {
             .send(ToNatsActor::Publish {
                 wait_for_ack,
                 subject,
+                headers,
                 payload,
                 reply,
             })
@@ -120,42 +123,24 @@ impl Nats {
     }
 }
 
-// @TODO(adz): This might not be the ideal flow or place for it and serves as a "workaround". We
-// can keep it here until we've finished the full MinIO store backend implementation, even though
-// _some_ import control needs to be given in any case?
-// See related discussion: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/60
-fn spawn_control_handler(nats_client: Client, node_control_tx: mpsc::Sender<NodeControl>) {
-    tokio::spawn(async move {
-        let Ok(mut subscription) = nats_client.subscribe("rhio.*").await else {
-            error!("failed subscribing to minio control messages");
-            return;
-        };
+fn connect_options(config: Option<NatsCredentials>) -> Result<ConnectOptions> {
+    let Some(credentials) = config else {
+        return Ok(ConnectOptions::default());
+    };
 
-        while let Some(message) = subscription.next().await {
-            if message.subject.as_str() != "rhio.import" {
-                continue;
-            }
-
-            let Ok(file_path_str) = std::str::from_utf8(&message.payload) else {
-                warn!("failed parsing minio control message");
-                continue;
-            };
-
-            let Ok(file_path) = PathBuf::from_str(file_path_str) else {
-                warn!("failed parsing minio control message");
-                continue;
-            };
-
-            if let Err(err) = node_control_tx
-                .send(NodeControl::ImportBlob {
-                    file_path,
-                    reply_subject: message.reply,
-                })
-                .await
-            {
-                error!("failed handling minio control message: {err}");
-                break;
-            }
+    let options = match (
+        credentials.nkey,
+        credentials.token,
+        credentials.username,
+        credentials.password,
+    ) {
+        (Some(nkey), None, None, None) => ConnectOptions::with_nkey(nkey),
+        (None, Some(token), None, None) => ConnectOptions::with_token(token),
+        (None, None, Some(username), Some(password)) => {
+            ConnectOptions::with_user_and_password(username, password)
         }
-    });
+        _ => bail!("ambigious nats credentials configuration"),
+    };
+
+    Ok(options)
 }

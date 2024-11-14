@@ -184,9 +184,9 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.35.1"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab8df97cb8fc4a884af29ab383e9292ea0939cfcdd7d2a17179086dc6c427e7f"
+checksum = "fd3bdd6ea595b2ea504500a3566071beb81125fc15d40a6f6bffa43575f64152"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -210,6 +210,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tryhard",
  "url",
@@ -250,9 +251,9 @@ dependencies = [
 
 [[package]]
 name = "async-trait"
-version = "0.1.82"
+version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a27b8a3a6e1a44fa4c8baf1f653e4172e81486d4941f2237e20dc2d0cf4ddff1"
+checksum = "721cae7de5c34fbb2acd27e21e6d2cf7b886dce0c27388d46c4e6c47ea4318dd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -664,6 +665,12 @@ name = "constant_time_eq"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
+
+[[package]]
+name = "constcat"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4938185353434999ef52c81753c8cca8955ed38042fc29913db3751916f3b7ab"
 
 [[package]]
 name = "core-foundation"
@@ -1200,8 +1207,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cb01cd46b0cf372153850f4c6c272d9cbea2da513e07538405148f95bd789f3"
 dependencies = [
  "atomic",
+ "parking_lot",
  "pear",
  "serde",
+ "serde_yaml",
+ "tempfile",
  "toml",
  "uncased",
  "version_check",
@@ -2898,7 +2908,7 @@ dependencies = [
 [[package]]
 name = "p2panda-blobs"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2914,6 +2924,7 @@ dependencies = [
  "num_cpus",
  "p2panda-core",
  "p2panda-net",
+ "p2panda-sync",
  "serde",
  "tempdir",
  "tokio",
@@ -2925,7 +2936,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
  "blake3",
  "ciborium",
@@ -2938,9 +2949,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "p2panda-discovery"
+version = "0.1.0"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
+dependencies = [
+ "anyhow",
+ "flume",
+ "futures-buffered",
+ "futures-lite 2.3.0",
+ "hickory-proto 0.24.1",
+ "iroh-base",
+ "iroh-net",
+ "socket2",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "p2panda-engine"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -2956,25 +2985,23 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
  "anyhow",
  "async-trait",
  "ciborium",
- "flume",
- "futures-buffered",
  "futures-lite 2.3.0",
  "futures-util",
- "hickory-proto 0.24.1",
  "iroh-base",
  "iroh-gossip",
  "iroh-net",
  "iroh-quinn",
  "p2panda-core",
+ "p2panda-discovery",
  "p2panda-sync",
  "rand 0.8.5",
  "serde",
- "socket2",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2984,21 +3011,18 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
  "p2panda-core",
- "thiserror",
  "trait-variant",
 ]
 
 [[package]]
 name = "p2panda-sync"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#f4b8d0bbb27f2033deb929dd2000b829e2afa94f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
- "anyhow",
  "async-trait",
- "ciborium",
  "futures",
  "p2panda-core",
  "p2panda-store",
@@ -3008,7 +3032,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
- "trait-variant",
 ]
 
 [[package]]
@@ -3888,6 +3911,7 @@ dependencies = [
  "anyhow",
  "async-nats",
  "async-stream",
+ "async-trait",
  "ciborium",
  "clap",
  "directories",
@@ -3901,6 +3925,7 @@ dependencies = [
  "p2panda-net",
  "p2panda-store",
  "p2panda-sync",
+ "rand 0.8.5",
  "rhio-core",
  "rust-s3",
  "serde",
@@ -3912,28 +3937,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "rhio-client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "clap",
- "p2panda-core",
- "p2panda-store",
- "rhio-core",
- "tokio",
-]
-
-[[package]]
 name = "rhio-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
  "ciborium",
+ "constcat",
  "hex",
  "p2panda-core",
  "p2panda-engine",
  "p2panda-store",
+ "p2panda-sync",
  "serde",
  "tempfile",
  "tokio",
@@ -4376,6 +4391,19 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -5251,6 +5279,12 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

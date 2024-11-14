@@ -1,0 +1,106 @@
+# rhio configuration file
+#
+# 1. Copy this file to the location where a) rhio will run b) in an XDG
+# compliant config directory (for example "$HOME/.config/rhio/config.yaml"
+# on Linux) or c) refer to it using the -c command line argument when running
+# rhio.
+# 2. Replace the example values with your own desired configuration. All values
+# in this template resemble the defaults
+
+# ﾟ･｡+☆+｡
+# NETWORK
+# ﾟ･｡+☆+｡
+
+# Port for node-node communication and data replication. Defaults to 9102.
+#
+# When port is taken the node will automatically pick a random, free port.
+#
+# bind_port: 9102
+
+# Nodes will only communicate with each other if they know the same network id.
+#
+# network_id: "rhio-default-network-1"
+
+# ﾟ･｡+☆+｡･
+# IDENTITY
+# ﾟ･｡+☆+｡･
+
+# Path to persist the node's Ed25519 private key file. The key is used to
+# identify the node towards other nodes during network discovery and
+# replication. This key is _not_ used to create and sign data.
+#
+# If a path is set, a new key will be generated and stored under this path when
+# node starts for the first time.
+#
+# When no path is set, your node will generate an ephemeral private key on
+# every start up and _not_ persist it.
+#
+# private_key_path: "private-key.txt"
+
+# ﾟ･
+# S3
+# ﾟ･
+
+# Endpoint of the local S3-compatible Database (for example MinIO).
+#
+# s3:
+#   endpoint: "http://localhost:9000"
+#   region: "eu-central-1"
+#   credentials:
+#     access_key: "rhio"
+#     secret_key: "rhio_password"
+
+# ﾟ･｡+
+# NATS
+# ﾟ･｡+
+
+# Endpoint of the local NATS Server with JetStreams enabled.
+#
+# nats:
+#   endpoint: "localhost:4222"
+#   credentials:
+#     username: "rhio"
+#     password: "rhio_password"
+#     # Alternative authentication strategies:
+#     nkey: "..."
+#     token: "..."
+
+# ﾟ･｡+☆
+# NODES
+# ﾟ･｡+☆
+
+# List of known node addresses we want to connect to directly. Addresses have
+# to be IP addresses and must include a port number.
+#
+# NOTE: Make sure that nodes mentioned in this list are directly reachable
+# (they need to be hosted with a static IP address).
+#
+# nodes:
+#   - public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+#     endpoints:
+#       - "192.168.178.100:9102"
+#       - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9103"
+
+# ﾟ･｡+☆+｡
+# STREAMS
+# ﾟ･｡+☆+｡
+
+# publish:
+#   s3_buckets:
+#     - "local_bucket_1"
+#     - "local_bucket_2"
+#   nats_subjects:
+#     - subject: "<public_key>.workload.berlin.energy"
+#       stream: "workload"
+#     - subject: "<public_key>.workload.rotterdam.energy"
+#       stream: "workload"
+#
+# subscribe:
+#   s3_buckets:
+#     - "<public_key>/remote_bucket_1"
+#     - "<public_key>/remote_bucket_2"
+#   nats_subjects:
+#     - subject: "<public_key>.workload.*.energy"
+#       stream: "workload"
+#     - subject: "<public_key>.data.thehague.meta"
+#       stream: "data"

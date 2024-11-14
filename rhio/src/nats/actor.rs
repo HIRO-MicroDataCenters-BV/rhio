@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Context, Result};
-use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::Client as NatsClient;
-use rhio_core::{Subject, TopicId};
+use anyhow::{anyhow, Context, Result};
+use async_nats::jetstream::context::Publish;
+use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
+use async_nats::{Client as NatsClient, HeaderMap};
+use rand::random;
+use rhio_core::ScopedSubject;
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::error;
+use tracing::{debug, error};
 
-use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent};
+use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName};
 
 pub enum ToNatsActor {
     Publish {
@@ -19,29 +21,52 @@ pub enum ToNatsActor {
         wait_for_ack: bool,
 
         /// NATS subject to which this message is published to.
-        subject: Subject,
+        subject: String,
 
         /// Payload of message.
         payload: Vec<u8>,
+
+        /// NATS headers of message.
+        headers: Option<HeaderMap>,
 
         /// Channel to receive result. Can fail if server did not acknowledge message in time.
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
         /// NATS stream name.
-        stream_name: String,
-
-        /// NATS subject filter.
         ///
-        /// Streams can hold different subjects. By using a "subject filter" we're able to select only
-        /// the ones we're interested in. This forms "filtered views" on top of streams.
-        filter_subject: Option<String>,
+        /// Streams need to already be created on the server, if not, this method will fail here.
+        /// Note that no checks are applied here for validating if the NATS stream configuration is
+        /// compatible with rhio's design.
+        stream_name: StreamName,
 
-        /// p2panda topic used to exchange the "filtered" NATS stream with external nodes.
+        /// NATS subject filter configuration for the stream consumer.
+        ///
+        /// Streams can hold different subjects. By using a "subject filter" we're able to
+        /// "consume" only the ones we're interested in. This forms "filtered views" on top of
+        /// streams.
+        subject: ScopedSubject,
+
+        /// Consumer delivery policy.
+        ///
+        /// For rhio two different delivery policies are configured:
+        ///
+        /// 1. Live-Mode: We're only interested in _upcoming_ messages as this consumer will only
+        ///    be used to forward NATS messages into the gossip overlay. This happens when a rhio
+        ///    node decided to "publish" a NATS subject, the created consumer lives as long as the
+        ///    process.
+        /// 2. Sync-Session: Here we want to load and exchange _past_ messages, usually loading all
+        ///    messages from after a given timestamp. This happens when a remote rhio node requests
+        ///    data from a NATS subject from us, the created consumer lives as long as the sync
+        ///    session with this remote peer.
+        deliver_policy: DeliverPolicy,
+
+        /// p2panda topic id used to exchange the "filtered" NATS stream with external nodes over a
+        /// gossip overlay.
         ///
         /// While this is not strictly required for NATS JetStream we keep it here to inform other
-        /// parts of rhio about which topic is used for this stream.
-        topic: TopicId,
+        /// parts of rhio about which topic id is used for this stream.
+        topic_id: [u8; 32],
 
         /// Channel to receive all messages (old and new) from this subscription, including
         /// errors and "readiness" state.
@@ -49,7 +74,10 @@ pub enum ToNatsActor {
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. The channel will eventually send an event to the
         /// user to signal when the initialization has finished.
-        reply: oneshot::Sender<Result<broadcast::Receiver<JetStreamEvent>>>,
+        reply: oneshot::Sender<Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)>>,
+    },
+    Unsubscribe {
+        consumer_id: ConsumerId,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -118,20 +146,29 @@ impl NatsActor {
             ToNatsActor::Publish {
                 wait_for_ack,
                 subject,
+                headers,
                 payload,
                 reply,
             } => {
-                let result = self.on_publish(wait_for_ack, subject, payload).await;
+                let result = self
+                    .on_publish(wait_for_ack, subject, headers, payload)
+                    .await;
                 reply.send(result).ok();
             }
             ToNatsActor::Subscribe {
                 stream_name,
-                filter_subject,
-                topic,
+                subject,
+                deliver_policy,
+                topic_id,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
+                let result = self
+                    .on_subscribe(stream_name, subject, deliver_policy, topic_id)
+                    .await;
                 reply.send(result).ok();
+            }
+            ToNatsActor::Unsubscribe { consumer_id } => {
+                self.on_unsubscribe(consumer_id).await?;
             }
             ToNatsActor::Shutdown { .. } => {
                 unreachable!("handled in run_inner");
@@ -141,19 +178,24 @@ impl NatsActor {
         Ok(())
     }
 
-    /// Publish a message inside an existing stream.
-    ///
-    /// This method fails if the stream does not exist on the NATS server
+    /// Publish a message to the NATS server.
     async fn on_publish(
         &self,
         wait_for_ack: bool,
-        subject: Subject,
+        subject: String,
+        headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
-        let server_ack = self.nats_jetstream.publish(subject, payload.into()).await?;
+        debug!(subject = %subject, bytes = payload.len(), "publish NATS message");
+
+        let mut publish = Publish::build().payload(payload.into());
+        if let Some(headers) = headers {
+            publish = publish.headers(headers);
+        }
+        let server_ack = self.nats_jetstream.send_publish(subject, publish).await?;
 
         // Wait until the server confirmed receiving this message, to make sure it got delivered
-        // and persisted
+        // and persisted.
         if wait_for_ack {
             server_ack.await.context("publish message to nats server")?;
         }
@@ -163,26 +205,65 @@ impl NatsActor {
 
     async fn on_subscribe(
         &mut self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
-    ) -> Result<broadcast::Receiver<JetStreamEvent>> {
-        let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.clone());
-        if self.consumers.contains_key(&consumer_id) {
-            bail!(
-                "consumer for stream '{}' with filter subject '{}' is already registered",
-                stream_name,
-                filter_subject.unwrap_or_default()
-            );
+        stream_name: StreamName,
+        filter_subject: ScopedSubject,
+        deliver_policy: DeliverPolicy,
+        topic_id: [u8; 32],
+    ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
+        match deliver_policy {
+            DeliverPolicy::All => {
+                // Consumers who are used to download _all_ messages are only used once per sync
+                // session. We shouldn't re-use them later, as every sync session wants to download
+                // all messages again. This is why we a) give them a random identifier to avoid
+                // re-use b) do not allow to re-subscribe to it.
+                let random_id: u32 = random();
+                let consumer_id =
+                    ConsumerId::new(stream_name.clone(), format!("{filter_subject}-{random_id}"));
+
+                let mut consumer = Consumer::new(
+                    &self.nats_jetstream,
+                    stream_name,
+                    filter_subject,
+                    deliver_policy,
+                    topic_id,
+                )
+                .await?;
+
+                let rx = consumer.subscribe();
+                self.consumers.insert(consumer_id.clone(), consumer);
+                Ok((consumer_id, rx))
+            }
+            DeliverPolicy::New => {
+                // Make sure we're only creating one consumer per stream name and subject pair when
+                // using NATS consumer for _new_ messages.
+                let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
+                let rx = match self.consumers.get_mut(&consumer_id) {
+                    Some(consumer) => consumer.subscribe(),
+                    None => {
+                        let mut consumer = Consumer::new(
+                            &self.nats_jetstream,
+                            stream_name,
+                            filter_subject,
+                            deliver_policy,
+                            topic_id,
+                        )
+                        .await?;
+                        let rx = consumer.subscribe();
+                        self.consumers.insert(consumer_id.clone(), consumer);
+                        rx
+                    }
+                };
+                Ok((consumer_id, rx))
+            }
+            _ => unimplemented!("other delivery policies are not used in rhio"),
         }
+    }
 
-        let mut consumer =
-            Consumer::new(&self.nats_jetstream, stream_name, filter_subject, topic).await?;
-        let rx = consumer.subscribe();
-
-        self.consumers.insert(consumer_id, consumer);
-
-        Ok(rx)
+    async fn on_unsubscribe(&mut self, consumer_id: ConsumerId) -> Result<()> {
+        self.consumers
+            .remove(&consumer_id)
+            .ok_or(anyhow!("tried to remove unknown consumer"))?;
+        Ok(())
     }
 
     async fn shutdown(&mut self) -> Result<()> {

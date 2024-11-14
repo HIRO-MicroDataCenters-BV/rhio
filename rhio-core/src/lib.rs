@@ -1,13 +1,9 @@
-pub mod extensions;
-pub mod log_id;
-pub mod operation;
+pub mod bucket;
+pub mod message;
 pub mod private_key;
-pub mod topic_id;
+pub mod subject;
 
-pub use extensions::{RhioExtensions, Subject};
-pub use log_id::LogId;
-pub use operation::{
-    create_blob_announcement, create_message, create_operation, decode_operation, encode_operation,
-};
-pub use private_key::{generate_ephemeral_private_key, generate_or_load_private_key};
-pub use topic_id::TopicId;
+pub use bucket::{Bucket, ScopedBucket};
+pub use message::NetworkMessage;
+pub use private_key::load_private_key_from_file;
+pub use subject::{ScopedSubject, Subject};

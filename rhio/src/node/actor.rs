@@ -1,23 +1,29 @@
 use anyhow::{anyhow, bail, Context, Result};
+use async_nats::jetstream::consumer::DeliverPolicy;
+use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
-use p2panda_core::{Extension, Hash, Operation};
-use p2panda_net::ToBytes;
-use rhio_core::{decode_operation, encode_operation, RhioExtensions, Subject, TopicId};
+use p2panda_net::network::FromNetwork;
+use p2panda_net::TopicId;
+use rhio_core::message::NetworkPayload;
+use rhio_core::{NetworkMessage, ScopedSubject};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::node::NodeControl;
+use crate::node::Publication;
+use crate::topic::{Query, Subscription};
 
 pub enum ToNodeActor {
+    Publish {
+        publication: Publication,
+        reply: oneshot::Sender<Result<()>>,
+    },
     Subscribe {
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
+        subscription: Subscription,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -27,25 +33,19 @@ pub enum ToNodeActor {
 
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
-    node_control_rx: mpsc::Receiver<NodeControl>,
+    subscriptions: Vec<Subscription>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
-    p2panda_topic_rx: SelectAll<BroadcastStream<Operation<RhioExtensions>>>,
+    p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     nats: Nats,
     panda: Panda,
     blobs: Blobs,
 }
 
 impl NodeActor {
-    pub fn new(
-        nats: Nats,
-        panda: Panda,
-        blobs: Blobs,
-        inbox: mpsc::Receiver<ToNodeActor>,
-        node_control_rx: mpsc::Receiver<NodeControl>,
-    ) -> Self {
+    pub fn new(nats: Nats, panda: Panda, blobs: Blobs, inbox: mpsc::Receiver<ToNodeActor>) -> Self {
         Self {
             nats,
-            node_control_rx,
+            subscriptions: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             panda,
@@ -89,18 +89,13 @@ impl NodeActor {
                         }
                     }
                 },
-                Some(command) = self.node_control_rx.recv() => {
-                    if let Err(err) = self.on_control_command(command).await {
-                        break Err(err);
-                    }
-                },
                 Some(Ok(event)) = self.nats_consumer_rx.next() => {
                     if let Err(err) = self.on_nats_event(event).await {
                         break Err(err);
                     }
                 },
-                Some(Ok(operation)) = self.p2panda_topic_rx.next() => {
-                    if let Err(err) = self.on_operation(operation).await {
+                Some(Ok(event)) = self.p2panda_topic_rx.next() => {
+                    if let Err(err) = self.on_network_event(event).await {
                         break Err(err);
                     }
                 },
@@ -116,13 +111,15 @@ impl NodeActor {
 
     async fn on_actor_message(&mut self, msg: ToNodeActor) -> Result<()> {
         match msg {
+            ToNodeActor::Publish { publication, reply } => {
+                let result = self.on_publish(publication).await;
+                reply.send(result).ok();
+            }
             ToNodeActor::Subscribe {
-                stream_name,
-                filter_subject,
-                topic,
+                subscription,
                 reply,
             } => {
-                let result = self.on_subscribe(stream_name, filter_subject, topic).await;
+                let result = self.on_subscribe(subscription).await;
                 reply.send(result).ok();
             }
             ToNodeActor::Shutdown { .. } => {
@@ -133,192 +130,152 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Callback when the application decided to subscribe to a new NATS JetStream.
-    ///
-    /// This will create a NATS consumer which will start downloading all persisted, past data from
-    /// that given stream before it'll observe new messages coming in.
-    async fn on_subscribe(
-        &mut self,
-        stream_name: String,
-        filter_subject: Option<String>,
-        topic: TopicId,
-    ) -> Result<()> {
-        debug!("subscribe to nats stream {} ..", stream_name);
-        let nats_rx = self
-            .nats
-            .subscribe(stream_name, filter_subject, topic)
-            .await?;
+    async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        let topic_query = match &publication {
+            Publication::Bucket { bucket_name: _ } => todo!(),
+            // When publishing we don't want to sync but only gossip. Only subscribing peers will
+            // want to initiate sync sessions with us.
+            //
+            // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
+            // implementation for more details.
+            Publication::Subject { subject, .. } => Query::NoSyncSubject {
+                public_key: subject.public_key(),
+            },
+        };
+
+        let topic_id = topic_query.id();
+        let network_rx = self.panda.subscribe(topic_query).await?;
+
+        let (_, nats_rx) = match publication {
+            Publication::Bucket { bucket_name: _ } => todo!(),
+            Publication::Subject {
+                stream_name,
+                subject,
+            } => {
+                self.nats
+                    .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
+                    .await?
+            }
+        };
+
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // trait which is required by `SelectAll`
+        // trait which is required by `SelectAll`.
         self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+
+        Ok(())
+    }
+
+    /// Callback when the application decided to subscribe to a new NATS message stream or S3
+    /// bucket.
+    async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
+        self.subscriptions.push(subscription.clone());
+        let network_rx = self.panda.subscribe(subscription.into()).await?;
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
         Ok(())
     }
 
     /// Handler for incoming events from the NATS stream consumer.
     async fn on_nats_event(&mut self, event: JetStreamEvent) -> Result<()> {
         match event {
-            JetStreamEvent::InitCompleted { topic, .. } => {
-                debug!("completed initialisation of stream");
-                self.on_nats_init_complete(topic).await?;
-            }
-            JetStreamEvent::InitFailed {
-                stream_name,
-                reason,
-                ..
+            JetStreamEvent::Message {
+                topic_id,
+                message,
+                is_init,
             } => {
-                bail!(
-                    "initialisation of stream '{}' failed: {}",
-                    stream_name,
-                    reason
-                );
+                self.on_nats_message(is_init, topic_id, message).await?;
             }
-            JetStreamEvent::StreamFailed {
+            JetStreamEvent::Failed {
                 stream_name,
                 reason,
                 ..
             } => {
                 bail!("stream '{}' failed: {}", stream_name, reason);
             }
-            JetStreamEvent::Message {
-                is_init,
-                topic,
-                payload,
-                ..
-            } => {
-                self.on_nats_message(is_init, topic, payload).await?;
+            JetStreamEvent::InitCompleted { .. } => {
+                // We do not handle sync sessions here which download all past messages first
+                // ("initialization"). This event get's anyhow called. This is why we're simply
+                // just ignoring it.
             }
         }
 
-        Ok(())
-    }
-
-    /// Callback when a NATS consumer has successfully streamed all persisted, past messages.
-    ///
-    /// From this point on we can join the p2panda gossip overlay for that given (filtered) subject
-    /// in this stream.
-    ///
-    /// p2panda will now find other nodes interested in the same "topic" and sync up with them.
-    async fn on_nats_init_complete(&mut self, topic: TopicId) -> Result<()> {
-        debug!("join gossip on topic {topic} ..");
-        let panda_rx = self.panda.subscribe(topic).await?;
-
-        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // trait which is required by `SelectAll`
-        self.p2panda_topic_rx.push(BroadcastStream::new(panda_rx));
         Ok(())
     }
 
     /// Handler for incoming messages from the NATS JetStream consumer.
     ///
-    /// Messages should contain p2panda operations which are decoded and validated here. When these
-    /// steps have been successful, the operation is stored in the in-memory cache of rhio.
-    ///
-    /// From here these operations are replicated further to other nodes via the sync protocol and
-    /// gossip broadcast.
+    /// From here we're broadcasting the NATS messages in the related gossip overlay network.
     async fn on_nats_message(
         &mut self,
         is_init: bool,
-        topic: TopicId,
-        payload: Vec<u8>,
+        topic_id: [u8; 32],
+        message: NatsMessage,
     ) -> Result<()> {
-        let (header, body) =
-            decode_operation(&payload).context("decode incoming operation via nats")?;
-        let operation = self
-            .panda
-            .ingest(header.clone(), body.clone())
-            .await
-            .context("ingest incoming operation via nats")?;
-
-        // Only forward the messages to external nodes _after_ initialisation (that is, downloading
-        // all persisted, past messages first)
-        if !is_init {
-            // @TODO(adz): For now we're naively just broadcasting the message further to other
-            // nodes, without checking if nodes came in late. This should be changed as soon as
-            // `p2panda-sync` is in place.
-            self.panda
-                .broadcast(header, body, topic)
-                .await
-                .context("broadcast incoming operation from nats")?;
+        // Ignore messages when they're from the past, at this point we're only forwarding new
+        // messages.
+        if is_init {
+            return Ok(());
         }
 
-        // Check if operation contains interesting information for rhio, for example blob
-        // announcements
-        self.process_operation(&operation)
+        debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
+        let network_message = NetworkMessage::new_nats(message);
+        self.panda
+            .broadcast(network_message.to_bytes(), topic_id)
             .await
-            .context("process incoming operation from nats")?;
-
+            .context("broadcast incoming operation from nats")?;
         Ok(())
     }
 
-    /// Handler for incoming p2panda operations from the p2p network.
-    ///
-    /// Operations at this stage are already validated and stored in the in-memory cache. In this
-    /// method they get forwarded to the NATS server for persistence and communication to other
-    /// processes.
-    async fn on_operation(&mut self, operation: Operation<RhioExtensions>) -> Result<()> {
-        // Check if operation contains interesting information for rhio, for example blob
-        // announcements
-        self.process_operation(&operation).await?;
-
-        // Forward operation to NATS server for persistence and communication to other processes
-        // subscribed to the same subject
-        let subject: Subject = operation
-            .header
-            .extract()
-            .ok_or(anyhow!("missing 'subject' field in header"))?;
-        let payload = encode_operation(operation.header, operation.body)?;
-        self.nats.publish(true, subject, payload).await?;
-
-        Ok(())
-    }
-
-    /// Looks at operation to identify if it causes any side-effects in rhio, for example
-    /// announcing new blobs.
-    ///
-    /// Every operation which passes rhio from either the NATS JetStream or p2panda network gets
-    /// processed at least once.
-    async fn process_operation(&mut self, operation: &Operation<RhioExtensions>) -> Result<()> {
-        let blob: Option<Hash> = operation.header.extract();
-        if let Some(hash) = blob {
-            match self.blobs.download_blob(hash).await {
-                // @TODO(adz): Would be nice here to identify if we already had that blob at this
-                // stage. This message will also pop up if no download happened (we had it
-                // already).
-                Ok(_) => debug!("syncing blob {} completed", hash),
-                Err(err) => {
-                    error!("failed syncing storing blob {}", hash);
-                    return Err(err);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn on_control_command(&self, command: NodeControl) -> Result<()> {
-        match command {
-            NodeControl::ImportBlob {
-                file_path,
-                reply_subject,
+    /// Handler for incoming events from the p2p network.
+    async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
+        let bytes = match event {
+            FromNetwork::GossipMessage {
+                bytes,
+                delivered_from,
             } => {
                 debug!(
-                    "received control command to import '{}'",
-                    file_path.display()
+                    source = "gossip",
+                    bytes = bytes.len(),
+                    delivered_from = %delivered_from,
+                    "received network message"
                 );
-                let hash = self.blobs.import_file(file_path.clone()).await?;
-                info!(
-                    "file import '{}' completed, the resulting hash is: {}",
-                    file_path.display(),
-                    hash
+                bytes
+            }
+            FromNetwork::SyncMessage {
+                header,
+                delivered_from,
+                ..
+            } => {
+                debug!(
+                    source = "sync",
+                    bytes = header.len(),
+                    delivered_from = %delivered_from,
+                    "received network message"
                 );
+                header
+            }
+        };
 
-                // If the control command requested a response via NATS Core, we will provide it!
-                if let Some(subject) = reply_subject {
-                    // Since NATS Core messages are never acknowledged ("fire and forget"), we set
-                    // the flag to "false" to never wait for an ACK
-                    self.nats
-                        .publish(false, subject.to_string(), hash.to_bytes())
-                        .await?;
+        let network_message = NetworkMessage::from_bytes(&bytes)?;
+        match network_message.payload {
+            NetworkPayload::BlobAnnouncement(_scoped_bucket) => todo!(),
+            NetworkPayload::NatsMessage(message) => {
+                // Filter out all incoming messages we're not subscribed to. This can happen
+                // especially when receiving messages over the gossip overlay as they are not
+                // necessarily for us.
+                let subject = message.subject.clone().try_into()?;
+                if !is_matching(&self.subscriptions, &subject) {
+                    return Ok(());
                 }
+
+                self.nats
+                    .publish(
+                        true,
+                        message.subject.to_string(),
+                        message.headers,
+                        message.payload.to_vec(),
+                    )
+                    .await?;
             }
         }
 
@@ -331,4 +288,20 @@ impl NodeActor {
         self.blobs.shutdown().await?;
         Ok(())
     }
+}
+
+fn is_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> bool {
+    for subscription in subscriptions {
+        match subscription {
+            Subscription::Bucket { .. } => continue,
+            Subscription::Subject { subject, .. } => {
+                if subject.is_matching(incoming) {
+                    return true;
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+    false
 }
