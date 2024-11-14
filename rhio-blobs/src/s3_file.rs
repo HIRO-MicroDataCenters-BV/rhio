@@ -231,21 +231,21 @@ mod tests {
     #[test]
     fn calculate_part_number() {
         let part_number = offset_to_part_number(MIN_PART_SIZE, 0);
-        assert_eq!(part_number, 0);
+        assert_eq!(part_number, 1);
 
         let part_number = offset_to_part_number(MIN_PART_SIZE, IROH_BLOCK_SIZE.bytes());
-        assert_eq!(part_number, 0);
+        assert_eq!(part_number, 1);
 
         let part_number = offset_to_part_number(MIN_PART_SIZE, IROH_BLOCK_SIZE.bytes() * 1000 - 1);
-        assert_eq!(part_number, 0);
+        assert_eq!(part_number, 1);
 
         let part_number = offset_to_part_number(MIN_PART_SIZE, IROH_BLOCK_SIZE.bytes() * 1000);
-        assert_eq!(part_number, 1);
+        assert_eq!(part_number, 2);
 
         let part_number = offset_to_part_number(MIN_PART_SIZE, IROH_BLOCK_SIZE.bytes() * 1000 + 1);
-        assert_eq!(part_number, 1);
+        assert_eq!(part_number, 2);
 
         let part_number = offset_to_part_number(MIN_PART_SIZE, IROH_BLOCK_SIZE.bytes() * 1000 * 6);
-        assert_eq!(part_number, 6);
+        assert_eq!(part_number, 7);
     }
 }
