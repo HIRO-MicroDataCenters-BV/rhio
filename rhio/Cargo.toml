@@ -10,7 +10,6 @@ name = "rhio"
 [dependencies]
 anyhow = "1.0.86"
 async-nats = "0.37.0"
-async-stream = "0.3.5"
 async-trait = "0.1.83"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
@@ -26,6 +25,7 @@ p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807
 p2panda-store = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 rand = "0.8.5"
+rhio-blobs = { path = "../rhio-blobs" }
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.34.0"
 serde = { version = "1.0.203", features = ["derive"] }
