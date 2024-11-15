@@ -43,6 +43,10 @@ impl S3Store {
         Ok(store)
     }
 
+    /// Initiate the store from the content of an s3 bucket.
+    /// 
+    /// This method looks at all `.meta` files present on the configured s3 bucket and inserts an
+    /// entry into the stores memory db for each one.
     async fn init(&mut self) -> anyhow::Result<()> {
         let results = self
             .bucket
@@ -65,14 +69,14 @@ impl S3Store {
         Ok(())
     }
 
-    /// Import and complete existing object from an s3 bucket.
-    ///
-    /// This method processes the object bytes, generates a BAO outboard file, uploads this back
-    /// to the s3 bucket adding the `.bao4` suffix, and then inserts the resulting Entry into an
-    /// in-memory store.
+    /// Import a new blob from the s3 store.
+    /// 
+    /// This method performs several discreet tasks:
+    /// - process all blob bytes and create an outboard `.bao4` file (this gives us the hash)
+    /// - create a `.meta` file based on the provided path, size and calculated hash
+    /// - upload both of these to the s3 bucket
+    /// - insert an `Entry` into the stores memory db to represent this new blob
     pub async fn import_object(&self, path: String, size: u64) -> anyhow::Result<()> {
-        // Create a new BAO file from existing data, this processes all bytes and uploads an
-        // outboard file to the s3 bucket.
         let (bao_file, meta) =
             BaoFileHandle::create_complete(self.bucket.clone(), path, size).await?;
         let entry = Entry::new(bao_file, meta);
@@ -80,6 +84,12 @@ impl S3Store {
         Ok(())
     }
 
+    /// Tell the store about a new blob we discovered on the network and would like to (at some
+    /// point) download.
+    /// 
+    /// Our store implementation expects that it knows about a blobs' path and size _before_
+    /// download of the blob actually occurs. This method is for informing the store of this
+    /// information, however it doesn't trigger download of the blob.
     pub async fn blob_discovered(
         &mut self,
         hash: Hash,
@@ -95,10 +105,11 @@ impl S3Store {
         };
         put_meta(&self.bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, size);
-        let entry: Entry = Entry::new(bao_file, meta);
+        let entry = Entry::new(bao_file, meta);
         Ok(self.write_lock().await.entries.insert(hash, entry))
     }
 
+    /// Query the store for all complete blobs.
     pub async fn complete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
         let entries = self.read_lock().await.entries.clone();
         entries
@@ -108,6 +119,7 @@ impl S3Store {
             .collect()
     }
 
+    /// Query the store for all incomplete blobs.
     pub async fn incomplete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
         let entries = self.read_lock().await.entries.clone();
         entries
