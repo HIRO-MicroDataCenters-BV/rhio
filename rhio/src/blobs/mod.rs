@@ -106,7 +106,7 @@ impl Blobs {
 
 /// Initiates and returns a blob store handler for S3 backends based on the rhio config.
 pub async fn store_from_config(config: &Config) -> Result<S3Store> {
-    let mut buckets: HashMap<String, Box<Bucket>> = HashMap::new();
+    let mut buckets: HashMap<String, Bucket> = HashMap::new();
 
     let credentials = config
         .s3
@@ -125,7 +125,7 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
         for bucket_name in &publish.s3_buckets {
             let bucket =
                 Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
-            buckets.insert(bucket_name.clone(), bucket);
+            buckets.insert(bucket_name.clone(), *bucket);
         }
     }
 
@@ -134,11 +134,11 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
             let bucket_name = scoped_bucket.bucket_name();
             let bucket =
                 Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
-            buckets.insert(bucket_name, bucket);
+            buckets.insert(bucket_name, *bucket);
         }
     }
 
-    let buckets: Vec<Box<Bucket>> = buckets.values().cloned().collect();
+    let buckets: Vec<Bucket> = buckets.values().cloned().collect();
     let store = S3Store::new(buckets)
         .await
         .context("could not initialize s3 interface")?;

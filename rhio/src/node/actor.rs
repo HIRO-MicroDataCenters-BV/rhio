@@ -42,6 +42,7 @@ pub struct NodeActor {
     nats: Nats,
     panda: Panda,
     blobs: Blobs,
+    #[allow(dead_code)]
     watcher: S3Watcher,
 }
 

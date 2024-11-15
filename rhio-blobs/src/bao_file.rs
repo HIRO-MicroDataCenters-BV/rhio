@@ -61,7 +61,7 @@ impl BaoFileHandle {
     ///
     /// This method returns a handle onto an incomplete BAO file using the expected paths. It
     /// doesn't create any files yet or transfer any data.
-    pub fn new(bucket: Box<Bucket>, paths: Paths, data_size: u64) -> Self {
+    pub fn new(bucket: Bucket, paths: Paths, data_size: u64) -> Self {
         Self {
             data: S3File::new(bucket.clone(), paths.data()),
             outboard: S3File::new(bucket.clone(), paths.outboard()),
@@ -77,7 +77,7 @@ impl BaoFileHandle {
     /// This method is for taking an existing blob and generating it's accompanying outboard file.
     /// It is useful when importing blobs from an s3 bucket directly into the store.
     pub async fn create_complete(
-        bucket: Box<Bucket>,
+        bucket: Bucket,
         path: String,
         size: u64,
     ) -> anyhow::Result<(Self, BaoMeta)> {
