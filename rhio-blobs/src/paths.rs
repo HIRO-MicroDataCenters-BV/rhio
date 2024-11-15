@@ -8,7 +8,7 @@ impl Paths {
         Self { path }
     }
     pub fn data(&self) -> String {
-        format!("{}", self.path)
+        self.path.to_string()
     }
     pub fn meta(&self) -> String {
         format!("{}.meta", self.path)

@@ -75,10 +75,7 @@ impl MultiPartBuffer {
     pub fn drain(&mut self) -> Vec<(usize, Vec<u8>)> {
         self.parts
             .drain()
-            .filter_map(|(part_number, buffer)| match buffer {
-                Some(buffer) => Some((part_number, buffer)),
-                None => None,
-            })
+            .filter_map(|(part_number, buffer)| buffer.map(|buffer| (part_number, buffer)))
             .collect()
     }
 }
@@ -195,7 +192,7 @@ fn offset_to_part_number(min_part_size: usize, offset: usize) -> usize {
 
 async fn upload_to_s3(
     bucket: &Bucket,
-    path: &String,
+    path: &str,
     bytes: Vec<u8>,
     part_number: usize,
     upload_id: Option<&String>,
@@ -204,7 +201,7 @@ async fn upload_to_s3(
         Some(id) => Ok::<_, anyhow::Error>(id.to_owned()),
         None => {
             let mpu = bucket
-                .initiate_multipart_upload(&path, "application/octet-stream")
+                .initiate_multipart_upload(path, "application/octet-stream")
                 .await?;
             Ok(mpu.upload_id.to_owned())
         }
@@ -213,7 +210,7 @@ async fn upload_to_s3(
     let part = bucket
         .put_multipart_chunk(
             bytes,
-            &path,
+            path,
             part_number as u32,
             &upload_id,
             "application/octet-stream",

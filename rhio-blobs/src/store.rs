@@ -131,40 +131,40 @@ impl S3Store {
 impl Store for S3Store {
     async fn import_file(
         &self,
-        path: std::path::PathBuf,
+        _path: std::path::PathBuf,
         _mode: ImportMode,
-        format: BlobFormat,
-        progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
+        _format: BlobFormat,
+        _progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
     ) -> io::Result<(TempTag, u64)> {
         unimplemented!()
     }
 
     async fn import_stream(
         &self,
-        mut data: impl Stream<Item = io::Result<Bytes>> + Unpin + Send + 'static,
-        format: BlobFormat,
-        progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
+        _data: impl Stream<Item = io::Result<Bytes>> + Unpin + Send + 'static,
+        _format: BlobFormat,
+        _progress: impl ProgressSender<Msg = ImportProgress> + IdGenerator,
     ) -> io::Result<(TempTag, u64)> {
         unimplemented!()
     }
 
-    async fn import_bytes(&self, bytes: Bytes, format: BlobFormat) -> io::Result<TempTag> {
+    async fn import_bytes(&self, _bytes: Bytes, _format: BlobFormat) -> io::Result<TempTag> {
         unimplemented!()
     }
 
-    async fn set_tag(&self, name: Tag, value: Option<HashAndFormat>) -> io::Result<()> {
+    async fn set_tag(&self, _name: Tag, _value: Option<HashAndFormat>) -> io::Result<()> {
         unimplemented!()
     }
 
-    async fn create_tag(&self, hash: HashAndFormat) -> io::Result<Tag> {
+    async fn create_tag(&self, _hash: HashAndFormat) -> io::Result<Tag> {
         unimplemented!()
     }
 
-    fn temp_tag(&self, tag: HashAndFormat) -> TempTag {
+    fn temp_tag(&self, _tag: HashAndFormat) -> TempTag {
         unimplemented!()
     }
 
-    async fn gc_run<G, Gut>(&self, config: GcConfig, protected_cb: G)
+    async fn gc_run<G, Gut>(&self, _config: GcConfig, _protected_cb: G)
     where
         G: Fn() -> Gut,
         Gut: Future<Output = BTreeSet<Hash>> + Send,
@@ -172,7 +172,7 @@ impl Store for S3Store {
         unimplemented!()
     }
 
-    async fn delete(&self, hashes: Vec<Hash>) -> io::Result<()> {
+    async fn delete(&self, _hashes: Vec<Hash>) -> io::Result<()> {
         unimplemented!()
     }
 
@@ -343,7 +343,7 @@ impl MapMut for S3Store {
         self.entry_status_sync(hash)
     }
 
-    fn entry_status_sync(&self, hash: &Hash) -> std::io::Result<iroh_blobs::store::EntryStatus> {
+    fn entry_status_sync(&self, _hash: &Hash) -> std::io::Result<iroh_blobs::store::EntryStatus> {
         unimplemented!()
     }
 
@@ -401,81 +401,11 @@ impl ReadableStore for S3Store {
 
     async fn export(
         &self,
-        hash: Hash,
-        target: std::path::PathBuf,
-        mode: iroh_blobs::store::ExportMode,
-        progress: ExportProgressCb,
+        _hash: Hash,
+        _target: std::path::PathBuf,
+        _mode: iroh_blobs::store::ExportMode,
+        _progress: ExportProgressCb,
     ) -> io::Result<()> {
         unimplemented!()
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-struct TempCounters {
-    /// number of raw temp tags for a hash
-    raw: u64,
-    /// number of hash seq temp tags for a hash
-    hash_seq: u64,
-}
-
-impl TempCounters {
-    fn counter(&mut self, format: BlobFormat) -> &mut u64 {
-        match format {
-            BlobFormat::Raw => &mut self.raw,
-            BlobFormat::HashSeq => &mut self.hash_seq,
-        }
-    }
-
-    fn inc(&mut self, format: BlobFormat) {
-        let counter = self.counter(format);
-        *counter = counter.checked_add(1).unwrap();
-    }
-
-    fn dec(&mut self, format: BlobFormat) {
-        let counter = self.counter(format);
-        *counter = counter.saturating_sub(1);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.raw == 0 && self.hash_seq == 0
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct TempCounterMap(std::collections::BTreeMap<Hash, TempCounters>);
-
-impl TempCounterMap {
-    fn inc(&mut self, value: &HashAndFormat) {
-        let HashAndFormat { hash, format } = value;
-        self.0.entry(*hash).or_default().inc(*format)
-    }
-
-    fn dec(&mut self, value: &HashAndFormat) {
-        let HashAndFormat { hash, format } = value;
-        let Some(counters) = self.0.get_mut(hash) else {
-            warn!("Decrementing non-existent temp tag");
-            return;
-        };
-        counters.dec(*format);
-        if counters.is_empty() {
-            self.0.remove(hash);
-        }
-    }
-
-    fn contains(&self, hash: &Hash) -> bool {
-        self.0.contains_key(hash)
-    }
-
-    fn keys(&self) -> impl Iterator<Item = HashAndFormat> {
-        let mut res = Vec::new();
-        for (k, v) in self.0.iter() {
-            if v.raw > 0 {
-                res.push(HashAndFormat::raw(*k));
-            }
-            if v.hash_seq > 0 {
-                res.push(HashAndFormat::hash_seq(*k));
-            }
-        }
-        res.into_iter()
     }
 }
