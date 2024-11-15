@@ -44,7 +44,7 @@ impl S3Store {
         Ok(store)
     }
 
-    /// Initiate the store from the content of an S3 bucket.
+    /// Initiate the store from the contents of given S3 buckets.
     ///
     /// This method looks at all `.meta` files present on the configured S3 buckets and establishes
     /// an index.
@@ -136,12 +136,10 @@ impl S3Store {
             .collect()
     }
 
-    /// Take a write lock on the store.
     async fn write_lock(&self) -> RwLockWriteGuard<'_, StateInner> {
         self.inner.0.write().await
     }
 
-    /// Take a read lock on the store.
     async fn read_lock(&self) -> RwLockReadGuard<'_, StateInner> {
         self.inner.0.read().await
     }
