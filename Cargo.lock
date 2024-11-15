@@ -260,11 +260,11 @@ dependencies = [
 
 [[package]]
 name = "attohttpc"
-version = "0.26.1"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f77d243921b0979fbbd728dd2d5162e68ac8252976797c24eb5b3a6af9090dc"
+checksum = "9a13149d0cf3f7f9b9261fad4ec63b2efbf9a80665f52def86282d26255e6331"
 dependencies = [
- "http 0.2.12",
+ "http 1.1.0",
  "log",
  "native-tls",
  "serde",
@@ -280,11 +280,11 @@ checksum = "0c4b4d0bd25bd0b74681c0ad21497610ce1b7c91b1022cd21c80c6fbdd9476b0"
 
 [[package]]
 name = "aws-creds"
-version = "0.36.0"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "390ad3b77f3e21e01a4a0355865853b681daf1988510b0b15e31c0c4ae7eb0f6"
+checksum = "7f84143206b9c72b3c5cb65415de60c7539c79cd1559290fddec657939131be0"
 dependencies = [
- "attohttpc 0.26.1",
+ "attohttpc 0.28.0",
  "home",
  "log",
  "quick-xml",
@@ -791,7 +791,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
 dependencies = [
  "cfg-if",
- "hashbrown 0.14.5",
+ "hashbrown",
  "lock_api",
  "once_cell",
  "parking_lot_core",
@@ -1536,12 +1536,6 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
-
-[[package]]
-name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
@@ -1555,7 +1549,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
 dependencies = [
- "hashbrown 0.14.5",
+ "hashbrown",
 ]
 
 [[package]]
@@ -2078,7 +2072,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93ead53efc7ea8ed3cfb0c79fc8023fbb782a5432b52830b6518941cebe6505c"
 dependencies = [
  "equivalent",
- "hashbrown 0.14.5",
+ "hashbrown",
 ]
 
 [[package]]
@@ -3002,12 +2996,12 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "ordered-multimap"
-version = "0.6.0"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ed8acf08e98e744e5384c8bc63ceb0364e68a6854187221c18df61c4797690e"
+checksum = "49203cdcae0030493bad186b28da2fa25645fa276a51b6fec8010d281e02ef79"
 dependencies = [
  "dlv-list",
- "hashbrown 0.13.2",
+ "hashbrown",
 ]
 
 [[package]]
@@ -3055,7 +3049,7 @@ dependencies = [
  "iroh-io",
  "iroh-net",
  "num_cpus",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-net",
  "p2panda-sync",
  "serde",
@@ -3064,21 +3058,6 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
-]
-
-[[package]]
-name = "p2panda-core"
-version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?branch=v2#6b573408e8d977701fdb627023b818b7d33bc9bd"
-dependencies = [
- "blake3",
- "ciborium",
- "ed25519-dalek",
- "hex",
- "rand 0.8.5",
- "serde",
- "serde_bytes",
- "thiserror 1.0.63",
 ]
 
 [[package]]
@@ -3122,7 +3101,7 @@ dependencies = [
  "ciborium",
  "futures-channel",
  "futures-util",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-store",
  "pin-project",
  "pin-utils",
@@ -3144,7 +3123,7 @@ dependencies = [
  "iroh-gossip",
  "iroh-net",
  "iroh-quinn",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-discovery",
  "p2panda-sync",
  "rand 0.8.5",
@@ -3161,7 +3140,7 @@ name = "p2panda-store"
 version = "0.1.0"
 source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9#14e45f807d800c79a3caa5d918b99d83f6e0cce9"
 dependencies = [
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "trait-variant",
 ]
 
@@ -3172,7 +3151,7 @@ source = "git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d
 dependencies = [
  "async-trait",
  "futures",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-store",
  "serde",
  "thiserror 1.0.63",
@@ -3681,9 +3660,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quick-xml"
-version = "0.30.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eff6510e86862b57b210fd8cbe8ed3f0d7d600b9c2863cd4549a2e033c66e956"
+checksum = "1d3a6e5838b60e0e8fa7a43f22ade549a37d61f8bdbe636d0d7816191de969c2"
 dependencies = [
  "memchr",
  "serde",
@@ -4105,7 +4084,7 @@ dependencies = [
  "hex",
  "iroh-blobs",
  "p2panda-blobs",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-engine",
  "p2panda-net",
  "p2panda-store",
@@ -4131,7 +4110,7 @@ dependencies = [
  "futures-lite 2.5.0",
  "iroh-blobs",
  "iroh-io",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?branch=v2)",
+ "p2panda-core",
  "rust-s3",
  "thiserror 2.0.3",
  "tokio",
@@ -4148,7 +4127,7 @@ dependencies = [
  "ciborium",
  "constcat",
  "hex",
- "p2panda-core 0.1.0 (git+https://github.com/p2panda/p2panda.git?rev=14e45f807d800c79a3caa5d918b99d83f6e0cce9)",
+ "p2panda-core",
  "p2panda-engine",
  "p2panda-store",
  "p2panda-sync",
@@ -4213,24 +4192,25 @@ dependencies = [
 
 [[package]]
 name = "rust-ini"
-version = "0.19.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e2a3bcec1f113553ef1c88aae6c020a369d03d55b58de9869a0908930385091"
+checksum = "4e310ef0e1b6eeb79169a1171daf9abcb87a2e17c03bee2c4bb100b55c75409f"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
+ "trim-in-place",
 ]
 
 [[package]]
 name = "rust-s3"
-version = "0.34.0"
+version = "0.35.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6679da8efaf4c6f0c161de0961dfe95fb6e9049c398d6fbdada2639f053aedb"
+checksum = "c3df3f353b1f4209dcf437d777cda90279c397ab15a0cd6fd06bd32c88591533"
 dependencies = [
  "async-trait",
  "aws-creds",
  "aws-region",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bytes",
  "cfg-if",
  "futures",
@@ -5284,7 +5264,7 @@ dependencies = [
  "futures-io",
  "futures-sink",
  "futures-util",
- "hashbrown 0.14.5",
+ "hashbrown",
  "pin-project-lite",
  "slab",
  "tokio",
@@ -5433,6 +5413,12 @@ dependencies = [
  "quote",
  "syn 2.0.87",
 ]
+
+[[package]]
+name = "trim-in-place"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "343e926fc669bc8cde4fa3129ab681c63671bae288b1f1081ceee6d9d37904fc"
 
 [[package]]
 name = "try-lock"

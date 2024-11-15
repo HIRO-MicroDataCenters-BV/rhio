@@ -63,8 +63,9 @@ impl Node {
 
         // 3. Configure and set up S3 store and connection handlers for blob replication.
         let blob_store = store_from_config(&config).await?;
-        let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
-        let blobs = Blobs::new(config.s3.clone(), blobs_handler);
+        let (network, blobs_handler) =
+            BlobsHandler::from_builder(builder, blob_store.clone()).await?;
+        let blobs = Blobs::new(config.s3.clone(), blob_store, blobs_handler);
 
         // 4. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
         //    data replication and gossipping.

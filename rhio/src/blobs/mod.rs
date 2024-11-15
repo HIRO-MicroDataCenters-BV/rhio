@@ -1,4 +1,5 @@
 mod actor;
+mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -19,6 +20,7 @@ use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
+use crate::blobs::watcher::S3Watcher;
 use crate::config::{Config, S3Config};
 use crate::topic::Query;
 use crate::JoinErrToStr;
@@ -27,12 +29,17 @@ use crate::JoinErrToStr;
 pub struct Blobs {
     config: S3Config,
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
+    watcher: S3Watcher,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Blobs {
-    pub fn new<S: Store>(config: S3Config, blobs_handler: BlobsHandler<Query, S>) -> Self {
+    pub fn new<S: Store>(
+        config: S3Config,
+        blob_store: S3Store,
+        blobs_handler: BlobsHandler<Query, S>,
+    ) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
         let blobs_actor = BlobsActor::new(blobs_handler, blobs_actor_rx);
         let pool = LocalPoolHandle::new(1);
@@ -43,6 +50,8 @@ impl Blobs {
             }
         });
 
+        let watcher = S3Watcher::new(blob_store);
+
         let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
             .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
             .shared();
@@ -50,6 +59,7 @@ impl Blobs {
         Self {
             config,
             blobs_actor_tx,
+            watcher,
             actor_handle: actor_drop_handle,
         }
     }
@@ -118,7 +128,7 @@ impl Blobs {
 
 /// Initiates and returns a blob store handler for S3 backends based on the rhio config.
 pub async fn store_from_config(config: &Config) -> Result<S3Store> {
-    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+    let mut buckets: HashMap<String, Box<Bucket>> = HashMap::new();
 
     let credentials = config
         .s3
@@ -126,17 +136,17 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
         .as_ref()
         .ok_or(anyhow!("s3 credentials are not set"))
         .context("reading s3 credentials from config")?;
-    let region: Region = config
-        .s3
-        .region
-        .parse()
-        .context("parsing s3 region given from config")?;
+    let region: Region = Region::Custom {
+        region: config.s3.region.clone(),
+        endpoint: config.s3.endpoint.clone(),
+    };
 
     // Merge all buckets mentioned in the regarding publish and subscribe config sections and
     // de-duplicate them. On this level we want them to be all handled by the same interface.
     if let Some(publish) = &config.publish {
         for bucket_name in &publish.s3_buckets {
-            let bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())?;
+            let bucket =
+                Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
             buckets.insert(bucket_name.clone(), bucket);
         }
     }
@@ -144,14 +154,16 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
     if let Some(subscribe) = &config.subscribe {
         for scoped_bucket in &subscribe.s3_buckets {
             let bucket_name = scoped_bucket.bucket_name();
-            let bucket = Bucket::new(&bucket_name, region.clone(), credentials.clone())?;
+            let bucket =
+                Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
             buckets.insert(bucket_name, bucket);
         }
     }
 
-    let store = S3Store::new(buckets.values().cloned().collect())
+    let buckets: Vec<Box<Bucket>> = buckets.values().cloned().collect();
+    let store = S3Store::new(buckets)
         .await
-        .context("create S3 store handler")?;
+        .context("could not initialize s3 interface")?;
 
     Ok(store)
 }

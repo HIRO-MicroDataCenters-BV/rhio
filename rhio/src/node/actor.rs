@@ -131,13 +131,15 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        // When publishing we don't want to sync but only gossip. Only subscribing peers will want
+        // to initiate sync sessions with us.
+        //
+        // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
+        // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { bucket_name: _ } => todo!(),
-            // When publishing we don't want to sync but only gossip. Only subscribing peers will
-            // want to initiate sync sessions with us.
-            //
-            // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
-            // implementation for more details.
+            Publication::Bucket { bucket_name: _ } => Query::NoSyncSubject {
+                public_key: self.panda.node_id,
+            },
             Publication::Subject { subject, .. } => Query::NoSyncSubject {
                 public_key: subject.public_key(),
             },
@@ -146,21 +148,24 @@ impl NodeActor {
         let topic_id = topic_query.id();
         let network_rx = self.panda.subscribe(topic_query).await?;
 
-        let (_, nats_rx) = match publication {
-            Publication::Bucket { bucket_name: _ } => todo!(),
+        match publication {
+            Publication::Bucket { bucket_name: _ } => {
+                // @TODO
+            }
             Publication::Subject {
                 stream_name,
                 subject,
             } => {
-                self.nats
+                let (_, nats_rx) = self
+                    .nats
                     .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
-                    .await?
+                    .await?;
+                self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
             }
         };
 
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
-        self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
         self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
 
         Ok(())
