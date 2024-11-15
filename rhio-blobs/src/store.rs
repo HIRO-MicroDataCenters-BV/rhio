@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use futures_lite::Stream;
@@ -17,6 +17,7 @@ use iroh_blobs::{store::Store, BlobFormat, Hash, HashAndFormat};
 use iroh_blobs::{Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
+use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::warn;
 
 use crate::bao_file::{get_meta, put_meta, BaoFileHandle, BaoMeta};
@@ -56,7 +57,7 @@ impl S3Store {
                     let paths = Paths::new(meta.path.clone());
                     let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, meta.size);
                     let entry = Entry::new(bao_file, meta);
-                    self.write_lock().entries.insert(entry.hash(), entry);
+                    self.write_lock().await.entries.insert(entry.hash(), entry);
                 };
             }
         }
@@ -75,7 +76,7 @@ impl S3Store {
         let (bao_file, meta) =
             BaoFileHandle::create_complete(self.bucket.clone(), path, size).await?;
         let entry = Entry::new(bao_file, meta);
-        self.write_lock().entries.insert(entry.hash(), entry);
+        self.write_lock().await.entries.insert(entry.hash(), entry);
         Ok(())
     }
 
@@ -95,33 +96,35 @@ impl S3Store {
         put_meta(&self.bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, size);
         let entry: Entry = Entry::new(bao_file, meta);
-        Ok(self.write_lock().entries.insert(hash, entry))
+        Ok(self.write_lock().await.entries.insert(hash, entry))
     }
 
-    pub fn complete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
-        let entries = self.read_lock().entries.clone();
+    pub async fn complete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
+        let entries = self.read_lock().await.entries.clone();
         entries
             .into_values()
             .filter(|x| x.meta.complete)
-            .map(|x| (x.hash(), x.paths, x.meta.size)).collect()
+            .map(|x| (x.hash(), x.paths, x.meta.size))
+            .collect()
     }
 
-    pub fn incomplete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
-        let entries = self.read_lock().entries.clone();
+    pub async fn incomplete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
+        let entries = self.read_lock().await.entries.clone();
         entries
             .into_values()
             .filter(|x| !x.meta.complete)
-            .map(|x| (x.hash(), x.paths, x.meta.size)).collect()
+            .map(|x| (x.hash(), x.paths, x.meta.size))
+            .collect()
     }
 
     /// Take a write lock on the store
-    fn write_lock(&self) -> RwLockWriteGuard<'_, StateInner> {
-        self.inner.0.write().unwrap()
+    async fn write_lock(&self) -> RwLockWriteGuard<'_, StateInner> {
+        self.inner.0.write().await
     }
 
     /// Take a read lock on the store
-    fn read_lock(&self) -> RwLockReadGuard<'_, StateInner> {
-        self.inner.0.read().unwrap()
+    async fn read_lock(&self) -> RwLockReadGuard<'_, StateInner> {
+        self.inner.0.read().await
     }
 }
 
@@ -202,6 +205,7 @@ impl Entry {
         Entry {
             inner: Arc::new(EntryInner {
                 hash: meta.hash,
+                size: meta.size,
                 data: RwLock::new(bao_file),
             }),
             meta,
@@ -213,6 +217,7 @@ impl Entry {
 #[derive(Debug)]
 struct EntryInner {
     hash: Hash,
+    size: u64,
     data: RwLock<BaoFileHandle>,
 }
 
@@ -222,7 +227,7 @@ impl MapEntry for Entry {
     }
 
     fn size(&self) -> BaoBlobSize {
-        let size = self.inner.data.read().unwrap().data_len();
+        let size = self.inner.size;
         BaoBlobSize::new(size, self.meta.complete)
     }
 
@@ -231,7 +236,7 @@ impl MapEntry for Entry {
     }
 
     async fn outboard(&self) -> io::Result<impl Outboard> {
-        let size = self.inner.data.read().unwrap().data_len();
+        let size = self.inner.data.read().await.data_len();
         Ok(PreOrderOutboard {
             root: self.hash().into(),
             tree: BaoTree::new(size, IROH_BLOCK_SIZE),
@@ -254,11 +259,11 @@ struct DataReader(Arc<EntryInner>);
 
 impl AsyncSliceReader for DataReader {
     async fn read_at(&mut self, offset: u64, len: usize) -> std::io::Result<Bytes> {
-        self.0.data.read().unwrap().read_data_at(offset, len).await
+        self.0.data.read().await.read_data_at(offset, len).await
     }
 
     async fn size(&mut self) -> std::io::Result<u64> {
-        let size = self.0.data.read().unwrap().data_len();
+        let size = self.0.data.read().await.data_len();
         Ok(size)
     }
 }
@@ -267,22 +272,17 @@ struct OutboardReader(Arc<EntryInner>);
 
 impl AsyncSliceReader for OutboardReader {
     async fn read_at(&mut self, offset: u64, len: usize) -> std::io::Result<Bytes> {
-        self.0
-            .data
-            .read()
-            .unwrap()
-            .read_outboard_at(offset, len)
-            .await
+        self.0.data.read().await.read_outboard_at(offset, len).await
     }
 
     async fn size(&mut self) -> std::io::Result<u64> {
         self.0
             .data
             .read()
-            .unwrap()
+            .await
             .outboard_len()
             .await
-            .map_err(|err| io::Error::other(err))
+            .map_err(io::Error::other)
     }
 }
 
@@ -295,7 +295,7 @@ impl BaoBatchWriter for BatchWriter {
         size: u64,
         batch: Vec<iroh_blobs::store::bao_tree::io::fsm::BaoContentItem>,
     ) -> io::Result<()> {
-        let result = self.0.data.write().unwrap().write_batch(size, &batch).await;
+        let result = self.0.data.write().await.write_batch(size, &batch).await;
         if let Err(err) = result {
             warn!("Error writing BAO content: {err}");
             Err(io::Error::other(err))
@@ -309,13 +309,8 @@ impl BaoBatchWriter for BatchWriter {
     /// MUST be called once all bytes have been processed via `write_batch` in order to complete the
     /// underlying multipart upload.
     async fn sync(&mut self) -> io::Result<()> {
-        self.0
-            .data
-            .write()
-            .unwrap()
-            .complete()
-            .await
-            .map_err(io::Error::other)
+        let mut data = self.0.data.write().await;
+        data.complete().await.map_err(io::Error::other)
     }
 }
 
@@ -323,7 +318,7 @@ impl Map for S3Store {
     type Entry = Entry;
 
     async fn get(&self, hash: &Hash) -> std::io::Result<Option<Self::Entry>> {
-        Ok(self.inner.0.read().unwrap().entries.get(hash).cloned())
+        Ok(self.read_lock().await.entries.get(hash).cloned())
     }
 }
 
@@ -349,16 +344,7 @@ impl MapMut for S3Store {
     }
 
     fn entry_status_sync(&self, hash: &Hash) -> std::io::Result<iroh_blobs::store::EntryStatus> {
-        Ok(match self.inner.0.read().unwrap().entries.get(hash) {
-            Some(entry) => {
-                if entry.meta.complete {
-                    iroh_blobs::store::EntryStatus::Complete
-                } else {
-                    iroh_blobs::store::EntryStatus::Partial
-                }
-            }
-            None => iroh_blobs::store::EntryStatus::NotFound,
-        })
+        unimplemented!()
     }
 
     async fn insert_complete(&self, mut entry: Entry) -> std::io::Result<()> {
@@ -369,7 +355,7 @@ impl MapMut for S3Store {
             .map_err(io::Error::other)?;
 
         let hash = entry.hash();
-        let mut inner = self.inner.0.write().unwrap();
+        let mut inner = self.write_lock().await;
         inner.entries.insert(hash, entry);
 
         Ok(())
@@ -378,7 +364,7 @@ impl MapMut for S3Store {
 
 impl ReadableStore for S3Store {
     async fn blobs(&self) -> io::Result<iroh_blobs::store::DbIter<Hash>> {
-        let entries = self.read_lock().entries.clone();
+        let entries = self.read_lock().await.entries.clone();
         Ok(Box::new(
             entries
                 .into_values()
@@ -388,7 +374,7 @@ impl ReadableStore for S3Store {
     }
 
     async fn partial_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<Hash>> {
-        let entries = self.read_lock().entries.clone();
+        let entries = self.read_lock().await.entries.clone();
         Ok(Box::new(
             entries
                 .into_values()
