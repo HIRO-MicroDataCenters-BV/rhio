@@ -1,4 +1,5 @@
 pub const META_SUFFIX: &str = ".meta";
+pub const OUTBOARD_SUFFIX: &str = ".bao4";
 
 #[derive(Debug, Clone)]
 pub struct Paths {
@@ -19,6 +20,6 @@ impl Paths {
     }
 
     pub fn outboard(&self) -> String {
-        format!("{}.bao4", self.path)
+        format!("{}{OUTBOARD_SUFFIX}", self.path)
     }
 }
