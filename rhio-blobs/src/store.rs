@@ -22,7 +22,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::warn;
 
 use crate::bao_file::{get_meta, put_meta, BaoFileHandle, BaoMeta};
-use crate::paths::Paths;
+use crate::paths::{Paths, META_SUFFIX};
 
 /// An s3 backed iroh blobs store.
 ///
@@ -54,12 +54,11 @@ impl S3Store {
     /// an index.
     async fn init(&mut self) -> Result<()> {
         for bucket in &self.buckets {
-            println!("{:?}", bucket);
             let results = bucket.list("/".to_string(), None).await?;
 
             for list in results {
                 for object in list.contents {
-                    if object.key.ends_with(".meta") {
+                    if object.key.ends_with(META_SUFFIX) {
                         let meta = get_meta(bucket, object.key).await?;
                         let paths = Paths::new(meta.path.clone());
                         let bao_file = BaoFileHandle::new(bucket.clone(), paths, meta.size);
