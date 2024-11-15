@@ -10,8 +10,8 @@ impl Paths {
     pub fn data(&self) -> String {
         format!("{}", self.path)
     }
-    pub fn temp_data(&self) -> String {
-        format!("{}.parts", self.path)
+    pub fn meta(&self) -> String {
+        format!("{}.meta", self.path)
     }
     pub fn outboard(&self) -> String {
         format!("{}.bao4", self.path)
