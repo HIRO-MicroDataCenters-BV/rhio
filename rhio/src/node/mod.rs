@@ -8,13 +8,12 @@ use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
-use rhio_blobs::S3Store;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
-use crate::blobs::Blobs;
+use crate::blobs::{store_from_config, Blobs};
 use crate::config::Config;
 use crate::nats::Nats;
 use crate::network::sync::RhioSyncProtocol;
@@ -63,8 +62,7 @@ impl Node {
             .sync(sync_protocol);
 
         // 3. Configure and set up S3 store and connection handlers for blob replication.
-        // @TODO: What bucket to use here?
-        let blob_store = S3Store::new();
+        let blob_store = store_from_config(&config).await?;
         let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
         let blobs = Blobs::new(config.s3.clone(), blobs_handler);
 

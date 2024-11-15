@@ -1,21 +1,25 @@
 mod actor;
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use async_nats::jetstream::publish;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use s3::Region;
+use rhio_blobs::S3Store;
+use s3::creds::Credentials;
+use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
-use crate::config::S3Config;
+use crate::config::{Config, S3Config};
 use crate::topic::Query;
 use crate::JoinErrToStr;
 
@@ -48,32 +52,6 @@ impl Blobs {
             blobs_actor_tx,
             actor_handle: actor_drop_handle,
         }
-    }
-
-    /// Import a file into the node's blob store on the file system and sync it with the internal
-    /// MinIO database.
-    // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
-    // for the file. This is the only way to retrieve the blob hash right now. In the future we
-    // want to do all of this inside of MinIO and skip loading the file onto the file-system
-    // first.
-    // Related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
-    pub async fn import_file(&self, file_path: PathBuf) -> Result<Hash> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ImportFile { file_path, reply })
-            .await?;
-        let hash = reply_rx.await??;
-
-        self.export_blob_minio(
-            hash,
-            self.config.region.clone(),
-            self.config.endpoint.clone(),
-            // @TODO: Remove this placeholder
-            "placeholder".to_string(),
-        )
-        .await?;
-
-        Ok(hash)
     }
 
     /// Export a blob to a minio bucket.
@@ -136,4 +114,44 @@ impl Blobs {
         reply_rx.await?;
         Ok(())
     }
+}
+
+/// Initiates and returns a blob store handler for S3 backends based on the rhio config.
+pub async fn store_from_config(config: &Config) -> Result<S3Store> {
+    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+
+    let credentials = config
+        .s3
+        .credentials
+        .as_ref()
+        .ok_or(anyhow!("s3 credentials are not set"))
+        .context("reading s3 credentials from config")?;
+    let region: Region = config
+        .s3
+        .region
+        .parse()
+        .context("parsing s3 region given from config")?;
+
+    // Merge all buckets mentioned in the regarding publish and subscribe config sections and
+    // de-duplicate them. On this level we want them to be all handled by the same interface.
+    if let Some(publish) = &config.publish {
+        for bucket_name in &publish.s3_buckets {
+            let bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())?;
+            buckets.insert(bucket_name.clone(), bucket);
+        }
+    }
+
+    if let Some(subscribe) = &config.subscribe {
+        for scoped_bucket in &subscribe.s3_buckets {
+            let bucket_name = scoped_bucket.bucket_name();
+            let bucket = Bucket::new(&bucket_name, region.clone(), credentials.clone())?;
+            buckets.insert(bucket_name, bucket);
+        }
+    }
+
+    let store = S3Store::new(buckets.values().cloned().collect())
+        .await
+        .context("create S3 store handler")?;
+
+    Ok(store)
 }

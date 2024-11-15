@@ -100,6 +100,10 @@ impl S3File {
         }
     }
 
+    pub fn bucket_name(&self) -> String {
+        self.bucket.name()
+    }
+
     /// Write a byte buffer into the file at a particular offset.
     ///
     /// TODO: A current limitation of this implementation is that bytes are expected to be written
