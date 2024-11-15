@@ -33,15 +33,18 @@ pub struct S3Store {
 
 impl S3Store {
     /// Create a new in memory store
-    pub fn new(bucket: Bucket) -> Self {
-        Self {
+    pub async fn new(bucket: Bucket) -> anyhow::Result<Self> {
+        let mut store = Self {
             bucket,
             inner: Default::default(),
-        }
+        };
+        store.init().await?;
+        Ok(store)
     }
 
-    pub async fn populate_store(&mut self, bucket: Bucket) -> anyhow::Result<()> {
-        let results = bucket
+    async fn init(&mut self) -> anyhow::Result<()> {
+        let results = self
+            .bucket
             .list("/".to_string(), None)
             .await
             .map_err(io::Error::other)?;
@@ -49,10 +52,10 @@ impl S3Store {
         for list in results {
             for object in list.contents {
                 if object.key.ends_with(".meta") {
-                    let meta = get_meta(&bucket, object.key).await?;
+                    let meta = get_meta(&self.bucket, object.key).await?;
                     let paths = Paths::new(meta.path.clone());
-                    let bao_file = BaoFileHandle::new(bucket.clone(), paths, meta.size);
-                    let entry: Entry = Entry::new(bao_file, meta);
+                    let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, meta.size);
+                    let entry = Entry::new(bao_file, meta);
                     self.write_lock().entries.insert(entry.hash(), entry);
                 };
             }
