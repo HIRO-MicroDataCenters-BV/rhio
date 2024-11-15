@@ -92,11 +92,30 @@ impl S3Store {
             size,
             complete: false,
         };
-
         put_meta(&self.bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, size);
         let entry: Entry = Entry::new(bao_file, meta);
         Ok(self.write_lock().entries.insert(hash, entry))
+    }
+
+    pub fn complete_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BaoMeta>> {
+        let entries = self.read_lock().entries.clone();
+        Ok(Box::new(
+            entries
+                .into_values()
+                .filter(|x| x.meta.complete)
+                .map(|x| Ok(x.meta)),
+        ))
+    }
+
+    pub fn incomplete_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BaoMeta>> {
+        let entries = self.read_lock().entries.clone();
+        Ok(Box::new(
+            entries
+                .into_values()
+                .filter(|x| !x.meta.complete)
+                .map(|x| Ok(x.meta)),
+        ))
     }
 
     /// Take a write lock on the store
