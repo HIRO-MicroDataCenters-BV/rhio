@@ -98,24 +98,20 @@ impl S3Store {
         Ok(self.write_lock().entries.insert(hash, entry))
     }
 
-    pub fn complete_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BaoMeta>> {
+    pub fn complete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
         let entries = self.read_lock().entries.clone();
-        Ok(Box::new(
-            entries
-                .into_values()
-                .filter(|x| x.meta.complete)
-                .map(|x| Ok(x.meta)),
-        ))
+        entries
+            .into_values()
+            .filter(|x| x.meta.complete)
+            .map(|x| (x.hash(), x.paths, x.meta.size)).collect()
     }
 
-    pub fn incomplete_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BaoMeta>> {
+    pub fn incomplete_blobs(&self) -> Vec<(Hash, Paths, u64)> {
         let entries = self.read_lock().entries.clone();
-        Ok(Box::new(
-            entries
-                .into_values()
-                .filter(|x| !x.meta.complete)
-                .map(|x| Ok(x.meta)),
-        ))
+        entries
+            .into_values()
+            .filter(|x| !x.meta.complete)
+            .map(|x| (x.hash(), x.paths, x.meta.size)).collect()
     }
 
     /// Take a write lock on the store
@@ -195,18 +191,21 @@ struct StateInner {
 /// An in memory entry
 #[derive(Debug, Clone)]
 pub struct Entry {
-    meta: BaoMeta,
+    pub meta: BaoMeta,
+    pub paths: Paths,
     inner: Arc<EntryInner>,
 }
 
 impl Entry {
     pub fn new(bao_file: BaoFileHandle, meta: BaoMeta) -> Self {
+        let paths = Paths::new(meta.path.clone());
         Entry {
             inner: Arc::new(EntryInner {
                 hash: meta.hash,
                 data: RwLock::new(bao_file),
             }),
             meta,
+            paths,
         }
     }
 }
