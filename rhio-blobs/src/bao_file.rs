@@ -3,16 +3,13 @@ use bytes::{Bytes, BytesMut};
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
 use iroh_blobs::store::bao_tree::BaoTree;
-use iroh_blobs::Hash;
-
-use iroh_blobs::IROH_BLOCK_SIZE;
+use iroh_blobs::{Hash, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use serde::{Deserialize, Serialize};
 
 use crate::paths::Paths;
-
-use super::s3_file::S3File;
+use crate::s3_file::S3File;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BaoMeta {

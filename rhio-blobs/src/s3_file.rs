@@ -176,7 +176,7 @@ impl S3File {
         };
 
         debug!(
-            path = %self.path,
+            key = %self.path,
             num_parts = %self.uploaded_parts.len(),
             bytes = %self.buffer.processed_bytes,
             "upload complete",
