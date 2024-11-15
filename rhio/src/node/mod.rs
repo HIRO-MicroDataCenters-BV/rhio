@@ -5,9 +5,10 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::{Blobs as BlobsHandler, MemoryStore as BlobsMemoryStore};
+use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
+use rhio_blobs::S3Store;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -61,9 +62,9 @@ impl Node {
             .private_key(private_key.clone())
             .sync(sync_protocol);
 
-        // 3. Configure and set up blob store and connection handlers for blob replication.
-        // @TODO: Will be removed soon.
-        let blob_store = BlobsMemoryStore::new();
+        // 3. Configure and set up S3 store and connection handlers for blob replication.
+        // @TODO: What bucket to use here?
+        let blob_store = S3Store::new();
         let (network, blobs_handler) = BlobsHandler::from_builder(builder, blob_store).await?;
         let blobs = Blobs::new(config.s3.clone(), blobs_handler);
 
