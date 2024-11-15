@@ -82,8 +82,8 @@ mod tests {
         let public_key = private_key.public_key();
         let mut header = NetworkMessage {
             payload: NetworkPayload::BlobAnnouncement(ScopedBucket::new(
-                public_key,
                 "my_bucket".into(),
+                public_key,
             )),
             signature: None,
         };

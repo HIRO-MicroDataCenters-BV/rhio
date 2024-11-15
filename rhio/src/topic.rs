@@ -145,15 +145,15 @@ mod tests {
 
         // Buckets use "bucket name" as gossip topic id.
         let subscription_0: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_2, "icecreams"),
+            bucket: ScopedBucket::new("icecreams", public_key_2),
         }
         .into();
         let subscription_1: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_1, "icecreams"),
+            bucket: ScopedBucket::new("icecreams", public_key_1),
         }
         .into();
         let subscription_2: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_1, "airplanes"),
+            bucket: ScopedBucket::new("airplanes", public_key_1),
         }
         .into();
         assert_eq!(subscription_0.id(), subscription_1.id());
