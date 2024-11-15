@@ -8,9 +8,6 @@ use rhio_blobs::{
 use tokio::sync::{broadcast, RwLock};
 use tracing::debug;
 
-#[derive(Clone, Debug)]
-pub enum S3WatcherEvent {}
-
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
 
 const NO_PREFIX: String = String::new(); // Empty string.
@@ -70,7 +67,7 @@ impl S3Watcher {
         }));
 
         let watcher = Self {
-            event_tx,
+            event_tx: event_tx.clone(),
             inner: inner.clone(),
         };
 
@@ -134,7 +131,11 @@ impl S3Watcher {
                             // as soon as a new object was completed.
                             if is_new && !first_run {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected newly completed S3 object");
-                                // @TODO: Send event, this object was just completed.
+                                event_tx.send(S3WatcherEvent::ShareableBlobDetected(
+                                    hash,
+                                    size,
+                                    path.data(),
+                                ));
                             }
                         }
 
@@ -143,7 +144,10 @@ impl S3Watcher {
                         for object in maybe_to_be_imported {
                             if !inner.completed.contains(&object) {
                                 debug!(key = %object.key, size = %object.size, "detected new S3 object, needs to be imported");
-                                // @TODO: Send event, this object has not yet been imported!
+                                event_tx.send(S3WatcherEvent::NewLocalBlobDetected(
+                                    object.size,
+                                    object.key,
+                                ));
                             }
                         }
                     }
@@ -161,7 +165,11 @@ impl S3Watcher {
                             });
                             if is_new {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete S3 object, download needs to be resumed");
-                                // @TODO: Send event, this download needs to be resumed
+                                event_tx.send(S3WatcherEvent::IncompleteBlobDetected(
+                                    hash,
+                                    size,
+                                    path.data(),
+                                ));
                             }
                         }
                     }
@@ -181,4 +189,11 @@ impl S3Watcher {
     pub fn subscribe(&mut self) -> broadcast::Receiver<S3WatcherEvent> {
         self.event_tx.subscribe()
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum S3WatcherEvent {
+    NewLocalBlobDetected(u64, String),
+    ShareableBlobDetected(BlobsHash, u64, String),
+    IncompleteBlobDetected(BlobsHash, u64, String),
 }
