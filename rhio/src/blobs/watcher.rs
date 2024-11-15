@@ -1,7 +1,10 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use iroh_blobs::Hash as BlobsHash;
-use rhio_blobs::S3Store;
+use rhio_blobs::{
+    paths::{META_SUFFIX, OUTBOARD_SUFFIX},
+    S3Store,
+};
 use tokio::sync::{broadcast, RwLock};
 use tracing::debug;
 
@@ -43,8 +46,16 @@ impl std::hash::Hash for WatcherObject {
 
 #[derive(Debug)]
 struct Inner {
+    /// List of all S3 objects.
     s3_objects: HashSet<WatcherObject>,
+
+    /// List of S3 objects which have been indexed and encoded for p2p blob sync.
+    ///
+    /// This can be either through an successful import (from our local S3 database) or from a
+    /// successful download from remote peers.
     completed: HashSet<WatcherObject>,
+
+    /// List of S3 objects which should be downloaded from remote peers but did not finish yet.
     incomplete: HashSet<WatcherObject>,
 }
 
@@ -75,12 +86,24 @@ impl S3Watcher {
                             let mut inner = inner.write().await;
                             for page in pages {
                                 for object in page.contents {
+                                    // Filter out objects in database which are related to rhio
+                                    // blob syncing. They life right next to the actual blobs in
+                                    // the same S3 bucket.
+                                    if object.key.ends_with(META_SUFFIX)
+                                        || object.key.ends_with(OUTBOARD_SUFFIX)
+                                    {
+                                        continue;
+                                    }
+
                                     let item = WatcherObject {
                                         size: object.size,
                                         key: object.key,
                                         hash: None,
                                     };
 
+                                    // If object was observed for the first time, earmark it so we
+                                    // can check later if it's download or import was already
+                                    // completed.
                                     let is_new = inner.s3_objects.insert(item.clone());
                                     if is_new {
                                         maybe_to_be_imported.push(item);
