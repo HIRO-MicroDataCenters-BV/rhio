@@ -64,6 +64,21 @@ impl S3Store {
         Ok(())
     }
 
+    /// Import and complete existing object from an s3 bucket.
+    ///
+    /// This method processes the object bytes, generates a BAO outboard file, uploads this back
+    /// to the s3 bucket adding the `.bao4` suffix, and then inserts the resulting Entry into an
+    /// in-memory store.
+    pub async fn import_object(&self, path: String, size: u64) -> anyhow::Result<()> {
+        // Create a new BAO file from existing data, this processes all bytes and uploads an
+        // outboard file to the s3 bucket.
+        let (bao_file, meta) =
+            BaoFileHandle::create_complete(self.bucket.clone(), path, size).await?;
+        let entry = Entry::new(bao_file, meta);
+        self.write_lock().entries.insert(entry.hash(), entry);
+        Ok(())
+    }
+
     pub async fn blob_discovered(
         &mut self,
         hash: Hash,
@@ -92,25 +107,6 @@ impl S3Store {
     /// Take a read lock on the store
     fn read_lock(&self) -> RwLockReadGuard<'_, StateInner> {
         self.inner.0.read().unwrap()
-    }
-
-    /// Import and complete existing object from an s3 bucket.
-    ///
-    /// This method processes the object bytes, generates a BAO outboard file, uploads this back
-    /// to the s3 bucket adding the `.bao4` suffix, and then inserts the resulting Entry into an
-    /// in-memory store.
-    pub async fn import_object(
-        &self,
-        bucket: Bucket,
-        path: String,
-        size: u64,
-    ) -> anyhow::Result<()> {
-        // Create a new BAO file from existing data, this processes all bytes and uploads an
-        // outboard file to the s3 bucket.
-        let (bao_file, meta) = BaoFileHandle::create_complete(bucket, path, size).await?;
-        let entry = Entry::new(bao_file, meta);
-        self.write_lock().entries.insert(entry.hash(), entry);
-        Ok(())
     }
 }
 
