@@ -131,7 +131,7 @@ impl S3Watcher {
                             // as soon as a new object was completed.
                             if is_new && !first_run {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected newly completed S3 object");
-                                event_tx.send(S3WatcherEvent::ShareableBlobDetected(
+                                event_tx.send(S3WatcherEvent::BlobImportFinished(
                                     hash,
                                     size,
                                     path.data(),
@@ -144,7 +144,7 @@ impl S3Watcher {
                         for object in maybe_to_be_imported {
                             if !inner.completed.contains(&object) {
                                 debug!(key = %object.key, size = %object.size, "detected new S3 object, needs to be imported");
-                                event_tx.send(S3WatcherEvent::NewLocalBlobDetected(
+                                event_tx.send(S3WatcherEvent::DetectedS3Object(
                                     object.size,
                                     object.key,
                                 ));
@@ -165,7 +165,7 @@ impl S3Watcher {
                             });
                             if is_new {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete S3 object, download needs to be resumed");
-                                event_tx.send(S3WatcherEvent::IncompleteBlobDetected(
+                                event_tx.send(S3WatcherEvent::DetectedIncompleteBlob(
                                     hash,
                                     size,
                                     path.data(),
@@ -193,7 +193,7 @@ impl S3Watcher {
 
 #[derive(Clone, Debug)]
 pub enum S3WatcherEvent {
-    NewLocalBlobDetected(u64, String),
-    ShareableBlobDetected(BlobsHash, u64, String),
-    IncompleteBlobDetected(BlobsHash, u64, String),
+    DetectedS3Object(u64, String),
+    BlobImportFinished(BlobsHash, u64, String),
+    DetectedIncompleteBlob(BlobsHash, u64, String),
 }
