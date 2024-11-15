@@ -3,8 +3,11 @@ name = "rhio-core"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.93"
 async-nats = "0.37.0"
 ciborium = "0.2.2"
 constcat = "0.5.1"
@@ -17,7 +20,4 @@ serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"
-tokio = { version = "1.40.0", features = ["rt", "macros"] }
-
-[lints]
-workspace = true
+tokio = { version = "1.41.1", features = ["rt", "macros"] }

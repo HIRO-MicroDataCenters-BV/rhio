@@ -87,8 +87,8 @@
 
 # publish:
 #   s3_buckets:
-#     - "local_bucket_1"
-#     - "local_bucket_2"
+#     - "local-bucket-1"
+#     - "local-bucket-2"
 #   nats_subjects:
 #     - subject: "<public_key>.workload.berlin.energy"
 #       stream: "workload"
