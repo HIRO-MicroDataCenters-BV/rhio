@@ -1,5 +1,8 @@
 pub const META_SUFFIX: &str = ".meta";
+
 pub const OUTBOARD_SUFFIX: &str = ".bao4";
+
+pub const NO_PREFIX: String = String::new(); // Empty string.
 
 #[derive(Debug, Clone)]
 pub struct Paths {

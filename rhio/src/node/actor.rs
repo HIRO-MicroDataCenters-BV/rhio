@@ -6,11 +6,13 @@ use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_core::message::NetworkPayload;
 use rhio_core::{NetworkMessage, ScopedSubject};
+use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
+use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
@@ -36,20 +38,31 @@ pub struct NodeActor {
     subscriptions: Vec<Subscription>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
+    s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     nats: Nats,
     panda: Panda,
     blobs: Blobs,
+    watcher: S3Watcher,
 }
 
 impl NodeActor {
-    pub fn new(nats: Nats, panda: Panda, blobs: Blobs, inbox: mpsc::Receiver<ToNodeActor>) -> Self {
+    pub fn new(
+        nats: Nats,
+        panda: Panda,
+        blobs: Blobs,
+        watcher: S3Watcher,
+        inbox: mpsc::Receiver<ToNodeActor>,
+        s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
+    ) -> Self {
         Self {
             nats,
             subscriptions: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
+            s3_watcher_rx,
             panda,
             blobs,
+            watcher,
             inbox,
         }
     }
@@ -97,6 +110,16 @@ impl NodeActor {
                 Some(Ok(event)) = self.p2panda_topic_rx.next() => {
                     if let Err(err) = self.on_network_event(event).await {
                         break Err(err);
+                    }
+                },
+                Some(event) = self.s3_watcher_rx.recv() => {
+                    match event {
+                        Ok(event) => {
+                            if let Err(err) = self.on_watcher_event(event).await {
+                                break Err(err);
+                            }
+                        },
+                        Err(err) => break Err(anyhow!(err)),
                     }
                 },
                 else => {
@@ -281,6 +304,28 @@ impl NodeActor {
                         message.payload.to_vec(),
                     )
                     .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn on_watcher_event(&self, event: S3Event) -> Result<()> {
+        match event {
+            // Somebody uploaded a new object directly into the S3 store, let's import it into our
+            // blob store (generate a bao-encoding and make it ready for p2p sync).
+            S3Event::DetectedS3Object(bucket_name, size, key) => {
+                self.blobs.import_s3_object(bucket_name, key, size).await?;
+            }
+            // Blob store finished importing a new S3 object, it is ready now for distribution in
+            // the p2p network!
+            S3Event::BlobImportFinished(bucket_name, hash, size, key) => {
+                // @TODO: Announce!
+            }
+            // We've detected an uncomplete blob, probably the process was exited before the
+            // download finished.
+            S3Event::DetectedIncompleteBlob(bucket_name, hash, size, key) => {
+                // @TODO: Resume download!
             }
         }
 

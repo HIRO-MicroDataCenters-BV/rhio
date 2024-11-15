@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use iroh_blobs::IROH_BLOCK_SIZE;
 use iroh_io::HttpAdapter;
 use s3::bucket::Bucket;
 use s3::serde_types::Part;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error};
 
 /// The minimum size of a part in a multipart upload session.
 const MIN_PART_SIZE: usize = IROH_BLOCK_SIZE.bytes() * 1000;
@@ -112,10 +112,10 @@ impl S3File {
     /// restriction but it complicates the implementation and increases bug possibilities. This
     /// behavior would only occur when we download a blob from multiple peers in parallel, and as
     /// we can make sure this doesn't happen in the iroh blob download API I thought this was the
-    /// pragmatic approach for now.  
+    /// pragmatic approach for now.
     pub async fn write_all_at(&mut self, offset: usize, bytes: Vec<u8>) -> Result<()> {
         if self.buffer.processed_bytes != offset {
-            return Err(anyhow::anyhow!("bytes mut be written to the file in order"));
+            return Err(anyhow!("bytes mut be written to the file in order"));
         }
         let part_number = offset_to_part_number(MIN_PART_SIZE, offset);
         match self.buffer.extend(part_number, bytes) {
@@ -172,20 +172,21 @@ impl S3File {
 
         if response.status_code() != 200 {
             error!("uploading blob to minio bucket failed with: {response}");
-            return Err(anyhow::anyhow!(response));
+            return Err(anyhow!(response));
         };
 
-        info!(
-            "Upload complete: {:?} uploaded in {} parts ({} bytes)",
-            self.path,
-            self.uploaded_parts.len(),
-            self.buffer.processed_bytes,
+        debug!(
+            path = %self.path,
+            num_parts = %self.uploaded_parts.len(),
+            bytes = %self.buffer.processed_bytes,
+            "upload complete",
         );
 
         Ok(())
     }
 
     pub fn reader(&self) -> HttpAdapter {
+        // @TODO: This currently requires the bucket to be _public_.
         let url = self.bucket.url();
         HttpAdapter::new(url::Url::from_str(&format!("{url}/{}", &self.path)).unwrap())
     }

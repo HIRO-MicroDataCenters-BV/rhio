@@ -1,65 +1,76 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 
 use iroh_blobs::Hash as BlobsHash;
-use rhio_blobs::{
-    paths::{META_SUFFIX, OUTBOARD_SUFFIX},
-    S3Store,
-};
-use tokio::sync::{broadcast, RwLock};
+use rhio_blobs::paths::{META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX};
+use rhio_blobs::S3Store;
+use s3::error::S3Error;
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio_util::task::LocalPoolHandle;
 use tracing::debug;
 
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
 
-const NO_PREFIX: String = String::new(); // Empty string.
+type ObjectSize = u64;
 
-/// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects.
+type ObjectKey = String;
+
+type BucketName = String;
+
+/// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects
+/// and their import status.
 #[derive(Clone, Debug)]
 pub struct S3Watcher {
-    event_tx: broadcast::Sender<S3WatcherEvent>,
+    event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
     inner: Arc<RwLock<Inner>>,
 }
 
 #[derive(Clone, Debug)]
-struct WatcherObject {
-    pub size: u64,
-    pub key: String,
-    pub hash: Option<BlobsHash>,
+struct WatchedObject {
+    pub size: ObjectSize,
+    pub key: ObjectKey,
+    pub import_state: ImportState,
 }
 
-impl PartialEq for WatcherObject {
+impl Eq for WatchedObject {}
+
+impl PartialEq for WatchedObject {
     fn eq(&self, other: &Self) -> bool {
         self.size == other.size && self.key == other.key
     }
 }
 
-impl Eq for WatcherObject {}
-
-impl std::hash::Hash for WatcherObject {
+impl std::hash::Hash for WatchedObject {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.size.hash(state);
         self.key.hash(state);
     }
 }
 
+#[derive(Clone, Debug)]
+enum ImportState {
+    NotImported,
+    Imported(BlobsHash),
+}
+
 #[derive(Debug)]
 struct Inner {
     /// List of all S3 objects.
-    s3_objects: HashSet<WatcherObject>,
+    s3_objects: HashSet<WatchedObject>,
 
     /// List of S3 objects which have been indexed and encoded for p2p blob sync.
     ///
     /// This can be either through an successful import (from our local S3 database) or from a
     /// successful download from remote peers.
-    completed: HashSet<WatcherObject>,
+    completed: HashSet<WatchedObject>,
 
     /// List of S3 objects which should be downloaded from remote peers but did not finish yet.
-    incomplete: HashSet<WatcherObject>,
+    incomplete: HashSet<WatchedObject>,
 }
 
 impl S3Watcher {
-    pub fn new(store: S3Store) -> Self {
-        let (event_tx, _) = broadcast::channel(64);
-
+    pub fn new(store: S3Store, event_tx: mpsc::Sender<Result<S3Event, S3Error>>) -> Self {
         let inner = Arc::new(RwLock::new(Inner {
             s3_objects: HashSet::new(),
             completed: HashSet::new(),
@@ -76,9 +87,11 @@ impl S3Watcher {
 
             loop {
                 for bucket in store.buckets() {
+                    let bucket_name = bucket.name();
+
                     // 1. List of _all_ S3 objects in this bucket.
                     let mut maybe_to_be_imported = Vec::new();
-                    match bucket.list(NO_PREFIX, Some("/".to_string())).await {
+                    match bucket.list(NO_PREFIX, None).await {
                         Ok(pages) => {
                             let mut inner = inner.write().await;
                             for page in pages {
@@ -92,10 +105,10 @@ impl S3Watcher {
                                         continue;
                                     }
 
-                                    let item = WatcherObject {
+                                    let item = WatchedObject {
                                         size: object.size,
                                         key: object.key,
-                                        hash: None,
+                                        import_state: ImportState::NotImported,
                                     };
 
                                     // If object was observed for the first time, earmark it so we
@@ -109,8 +122,8 @@ impl S3Watcher {
                             }
                         }
                         Err(err) => {
-                            // @TODO: Send critical error over channel.
-                            return Err(err);
+                            event_tx.send(Err(err)).await.expect("send event");
+                            return Err(());
                         }
                     }
 
@@ -120,22 +133,29 @@ impl S3Watcher {
                         let list = store.complete_blobs().await;
                         let mut inner = inner.write().await;
                         for (hash, path, size) in list {
-                            let is_new = inner.completed.insert(WatcherObject {
+                            let is_new = inner.completed.insert(WatchedObject {
                                 size,
                                 key: path.data(),
-                                hash: Some(hash),
+                                import_state: ImportState::Imported(hash),
                             });
 
                             // During the first iteration we're only establishing the initial state
                             // of completed items. For all further iterations we're sending events
                             // as soon as a new object was completed.
                             if is_new && !first_run {
-                                debug!(key = %path.data(), size = %size, hash = %hash, "detected newly completed S3 object");
-                                event_tx.send(S3WatcherEvent::BlobImportFinished(
-                                    hash,
-                                    size,
-                                    path.data(),
-                                ));
+                                debug!(key = %path.data(), size = %size, hash = %hash, "detected finished blob import");
+                                if event_tx
+                                    .send(Ok(S3Event::BlobImportFinished(
+                                        bucket_name.clone(),
+                                        hash,
+                                        size,
+                                        path.data(),
+                                    )))
+                                    .await
+                                    .is_err()
+                                {
+                                    return Err(());
+                                }
                             }
                         }
 
@@ -143,11 +163,18 @@ impl S3Watcher {
                         // which object has not yet been imported.
                         for object in maybe_to_be_imported {
                             if !inner.completed.contains(&object) {
-                                debug!(key = %object.key, size = %object.size, "detected new S3 object, needs to be imported");
-                                event_tx.send(S3WatcherEvent::DetectedS3Object(
-                                    object.size,
-                                    object.key,
-                                ));
+                                debug!(key = %object.key, size = %object.size, "detected new S3 object to be imported");
+                                if event_tx
+                                    .send(Ok(S3Event::DetectedS3Object(
+                                        bucket_name.clone(),
+                                        object.size,
+                                        object.key,
+                                    )))
+                                    .await
+                                    .is_err()
+                                {
+                                    return Err(());
+                                }
                             }
                         }
                     }
@@ -158,18 +185,25 @@ impl S3Watcher {
                         let list = store.incomplete_blobs().await;
                         let mut inner = inner.write().await;
                         for (hash, path, size) in list {
-                            let is_new = inner.incomplete.insert(WatcherObject {
+                            let is_new = inner.incomplete.insert(WatchedObject {
                                 size,
                                 key: path.data(),
-                                hash: Some(hash),
+                                import_state: ImportState::Imported(hash),
                             });
                             if is_new {
-                                debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete S3 object, download needs to be resumed");
-                                event_tx.send(S3WatcherEvent::DetectedIncompleteBlob(
-                                    hash,
-                                    size,
-                                    path.data(),
-                                ));
+                                debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete blob download");
+                                if event_tx
+                                    .send(Ok(S3Event::DetectedIncompleteBlob(
+                                        bucket_name.clone(),
+                                        hash,
+                                        size,
+                                        path.data(),
+                                    )))
+                                    .await
+                                    .is_err()
+                                {
+                                    return Err(());
+                                }
                             }
                         }
                     }
@@ -185,15 +219,11 @@ impl S3Watcher {
 
         watcher
     }
-
-    pub fn subscribe(&mut self) -> broadcast::Receiver<S3WatcherEvent> {
-        self.event_tx.subscribe()
-    }
 }
 
 #[derive(Clone, Debug)]
-pub enum S3WatcherEvent {
-    DetectedS3Object(u64, String),
-    BlobImportFinished(BlobsHash, u64, String),
-    DetectedIncompleteBlob(BlobsHash, u64, String),
+pub enum S3Event {
+    DetectedS3Object(BucketName, ObjectSize, ObjectKey),
+    BlobImportFinished(BucketName, BlobsHash, ObjectSize, ObjectKey),
+    DetectedIncompleteBlob(BucketName, BlobsHash, ObjectSize, ObjectKey),
 }
