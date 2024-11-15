@@ -13,6 +13,7 @@ use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
+use crate::blobs::watcher::S3Watcher;
 use crate::blobs::{store_from_config, Blobs};
 use crate::config::Config;
 use crate::nats::Nats;
@@ -65,9 +66,13 @@ impl Node {
         let blob_store = store_from_config(&config).await?;
         let (network, blobs_handler) =
             BlobsHandler::from_builder(builder, blob_store.clone()).await?;
-        let blobs = Blobs::new(config.s3.clone(), blob_store, blobs_handler);
+        let blobs = Blobs::new(config.s3.clone(), blob_store.clone(), blobs_handler);
 
-        // 4. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
+        // 4. Start a service which watches the S3 store for changes.
+        let (watcher_tx, watcher_rx) = mpsc::channel(256);
+        let watcher = S3Watcher::new(blob_store, watcher_tx);
+
+        // 5. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
         //    data replication and gossipping.
         let node_id = network.node_id();
         let direct_addresses = network
@@ -76,10 +81,10 @@ impl Node {
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
         let panda = Panda::new(network);
 
-        // 5. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
+        // 6. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
         //    and NATS JetStream consumers.
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
-        let node_actor = NodeActor::new(nats, panda, blobs, node_actor_rx);
+        let node_actor = NodeActor::new(nats, panda, blobs, watcher, node_actor_rx, watcher_rx);
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = node_actor.run().await {
                 error!("node actor failed: {err:?}");

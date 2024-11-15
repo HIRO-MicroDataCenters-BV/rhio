@@ -1,5 +1,5 @@
 mod actor;
-mod watcher;
+pub mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -29,28 +29,25 @@ use crate::JoinErrToStr;
 pub struct Blobs {
     config: S3Config,
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
-    watcher: S3Watcher,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Blobs {
-    pub fn new<S: Store>(
+    pub fn new(
         config: S3Config,
         blob_store: S3Store,
-        blobs_handler: BlobsHandler<Query, S>,
+        blobs_handler: BlobsHandler<Query, S3Store>,
     ) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
-        let blobs_actor = BlobsActor::new(blobs_handler, blobs_actor_rx);
-        let pool = LocalPoolHandle::new(1);
+        let blobs_actor = BlobsActor::new(blob_store.clone(), blobs_handler, blobs_actor_rx);
 
+        let pool = LocalPoolHandle::new(1);
         let actor_handle = pool.spawn_pinned(|| async move {
             if let Err(err) = blobs_actor.run().await {
                 error!("blobs actor failed: {err:?}");
             }
         });
-
-        let watcher = S3Watcher::new(blob_store);
 
         let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
             .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
@@ -59,37 +56,8 @@ impl Blobs {
         Self {
             config,
             blobs_actor_tx,
-            watcher,
             actor_handle: actor_drop_handle,
         }
-    }
-
-    /// Export a blob to a minio bucket.
-    ///
-    /// Copies an existing blob from the blob store to the provided minio bucket.
-    pub async fn export_blob_minio(
-        &self,
-        hash: Hash,
-        region: String,
-        endpoint: String,
-        bucket_name: String,
-    ) -> Result<()> {
-        let Some(credentials) = &self.config.credentials else {
-            return Err(anyhow!("no minio credentials provided"));
-        };
-
-        // Get the blobs entry from the blob store
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ExportBlobMinio {
-                hash,
-                bucket_name,
-                region: Region::Custom { region, endpoint },
-                credentials: credentials.clone(),
-                reply,
-            })
-            .await?;
-        reply_rx.await?
     }
 
     /// Download a blob from the network.
@@ -103,16 +71,26 @@ impl Blobs {
             .await?;
         let result = reply_rx.await?;
         result?;
+        Ok(())
+    }
 
-        self.export_blob_minio(
-            hash,
-            self.config.region.clone(),
-            self.config.endpoint.clone(),
-            // @TODO: Remove this placeholder
-            "placeholder".to_string(),
-        )
-        .await?;
-
+    /// Import an existing S3 object into our blob store, preparing it for p2p sync.
+    pub async fn import_s3_object(
+        &self,
+        bucket_name: String,
+        key: String,
+        size: u64,
+    ) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::ImportS3Object {
+                bucket_name,
+                key,
+                size,
+                reply,
+            })
+            .await?;
+        let result = reply_rx.await?;
         Ok(())
     }
 
