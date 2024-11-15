@@ -29,13 +29,13 @@ use crate::paths::Paths;
 /// Blob data and outboard files are stored in an s3 bucket.
 #[derive(Debug, Clone)]
 pub struct S3Store {
-    buckets: Vec<Bucket>,
+    buckets: Vec<Box<Bucket>>,
     inner: Arc<S3StoreInner>,
 }
 
 impl S3Store {
     /// Create a new S3 blob store interface for p2panda.
-    pub async fn new(buckets: Vec<Bucket>) -> Result<Self> {
+    pub async fn new(buckets: Vec<Box<Bucket>>) -> Result<Self> {
         let mut store = Self {
             buckets,
             inner: Default::default(),
@@ -44,16 +44,18 @@ impl S3Store {
         Ok(store)
     }
 
+    pub fn buckets(&self) -> &Vec<Box<Bucket>> {
+        self.buckets.as_ref()
+    }
+
     /// Initiate the store from the contents of given S3 buckets.
     ///
     /// This method looks at all `.meta` files present on the configured S3 buckets and establishes
     /// an index.
     async fn init(&mut self) -> Result<()> {
         for bucket in &self.buckets {
-            let results = bucket
-                .list("/".to_string(), None)
-                .await
-                .map_err(io::Error::other)?;
+            println!("{:?}", bucket);
+            let results = bucket.list("/".to_string(), None).await?;
 
             for list in results {
                 for object in list.contents {
@@ -144,7 +146,7 @@ impl S3Store {
         self.inner.0.read().await
     }
 
-    fn bucket(&self, bucket_name: &str) -> Bucket {
+    fn bucket(&self, bucket_name: &str) -> Box<Bucket> {
         self.buckets
             .iter()
             .find(|bucket| bucket.name() == bucket_name)

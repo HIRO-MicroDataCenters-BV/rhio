@@ -4,8 +4,9 @@ use std::str::FromStr;
 use anyhow::Result;
 use iroh_blobs::IROH_BLOCK_SIZE;
 use iroh_io::HttpAdapter;
+use s3::bucket::Bucket;
 use s3::serde_types::Part;
-use s3::Bucket;
+use thiserror::Error;
 use tracing::{error, info};
 
 /// The minimum size of a part in a multipart upload session.
@@ -14,7 +15,7 @@ const MIN_PART_SIZE: usize = IROH_BLOCK_SIZE.bytes() * 1000;
 type PartNumber = usize;
 type Offset = usize;
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, Error)]
 pub enum MultiPartBufferError {
     #[error("attempted to extend an already drained part buffer")]
     PartBufferDrained,
@@ -82,7 +83,7 @@ impl MultiPartBuffer {
 
 #[derive(Debug)]
 pub struct S3File {
-    bucket: Bucket,
+    bucket: Box<Bucket>,
     buffer: MultiPartBuffer,
     path: String,
     upload_id: Option<String>,
@@ -90,7 +91,7 @@ pub struct S3File {
 }
 
 impl S3File {
-    pub fn new(bucket: Bucket, path: String) -> Self {
+    pub fn new(bucket: Box<Bucket>, path: String) -> Self {
         Self {
             bucket,
             path,
