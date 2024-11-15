@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -13,14 +13,13 @@ use iroh_blobs::store::{
 use iroh_blobs::store::{BaoBlobSize, MapEntry, MapEntryMut, ReadableStore};
 use iroh_blobs::store::{GcConfig, MapMut};
 use iroh_blobs::util::progress::{BoxedProgressSender, IdGenerator, ProgressSender};
-use iroh_blobs::util::{TagCounter, TagDrop};
 use iroh_blobs::{store::Store, BlobFormat, Hash, HashAndFormat};
 use iroh_blobs::{Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use tracing::warn;
 
-use crate::bao_file::BaoFileHandle;
+use crate::bao_file::{get_meta, put_meta, BaoFileHandle, BaoMeta};
 use crate::paths::Paths;
 
 /// An s3 backed iroh blobs store.
@@ -41,6 +40,47 @@ impl S3Store {
         }
     }
 
+    pub async fn populate_store(&mut self, bucket: Bucket) -> anyhow::Result<()> {
+        let results = bucket
+            .list("/".to_string(), None)
+            .await
+            .map_err(io::Error::other)?;
+
+        for list in results {
+            for object in list.contents {
+                if object.key.ends_with(".meta") {
+                    let meta = get_meta(&bucket, object.key).await?;
+                    let paths = Paths::new(meta.path.clone());
+                    let bao_file = BaoFileHandle::new(bucket.clone(), paths, meta.size);
+                    let entry: Entry = Entry::new(bao_file, meta);
+                    self.write_lock().entries.insert(entry.hash(), entry);
+                };
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn blob_discovered(
+        &mut self,
+        hash: Hash,
+        path: String,
+        size: u64,
+    ) -> anyhow::Result<Option<Entry>> {
+        let paths = Paths::new(path.clone());
+        let meta = BaoMeta {
+            hash,
+            path,
+            size,
+            complete: false,
+        };
+
+        put_meta(&self.bucket, &paths, &meta).await?;
+        let bao_file = BaoFileHandle::new(self.bucket.clone(), paths, size);
+        let entry: Entry = Entry::new(bao_file, meta);
+        Ok(self.write_lock().entries.insert(hash, entry))
+    }
+
     /// Take a write lock on the store
     fn write_lock(&self) -> RwLockWriteGuard<'_, StateInner> {
         self.inner.0.write().unwrap()
@@ -59,41 +99,17 @@ impl S3Store {
     pub async fn import_object(
         &self,
         bucket: Bucket,
-        paths: Paths,
+        path: String,
         size: u64,
     ) -> anyhow::Result<()> {
         // Create a new BAO file from existing data, this processes all bytes and uploads an
         // outboard file to the s3 bucket.
-        let (storage, hash) = BaoFileHandle::create_complete(bucket, paths, size).await?;
-        let entry = Entry {
-            inner: Arc::new(EntryInner {
-                hash,
-                data: RwLock::new(storage),
-            }),
-            complete: true,
-        };
-        self.write_lock().entries.insert(hash, entry);
+        let (bao_file, meta) = BaoFileHandle::create_complete(bucket, path, size).await?;
+        let entry = Entry::new(bao_file, meta);
+        self.write_lock().entries.insert(entry.hash(), entry);
         Ok(())
     }
-
-    /// Add `Hash` -> `Paths` mappings which we have already learned about via Announcement
-    /// messages. We can't download blobs from the network and upload them to our own s3 bucket
-    /// without knowing this in advance.
-    pub fn add_paths(&mut self, hash: Hash, paths: Paths) -> Option<Paths> {
-        self.write_lock().paths.insert(hash, paths)
-    }
-
-    /// WIP: Not sure about this method yet, we need _something_ in order to populate the store
-    /// based on what already has been processed and stored into an s3 bucket.
-    pub fn insert_entries(&mut self, entries: Vec<(Hash, Paths, Entry)>) {
-        for (hash, paths, entry) in entries {
-            self.add_paths(hash, paths);
-            self.write_lock().entries.insert(hash, entry);
-        }
-    }
 }
-
-// Most top level methods from the Store trait are unimplemented.
 
 impl Store for S3Store {
     async fn import_file(
@@ -155,33 +171,26 @@ struct S3StoreInner(RwLock<StateInner>);
 
 #[derive(Debug, Default)]
 struct StateInner {
-    paths: HashMap<Hash, Paths>,
     entries: BTreeMap<Hash, Entry>,
-    tags: BTreeMap<Tag, HashAndFormat>,
-    temp: TempCounterMap,
-}
-
-impl TagDrop for S3StoreInner {
-    fn on_drop(&self, inner: &HashAndFormat) {
-        tracing::trace!("temp tag drop: {:?}", inner);
-        let mut state = self.0.write().unwrap();
-        state.temp.dec(inner);
-    }
-}
-
-impl TagCounter for S3StoreInner {
-    fn on_create(&self, inner: &HashAndFormat) {
-        tracing::trace!("temp tagging: {:?}", inner);
-        let mut state = self.0.write().unwrap();
-        state.temp.inc(inner);
-    }
 }
 
 /// An in memory entry
 #[derive(Debug, Clone)]
 pub struct Entry {
+    meta: BaoMeta,
     inner: Arc<EntryInner>,
-    complete: bool,
+}
+
+impl Entry {
+    pub fn new(bao_file: BaoFileHandle, meta: BaoMeta) -> Self {
+        Entry {
+            inner: Arc::new(EntryInner {
+                hash: meta.hash,
+                data: RwLock::new(bao_file),
+            }),
+            meta,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -197,11 +206,11 @@ impl MapEntry for Entry {
 
     fn size(&self) -> BaoBlobSize {
         let size = self.inner.data.read().unwrap().data_len();
-        BaoBlobSize::new(size, self.complete)
+        BaoBlobSize::new(size, self.meta.complete)
     }
 
     fn is_complete(&self) -> bool {
-        self.complete
+        self.meta.complete
     }
 
     async fn outboard(&self) -> io::Result<impl Outboard> {
@@ -308,32 +317,14 @@ impl MapMut for S3Store {
         self.get(hash).await
     }
 
-    async fn get_or_create(&self, hash: Hash, size: u64) -> std::io::Result<Entry> {
+    async fn get_or_create(&self, hash: Hash, _size: u64) -> std::io::Result<Entry> {
         if let Some(entry) = self.get(&hash).await? {
             return Ok(entry);
         }
 
-        let this = self.read_lock();
-        let Some(paths) = this.paths.get(&hash) else {
-            return Err(std::io::Error::other(anyhow::anyhow!(
-                "No path found for blob with hash {}",
-                hash.to_hex()
-            )));
-        };
-
-        let entry: Entry = Entry {
-            inner: Arc::new(EntryInner {
-                hash,
-                data: RwLock::new(BaoFileHandle::new(
-                    self.bucket.clone(),
-                    paths.to_owned(),
-                    size,
-                )),
-            }),
-            complete: false,
-        };
-
-        Ok(entry)
+        // We expect all entries to already have been added to the store before this method is
+        // called during download of a new blob from the network.
+        unimplemented!()
     }
 
     async fn entry_status(&self, hash: &Hash) -> std::io::Result<iroh_blobs::store::EntryStatus> {
@@ -343,7 +334,7 @@ impl MapMut for S3Store {
     fn entry_status_sync(&self, hash: &Hash) -> std::io::Result<iroh_blobs::store::EntryStatus> {
         Ok(match self.inner.0.read().unwrap().entries.get(hash) {
             Some(entry) => {
-                if entry.complete {
+                if entry.meta.complete {
                     iroh_blobs::store::EntryStatus::Complete
                 } else {
                     iroh_blobs::store::EntryStatus::Partial
@@ -354,17 +345,16 @@ impl MapMut for S3Store {
     }
 
     async fn insert_complete(&self, mut entry: Entry) -> std::io::Result<()> {
+        entry.meta.complete = true;
+        let paths = Paths::new(entry.meta.path.clone());
+        put_meta(&self.bucket, &paths, &entry.meta)
+            .await
+            .map_err(io::Error::other)?;
+
         let hash = entry.hash();
         let mut inner = self.inner.0.write().unwrap();
-        let complete = inner
-            .entries
-            .get(&hash)
-            .map(|x| x.complete)
-            .unwrap_or_default();
-        if !complete {
-            entry.complete = true;
-            inner.entries.insert(hash, entry);
-        }
+        inner.entries.insert(hash, entry);
+
         Ok(())
     }
 }
@@ -375,7 +365,7 @@ impl ReadableStore for S3Store {
         Ok(Box::new(
             entries
                 .into_values()
-                .filter(|x| x.complete)
+                .filter(|x| x.meta.complete)
                 .map(|x| Ok(x.hash())),
         ))
     }
@@ -385,20 +375,17 @@ impl ReadableStore for S3Store {
         Ok(Box::new(
             entries
                 .into_values()
-                .filter(|x| !x.complete)
+                .filter(|x| !x.meta.complete)
                 .map(|x| Ok(x.hash())),
         ))
     }
 
     async fn tags(&self) -> io::Result<iroh_blobs::store::DbIter<(Tag, HashAndFormat)>> {
-        #[allow(clippy::mutable_key_type)]
-        let tags = self.read_lock().tags.clone();
-        Ok(Box::new(tags.into_iter().map(Ok)))
+        unimplemented!()
     }
 
     fn temp_tags(&self) -> Box<dyn Iterator<Item = HashAndFormat> + Send + Sync + 'static> {
-        let tags = self.read_lock().temp.keys();
-        Box::new(tags)
+        unimplemented!()
     }
 
     async fn consistency_check(
