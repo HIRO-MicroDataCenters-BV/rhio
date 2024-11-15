@@ -83,7 +83,7 @@ impl MultiPartBuffer {
 
 #[derive(Debug)]
 pub struct S3File {
-    bucket: Box<Bucket>,
+    bucket: Bucket,
     buffer: MultiPartBuffer,
     path: String,
     upload_id: Option<String>,
@@ -91,7 +91,7 @@ pub struct S3File {
 }
 
 impl S3File {
-    pub fn new(bucket: Box<Bucket>, path: String) -> Self {
+    pub fn new(bucket: Bucket, path: String) -> Self {
         Self {
             bucket,
             path,
