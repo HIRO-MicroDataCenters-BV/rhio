@@ -1,6 +1,8 @@
+use std::time::SystemTime;
+
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
-use async_nats::Message as NatsMessage;
+use async_nats::{HeaderMap, Message as NatsMessage};
 use futures_util::stream::SelectAll;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
@@ -16,7 +18,7 @@ use tracing::{debug, error, warn};
 
 use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
-use crate::nats::{JetStreamEvent, Nats};
+use crate::nats::{JetStreamEvent, Nats, NATS_FROM_RHIO_HEADER};
 use crate::network::Panda;
 use crate::node::Publication;
 use crate::topic::{Query, Subscription};
@@ -266,6 +268,14 @@ impl NodeActor {
             return Ok(());
         }
 
+        // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
+        // right after we've ingested them on the same stream.
+        if let Some(headers) = &message.headers {
+            if headers.get(NATS_FROM_RHIO_HEADER).is_some() {
+                return Ok(());
+            }
+        }
+
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
         let network_message = NetworkMessage::new_nats(message);
         self.broadcast(network_message, topic_id).await?;
@@ -332,11 +342,22 @@ impl NodeActor {
                     return Ok(());
                 }
 
+                // We're adding a custom rhio header to the NATS message, to mark this message as
+                // "ingested" by rhio. This helps us to identify messages which already have been
+                // processed by us, so we don't need to send them again when they arrive at a NATS
+                // consumer for gossip broadcast.
+                let mut headers = match &message.headers {
+                    Some(headers) => headers.clone(),
+                    None => HeaderMap::new(),
+                };
+                let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+                headers.append(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
+
                 self.nats
                     .publish(
                         true,
                         message.subject.to_string(),
-                        message.headers.clone(),
+                        Some(headers),
                         message.payload.to_vec(),
                     )
                     .await?;
