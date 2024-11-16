@@ -186,7 +186,9 @@ impl S3File {
     }
 
     pub fn reader(&self) -> HttpAdapter {
-        // @TODO: This currently requires the bucket to be _public_.
+        // @TODO(adz): This currently requires the bucket to be _public_. We can sign the HTTP
+        // request to fullfil the S3 authentication API or use the S3 API straight away.
+        // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
         let url = self.bucket.url();
         HttpAdapter::new(url::Url::from_str(&format!("{url}/{}", &self.path)).unwrap())
     }
