@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 default-run = "rhio"
 
+[lints]
+workspace = true
+
 [lib]
 name = "rhio"
 
@@ -18,10 +21,10 @@ figment = { version = "0.10.19", features = ["env", "yaml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
 iroh-blobs = { version = "0.25.0", features = ["fs-store"], default-features = false }
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9", default-features = false }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9", default-features = false }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "cf78381ba2dbe06f1b6b0ce81d7b34d4b041fffc" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "cf78381ba2dbe06f1b6b0ce81d7b34d4b041fffc" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "cf78381ba2dbe06f1b6b0ce81d7b34d4b041fffc", default-features = false }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "cf78381ba2dbe06f1b6b0ce81d7b34d4b041fffc", features = ["cbor"], default-features = false }
 rand = "0.8.5"
 rhio-blobs = { path = "../rhio-blobs" }
 rhio-core = { path = "../rhio-core" }
