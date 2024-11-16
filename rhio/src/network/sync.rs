@@ -29,6 +29,13 @@ pub enum Message {
     Blobs(Vec<NetworkMessage>),
 }
 
+/// Simple sync protocol implementation to allow exchange of past NATS messages or blob
+/// announcements.
+// @TODO(adz): This implementation is sub-optimal as it requires the peers to send over
+// _everything_ they know about. This can be optimized later with a smarter set reconciliation
+// strategy though it'll be tricky to find out how to organize the data to make it more efficient
+// (NATS messages do not have timestamps but we could sort them by sequential order of the filtered
+// consumer, blobs could be sorted by S3 key (the absolute path)?).
 #[derive(Clone, Debug)]
 pub struct RhioSyncProtocol {
     config: Config,
