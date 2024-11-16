@@ -74,7 +74,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // The current p2panda API does not give any control to turn off syncing for some data
         // stream subscriptions, this is why we're doing it this hacky way.
-        if matches!(query, Query::NoSyncSubject { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. })
+            || matches!(query, Query::NoSyncBucket { .. })
+        {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
@@ -174,6 +176,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         .await?;
                 }
             }
+            Query::NoSyncBucket { .. } => {
+                unreachable!("returned already earlier on no-sync option")
+            }
             Query::NoSyncSubject { .. } => {
                 unreachable!("returned already earlier on no-sync option")
             }
@@ -218,7 +223,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSyncSubject { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. })
+            || matches!(query, Query::NoSyncBucket { .. })
+        {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
@@ -353,6 +360,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 debug!(parent: &span, "downloaded {} NATS messages", nats_messages.len());
 
                 sink.send(Message::NatsMessages(nats_messages)).await?;
+            }
+            Query::NoSyncBucket { .. } => {
+                unreachable!("we've already returned before no-sync option")
             }
             Query::NoSyncSubject { .. } => {
                 unreachable!("we've already returned before no-sync option")

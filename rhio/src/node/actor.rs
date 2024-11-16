@@ -174,7 +174,7 @@ impl NodeActor {
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { bucket } => Query::NoSyncSubject {
+            Publication::Bucket { bucket } => Query::NoSyncBucket {
                 public_key: bucket.public_key(),
             },
             Publication::Subject { subject, .. } => Query::NoSyncSubject {
