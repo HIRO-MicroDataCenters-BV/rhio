@@ -101,8 +101,8 @@ nats:
 nodes:
   - public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
     endpoints:
-      - "192.168.178.100:9022"
-      - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9023"
+      - "127.0.0.1:9022"
+      - "[::1]:9023"
 
 publish:
   s3_buckets:
@@ -147,8 +147,8 @@ nats:
 nodes:
   - public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
     endpoints:
-      - "192.168.178.100:8022"
-      - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:8023"
+      - "127.0.0.1:8022"
+      - "[::1]:8023"
 
 publish:
   s3_buckets:
