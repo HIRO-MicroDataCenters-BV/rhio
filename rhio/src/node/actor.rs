@@ -156,13 +156,15 @@ impl NodeActor {
         Ok(())
     }
 
+    /// Application decided to publish a local NATS message stream or S3 bucket.
+    ///
+    /// When publishing we don't want to sync but only gossip. Only subscribing peers will want to
+    /// initiate sync sessions with us, as publishing peers we're only _accepting_ these sync
+    /// sessions.
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
         self.publications.push(publication.clone());
 
         // 1. Subscribe to p2panda gossip overlay for "live-mode".
-        //
-        // When publishing we don't want to sync but only gossip. Only subscribing peers will want
-        // to initiate sync sessions with us.
         //
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
@@ -205,8 +207,10 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Callback when the application decided to subscribe to a new NATS message stream or S3
-    /// bucket.
+    /// Application decided to subscribe to a new NATS message stream or S3 bucket.
+    ///
+    /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
+    /// sync sessions with (to catch up on past data).
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
         self.subscriptions.push(subscription.clone());
         let network_rx = self.panda.subscribe(subscription.into()).await?;
@@ -266,6 +270,8 @@ impl NodeActor {
     }
 
     /// Handler for incoming events from the p2p network.
+    ///
+    /// These events can come from either gossip broadcast or sync sessions with other peers.
     async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
         let bytes = match event {
             FromNetwork::GossipMessage {
@@ -298,11 +304,17 @@ impl NodeActor {
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
             NetworkPayload::BlobAnnouncement(bucket) => {
-                // @TODO: We've received a blob announcement here, check if we're interested in it
-                // and then start download.
                 if !is_bucket_matching(&self.subscriptions, &bucket) {
                     return Ok(());
                 }
+
+                // @TODO: We've received a blob announcement here, check if we're interested in it
+                // and then start download. This is a two step process:
+                //
+                // 1. Tell the store about a newly discovered blob using
+                //    store.blob_discovered(hash: Hash, path: String, size: u64)
+                // 2. Tell the blob actor to download this blob from the network, it uses
+                //    Downloader from p2panda-blobs (the downloader has access to the store)
             }
             NetworkPayload::NatsMessage(message) => {
                 // Filter out all incoming messages we're not subscribed to. This can happen
@@ -327,6 +339,11 @@ impl NodeActor {
         Ok(())
     }
 
+    /// Handler for incoming events from the S3 watcher service.
+    ///
+    /// This service informs us about state changes in the S3 database (regular S3-compatible
+    /// database) or blob store (used for storing data required to do p2p blob sync, this data is
+    /// also stored in S3 database next to the actual synced objects).
     async fn on_watcher_event(&self, event: S3Event) -> Result<()> {
         match event {
             // Somebody uploaded a new object directly into the S3 store, let's import it into our
