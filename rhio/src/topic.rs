@@ -156,8 +156,8 @@ mod tests {
             bucket: ScopedBucket::new("airplanes", public_key_1),
         }
         .into();
-        assert_eq!(subscription_0.id(), subscription_1.id());
-        assert_ne!(subscription_1.id(), subscription_2.id());
+        assert_ne!(subscription_0.id(), subscription_1.id());
+        assert_eq!(subscription_1.id(), subscription_2.id());
 
         // NATS subjects use public key as gossip topic id.
         let subscription_3: Query = Subscription::Subject {
