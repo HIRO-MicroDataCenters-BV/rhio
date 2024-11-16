@@ -44,7 +44,7 @@ impl S3Store {
     }
 
     /// Initiate the store from the content of an s3 bucket.
-    /// 
+    ///
     /// This method looks at all `.meta` files present on the configured s3 bucket and inserts an
     /// entry into the stores memory db for each one.
     async fn init(&mut self) -> anyhow::Result<()> {
@@ -70,7 +70,7 @@ impl S3Store {
     }
 
     /// Import a new blob from the s3 store.
-    /// 
+    ///
     /// This method performs several discreet tasks:
     /// - process all blob bytes and create an outboard `.bao4` file (this gives us the hash)
     /// - create a `.meta` file based on the provided path, size and calculated hash
@@ -86,7 +86,7 @@ impl S3Store {
 
     /// Tell the store about a new blob we discovered on the network and would like to (at some
     /// point) download.
-    /// 
+    ///
     /// Our store implementation expects that it knows about a blobs' path and size _before_
     /// download of the blob actually occurs. This method is for informing the store of this
     /// information, however it doesn't trigger download of the blob.
