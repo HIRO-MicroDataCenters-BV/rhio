@@ -324,7 +324,13 @@ impl NodeActor {
                 // which is not the right bucket name or not the right author.
                 if is_bucket_matching(&self.subscriptions, bucket) {
                     self.blobs
-                        .download(*hash, bucket.bucket_name(), key.to_owned(), *size)
+                        .download(
+                            *hash,
+                            bucket.bucket_name(),
+                            // Blobs from remote peers are namespaced by their public key.
+                            format!("{}/{}", bucket.public_key(), key),
+                            *size,
+                        )
                         .await?;
                 }
             }
