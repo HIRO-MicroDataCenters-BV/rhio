@@ -4133,6 +4133,7 @@ dependencies = [
  "p2panda-engine",
  "p2panda-store",
  "p2panda-sync",
+ "rhio-blobs",
  "serde",
  "tempfile",
  "tokio",

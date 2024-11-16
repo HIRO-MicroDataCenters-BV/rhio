@@ -7,7 +7,8 @@ use directories::ProjectDirs;
 use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
 use p2panda_core::PublicKey;
-use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
+use rhio_blobs::BucketName;
+use rhio_core::{ScopedBucket, ScopedSubject};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
@@ -209,7 +210,7 @@ pub struct KnownNode {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
     #[serde(default)]
-    pub s3_buckets: Vec<Bucket>,
+    pub s3_buckets: Vec<BucketName>,
     #[serde(default)]
     pub nats_subjects: Vec<NatsSubject>,
 }

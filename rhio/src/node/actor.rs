@@ -4,6 +4,7 @@ use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
+use rhio_blobs::BucketName;
 use rhio_core::message::NetworkPayload;
 use rhio_core::{NetworkMessage, ScopedBucket, ScopedSubject};
 use s3::error::S3Error;
@@ -303,7 +304,7 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
-            NetworkPayload::BlobAnnouncement(bucket) => {
+            NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
                 if !is_bucket_matching(&self.subscriptions, &bucket) {
                     return Ok(());
                 }
@@ -353,8 +354,21 @@ impl NodeActor {
             }
             // Blob store finished importing a new S3 object, it is ready now for distribution in
             // the p2p network!
-            S3Event::BlobImportFinished(_bucket_name, _hash, _size, _key) => {
-                // @TODO: Announce!
+            S3Event::BlobImportFinished(bucket_name, hash, size, key) => {
+                let Some(publication) = is_bucket_publishable(&self.publications, &bucket_name)
+                else {
+                    return Ok(());
+                };
+                let Publication::Bucket { bucket } = publication else {
+                    unreachable!("method will always return a bucket publication");
+                };
+                let topic_id = Query::from(publication.to_owned()).id();
+                let network_message =
+                    NetworkMessage::new_blob_announcement(hash, bucket.to_owned(), key, size);
+                self.panda
+                    .broadcast(network_message.to_bytes(), topic_id)
+                    .await
+                    .context("broadcast blob announcement")?;
             }
             // We've detected an uncomplete blob, probably the process was exited before the
             // download finished.
@@ -408,4 +422,26 @@ fn is_bucket_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedBucket
         }
     }
     false
+}
+
+/// Returns the public key for the blob announcement if we're okay with publishing it.
+fn is_bucket_publishable<'a>(
+    publications: &'a Vec<Publication>,
+    bucket_name: &BucketName,
+) -> Option<&'a Publication> {
+    for publication in publications {
+        match publication {
+            Publication::Bucket { bucket } => {
+                if &bucket.bucket_name() == bucket_name {
+                    return Some(publication);
+                } else {
+                    continue;
+                }
+            }
+            Publication::Subject { .. } => {
+                continue;
+            }
+        }
+    }
+    None
 }

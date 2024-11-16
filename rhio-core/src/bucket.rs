@@ -3,18 +3,17 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail};
 use p2panda_core::PublicKey;
+use rhio_blobs::BucketName;
 use serde::{Deserialize, Serialize};
 
 const KEY_PREFIX_TOKEN: &str = "/";
-
-pub type Bucket = String;
 
 /// Special S3 bucket name for the "rhio" application which holds a regular S3 bucket name next to
 /// a peer's Ed25519 public key.
 ///
 /// This makes the S3 bucket name "scoped" to this particular identity.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ScopedBucket(Bucket, PublicKey);
+pub struct ScopedBucket(BucketName, PublicKey);
 
 impl ScopedBucket {
     pub fn new(bucket_name: &str, public_key: PublicKey) -> Self {
@@ -25,7 +24,7 @@ impl ScopedBucket {
         self.1
     }
 
-    pub fn bucket_name(&self) -> Bucket {
+    pub fn bucket_name(&self) -> BucketName {
         self.0.clone()
     }
 

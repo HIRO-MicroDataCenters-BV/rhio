@@ -2,21 +2,14 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use iroh_blobs::Hash as BlobsHash;
 use rhio_blobs::paths::{META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX};
-use rhio_blobs::S3Store;
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, S3Store};
 use s3::error::S3Error;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio_util::task::LocalPoolHandle;
 use tracing::debug;
 
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
-
-type ObjectSize = u64;
-
-type ObjectKey = String;
-
-type BucketName = String;
 
 /// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects
 /// and their import status.
@@ -51,7 +44,7 @@ impl std::hash::Hash for WatchedObject {
 #[derive(Clone, Debug)]
 enum ImportState {
     NotImported,
-    Imported(BlobsHash),
+    Imported(BlobHash),
 }
 
 #[derive(Debug)]
@@ -224,6 +217,6 @@ impl S3Watcher {
 #[derive(Clone, Debug)]
 pub enum S3Event {
     DetectedS3Object(BucketName, ObjectSize, ObjectKey),
-    BlobImportFinished(BucketName, BlobsHash, ObjectSize, ObjectKey),
-    DetectedIncompleteBlob(BucketName, BlobsHash, ObjectSize, ObjectKey),
+    BlobImportFinished(BucketName, BlobHash, ObjectSize, ObjectKey),
+    DetectedIncompleteBlob(BucketName, BlobHash, ObjectSize, ObjectKey),
 }
