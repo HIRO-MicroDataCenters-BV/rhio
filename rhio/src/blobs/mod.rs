@@ -12,7 +12,6 @@ use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
-use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
@@ -163,11 +162,14 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
     }
 
     if let Some(subscribe) = &config.subscribe {
-        for scoped_bucket in &subscribe.s3_buckets {
-            let bucket_name = scoped_bucket.bucket_name();
-            let bucket =
-                Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
-            buckets.insert(bucket_name, *bucket);
+        for remote_bucket in &subscribe.s3_buckets {
+            let bucket = Bucket::new(
+                &remote_bucket.bucket_name,
+                region.clone(),
+                credentials.clone(),
+            )?
+            .with_path_style();
+            buckets.insert(remote_bucket.bucket_name.clone(), *bucket);
         }
     }
 

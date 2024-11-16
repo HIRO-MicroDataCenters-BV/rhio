@@ -6,7 +6,7 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{ConnectOptions, HeaderMap};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::ScopedSubject;
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -69,7 +69,7 @@ impl Nats {
     pub async fn subscribe(
         &self,
         stream_name: StreamName,
-        subject: ScopedSubject,
+        subject: Subject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {

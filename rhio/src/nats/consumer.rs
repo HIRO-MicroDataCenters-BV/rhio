@@ -9,7 +9,7 @@ use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use rand::random;
-use rhio_core::ScopedSubject;
+use rhio_core::Subject;
 use tokio::sync::broadcast;
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
@@ -207,7 +207,7 @@ impl Consumer {
     pub async fn new(
         context: &JetstreamContext,
         stream_name: StreamName,
-        filter_subject: ScopedSubject,
+        filter_subject: Subject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<Self> {

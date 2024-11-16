@@ -6,7 +6,6 @@ use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
-use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::error::S3Error;
 use s3::{Bucket, BucketConfiguration, Region};
