@@ -11,7 +11,8 @@ use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use rhio_blobs::S3Store;
+use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, S3Store};
+use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
@@ -64,10 +65,22 @@ impl Blobs {
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
     /// bucket.
-    pub async fn download_blob(&self, hash: Hash) -> Result<()> {
+    pub async fn download(
+        &self,
+        hash: BlobHash,
+        bucket: ScopedBucket,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::DownloadBlob { hash, reply })
+            .send(ToBlobsActor::DownloadBlob {
+                hash,
+                bucket,
+                key,
+                size,
+                reply,
+            })
             .await?;
         let result = reply_rx.await?;
         result?;

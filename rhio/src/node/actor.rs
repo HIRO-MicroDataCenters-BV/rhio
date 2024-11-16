@@ -304,18 +304,10 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
-            NetworkPayload::BlobAnnouncement(_hash, bucket, _key, _size) => {
-                if !is_bucket_matching(&self.subscriptions, &bucket) {
-                    return Ok(());
+            NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
+                if is_bucket_matching(&self.subscriptions, &bucket) {
+                    self.blobs.download(hash, bucket, key, size).await?;
                 }
-
-                // @TODO: We've received a blob announcement here, check if we're interested in it
-                // and then start download. This is a two step process:
-                //
-                // 1. Tell the store about a newly discovered blob using
-                //    store.blob_discovered(hash: Hash, path: String, size: u64)
-                // 2. Tell the blob actor to download this blob from the network, it uses
-                //    Downloader from p2panda-blobs (the downloader has access to the store)
             }
             NetworkPayload::NatsMessage(message) => {
                 // Filter out all incoming messages we're not subscribed to. This can happen

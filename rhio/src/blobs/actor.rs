@@ -5,7 +5,8 @@ use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
-use rhio_blobs::S3Store;
+use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, S3Store};
+use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::error::S3Error;
 use s3::{Bucket, BucketConfiguration, Region};
@@ -16,6 +17,7 @@ use tracing::{debug, error};
 use crate::blobs::watcher::S3Event;
 use crate::topic::Query;
 
+#[allow(clippy::large_enum_variant)]
 pub enum ToBlobsActor {
     ImportS3Object {
         bucket_name: String,
@@ -24,7 +26,10 @@ pub enum ToBlobsActor {
         reply: oneshot::Sender<Result<()>>,
     },
     DownloadBlob {
-        hash: Hash,
+        hash: BlobHash,
+        bucket: ScopedBucket,
+        key: ObjectKey,
+        size: ObjectSize,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -105,8 +110,14 @@ impl BlobsActor {
                 let result = self.store.import_object(&bucket_name, key, size).await;
                 reply.send(result).ok();
             }
-            ToBlobsActor::DownloadBlob { hash, reply } => {
-                let result = self.on_download_blob(hash).await;
+            ToBlobsActor::DownloadBlob {
+                hash,
+                bucket,
+                key,
+                size,
+                reply,
+            } => {
+                let result = self.on_download_blob(hash, bucket, key, size).await;
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {
@@ -117,14 +128,27 @@ impl BlobsActor {
         Ok(())
     }
 
-    async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
+    async fn on_download_blob(
+        &mut self,
+        hash: BlobHash,
+        bucket: ScopedBucket,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
+        self.store
+            .blob_discovered(hash, &bucket.bucket_name(), key.clone(), size)
+            .await?;
+
+        let hash = Hash::from_bytes(*hash.as_bytes());
         let mut stream = Box::pin(self.blobs.download_blob(hash).await);
         while let Some(event) = stream.next().await {
             match event {
                 DownloadBlobEvent::Abort(err) => {
-                    error!("failed downloading file: {err}");
+                    error!(%err, "failed downloading blob");
                 }
-                DownloadBlobEvent::Done => (),
+                DownloadBlobEvent::Done => {
+                    debug!(%hash, bucket = %bucket.bucket_name(), %key, %size, "finished downloading blob");
+                }
             }
         }
         Ok(())
