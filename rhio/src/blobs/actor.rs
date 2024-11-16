@@ -27,7 +27,7 @@ pub enum ToBlobsActor {
     },
     DownloadBlob {
         hash: BlobHash,
-        bucket: ScopedBucket,
+        bucket_name: BucketName,
         key: ObjectKey,
         size: ObjectSize,
         reply: oneshot::Sender<Result<()>>,
@@ -118,12 +118,12 @@ impl BlobsActor {
             }
             ToBlobsActor::DownloadBlob {
                 hash,
-                bucket,
+                bucket_name,
                 key,
                 size,
                 reply,
             } => {
-                let result = self.on_download_blob(hash, bucket, key, size).await;
+                let result = self.on_download_blob(hash, bucket_name, key, size).await;
                 reply.send(result).ok();
             }
             ToBlobsActor::CompleteBlobs { reply } => {
@@ -145,12 +145,12 @@ impl BlobsActor {
     async fn on_download_blob(
         &mut self,
         hash: BlobHash,
-        bucket: ScopedBucket,
+        bucket_name: BucketName,
         key: ObjectKey,
         size: ObjectSize,
     ) -> Result<()> {
         self.store
-            .blob_discovered(hash, &bucket.bucket_name(), key.clone(), size)
+            .blob_discovered(hash, &bucket_name, key.clone(), size)
             .await?;
 
         let hash = Hash::from_bytes(*hash.as_bytes());
@@ -161,7 +161,7 @@ impl BlobsActor {
                     error!(%err, "failed downloading blob");
                 }
                 DownloadBlobEvent::Done => {
-                    debug!(%hash, bucket = %bucket.bucket_name(), %key, %size, "finished downloading blob");
+                    debug!(%hash, %bucket_name, %key, %size, "finished downloading blob");
                 }
             }
         }

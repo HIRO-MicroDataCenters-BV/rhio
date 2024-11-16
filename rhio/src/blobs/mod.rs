@@ -88,7 +88,7 @@ impl Blobs {
     pub async fn download(
         &self,
         hash: BlobHash,
-        bucket: ScopedBucket,
+        bucket_name: BucketName,
         key: ObjectKey,
         size: ObjectSize,
     ) -> Result<()> {
@@ -96,7 +96,7 @@ impl Blobs {
         self.blobs_actor_tx
             .send(ToBlobsActor::DownloadBlob {
                 hash,
-                bucket,
+                bucket_name,
                 key,
                 size,
                 reply,

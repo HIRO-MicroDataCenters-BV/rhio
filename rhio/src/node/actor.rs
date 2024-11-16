@@ -306,7 +306,9 @@ impl NodeActor {
         match network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
                 if is_bucket_matching(&self.subscriptions, &bucket) {
-                    self.blobs.download(hash, bucket, key, size).await?;
+                    self.blobs
+                        .download(hash, bucket.bucket_name(), key, size)
+                        .await?;
                 }
             }
             NetworkPayload::NatsMessage(message) => {
@@ -346,10 +348,9 @@ impl NodeActor {
                 self.on_import_finished(hash, bucket_name, key, size)
                     .await?;
             }
-            // We've detected an uncomplete blob, probably the process was exited before the
-            // download finished.
-            S3Event::DetectedIncompleteBlob(_hash, _bucket_name, _key, _size) => {
-                // @TODO: Resume download!
+            S3Event::DetectedIncompleteBlob(hash, bucket_name, key, size) => {
+                self.on_incomplete_blob_detected(hash, bucket_name, key, size)
+                    .await?;
             }
         }
 
@@ -393,6 +394,19 @@ impl NodeActor {
             .await
             .context("broadcast blob announcement")?;
 
+        Ok(())
+    }
+
+    /// Handler when incomplete blob was detected, probably the process was exited before the
+    /// download hash finished.
+    async fn on_incomplete_blob_detected(
+        &self,
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
+        self.blobs.download(hash, bucket_name, key, size).await?;
         Ok(())
     }
 
