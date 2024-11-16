@@ -161,8 +161,8 @@ impl NodeActor {
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { bucket_name: _ } => Query::NoSyncSubject {
-                public_key: self.panda.node_id,
+            Publication::Bucket { bucket } => Query::NoSyncSubject {
+                public_key: bucket.public_key(),
             },
             Publication::Subject { subject, .. } => Query::NoSyncSubject {
                 public_key: subject.public_key(),
@@ -173,7 +173,7 @@ impl NodeActor {
         let network_rx = self.panda.subscribe(topic_query).await?;
 
         match publication {
-            Publication::Bucket { bucket_name: _ } => {
+            Publication::Bucket { bucket: _ } => {
                 // @TODO
             }
             Publication::Subject {
@@ -320,12 +320,12 @@ impl NodeActor {
             }
             // Blob store finished importing a new S3 object, it is ready now for distribution in
             // the p2p network!
-            S3Event::BlobImportFinished(bucket_name, hash, size, key) => {
+            S3Event::BlobImportFinished(_bucket_name, _hash, _size, _key) => {
                 // @TODO: Announce!
             }
             // We've detected an uncomplete blob, probably the process was exited before the
             // download finished.
-            S3Event::DetectedIncompleteBlob(bucket_name, hash, size, key) => {
+            S3Event::DetectedIncompleteBlob(_bucket_name, _hash, _size, _key) => {
                 // @TODO: Resume download!
             }
         }

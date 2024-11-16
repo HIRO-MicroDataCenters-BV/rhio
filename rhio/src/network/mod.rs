@@ -4,7 +4,6 @@ pub mod sync;
 use anyhow::Result;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_core::PublicKey;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::Network;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -18,7 +17,6 @@ use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Panda {
-    pub node_id: PublicKey,
     panda_actor_tx: mpsc::Sender<ToPandaActor>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
@@ -26,8 +24,6 @@ pub struct Panda {
 
 impl Panda {
     pub fn new(network: Network<Query>) -> Self {
-        let node_id = network.node_id();
-
         let (panda_actor_tx, panda_actor_rx) = mpsc::channel(256);
         let panda_actor = PandaActor::new(network, panda_actor_rx);
 
@@ -42,7 +38,6 @@ impl Panda {
             .shared();
 
         Self {
-            node_id,
             panda_actor_tx,
             actor_handle: actor_drop_handle,
         }
