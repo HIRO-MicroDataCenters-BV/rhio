@@ -392,8 +392,20 @@ fn is_subject_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubje
 }
 
 /// Returns true if incoming blob announcement is of interested to our local node.
-#[allow(unused_variables)]
 fn is_bucket_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedBucket) -> bool {
-    // @TODO
+    for subscription in subscriptions {
+        match subscription {
+            Subscription::Bucket { bucket } => {
+                if bucket == incoming {
+                    return true;
+                } else {
+                    continue;
+                }
+            }
+            Subscription::Subject { .. } => {
+                continue;
+            }
+        }
+    }
     false
 }
