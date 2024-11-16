@@ -4,7 +4,7 @@ A small step-by-step guide to play with rhio.
 
 ## Requirements
 
-* Rust 1.80.1+
+* Rust 1.82.0
 * [`rhio`](https://github.com/HIRO-MicroDataCenters-BV/rhio)
 * [`nats-server`](https://docs.nats.io/running-a-nats-service/introduction/installation#getting-the-binary-from-the-command-line)
 * [`nats`](https://docs.nats.io/running-a-nats-service/clients#installing-the-nats-cli-tool)
@@ -21,7 +21,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 {
   "name": "cluster-stream-1",
   "subjects": [
-    "foo.*"
+    "*.foo.*"
   ],
   "retention": "limits",
   "max_consumers": -1,
@@ -52,7 +52,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 {
   "name": "cluster-stream-2",
   "subjects": [
-    "foo.*"
+    "*.foo.*"
   ],
   "retention": "limits",
   "max_consumers": -1,
@@ -77,64 +77,94 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 </details>
 
 <details>
-<summary><code>config-1.toml</code></summary>
+<summary><code>config-1.yaml</code></summary>
 
-```toml
+```yaml
 # cluster-1
 
-bind_port = 8022
-private_key = "private-key-1.txt"
+bind_port: 8022
+network_id: "rhio-default-network-1"
 
-[[nodes]]
-public_key = "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
-direct_addresses = [
-  "127.0.0.1:9022",
-  "[::1]:9023",
-]
+# d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076
+private_key_path: "private-key-1.txt"
 
-[[streams]]
-nats_stream_name = "cluster-stream-1"
-external_topic = "foo"
+s3:
+  endpoint: "http://localhost:8000"
+  region: "eu-central-1"
+  credentials:
+    access_key: "rhio"
+    secret_key: "rhio_password"
 
-[minio]
-bucket_name = "blobby"
-endpoint = "http://localhost:8000"
-region = "eu-central-1"
-credentials = { access_key = "rhio", secret_key = "rhio_password" }
+nats:
+  endpoint: "localhost:8009"
 
-[nats]
-endpoint = "localhost:8009"
+nodes:
+  - public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
+    endpoints:
+      - "192.168.178.100:9022"
+      - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9023"
+
+publish:
+  s3_buckets:
+    - "bucket-1"
+    - "bucket-2"
+  nats_subjects:
+    - subject: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076.foo.*"
+      stream: "cluster-stream-1"
+
+subscribe:
+  s3_buckets:
+    - "bucket-1/5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
+    - "bucket-2/5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
+  nats_subjects:
+    - subject: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.meta"
+      stream: "cluster-stream-1"
 ```
 </details>
 
 <details>
-<summary><code>config-2.toml</code></summary>
+<summary><code>config-2.yaml</code></summary>
 
-```toml
+```yaml
 # cluster-2
 
-bind_port = 9022
-private_key = "private-key-2.txt"
+bind_port: 9022
+network_id: "rhio-default-network-1"
 
-[[nodes]]
-public_key = "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
-direct_addresses = [
-  "127.0.0.1:8022",
-  "[::1]:8023",
-]
+# 5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee
+private_key_path: "private-key-2.txt"
 
-[[streams]]
-nats_stream_name = "cluster-stream-2"
-external_topic = "foo"
+s3:
+  endpoint: "http://localhost:9000"
+  region: "eu-central-1"
+  credentials:
+    access_key: "rhio"
+    secret_key: "rhio_password"
 
-[minio]
-bucket_name = "blobby"
-endpoint = "http://localhost:9000"
-region = "eu-central-1"
-credentials = { access_key = "rhio", secret_key = "rhio_password" }
+nats:
+  endpoint: "localhost:9009"
 
-[nats]
-endpoint = "localhost:9009"
+nodes:
+  - public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
+    endpoints:
+      - "192.168.178.100:8022"
+      - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:8023"
+
+publish:
+  s3_buckets:
+    - "bucket-1"
+    - "bucket-2"
+  nats_subjects:
+    - subject: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.*"
+      stream: "cluster-stream-2"
+
+subscribe:
+  s3_buckets:
+    - "bucket-1/d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
+    - "bucket-2/d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
+  nats_subjects:
+    - subject: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076.foo.*"
+      stream: "cluster-stream-2"
 ```
 </details>
 
@@ -152,7 +182,6 @@ services:
     environment:
       - MINIO_ROOT_USER=rhio
       - MINIO_ROOT_PASSWORD=rhio_password
-      - MINIO_DEFAULT_BUCKETS=blobby
   minio_2:
     image: docker.io/minio/minio:latest
     command: [ "server", "/data", "--console-address", ":9001" ]
@@ -162,7 +191,6 @@ services:
     environment:
       - MINIO_ROOT_USER=rhio
       - MINIO_ROOT_PASSWORD=rhio_password
-      - MINIO_DEFAULT_BUCKETS=blobby
 ```
 </details>
 
@@ -193,27 +221,22 @@ d00f23f44b598d0b789b7ff0f1d99a24dc11eda434ad485f692786b624ac83f4
 ```bash
 docker-compose up -d
 ```
-3. Make sure a "blobby" bucket exists in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
+3. Make sure the "bucket-1" and "bucket-2" buckets exists and that they are both set to public (@TODO) in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
 4. Create streams on both NATS servers
 ```bash
 ./nats -s localhost:8009 str add --config cluster-stream-1.json
 ./nats -s localhost:9009 str add --config cluster-stream-2.json
 ```
-5. Launch both rhio nodes (in separate terminals), make sure that `private-key-*.txt` and `config-*.toml` files are in the same directory, or adjust the paths accordingly
+5. Launch both rhio nodes (in separate terminals), make sure that `private-key-*.txt` and `config-*.yaml` files are in the same directory, or adjust the paths accordingly
 ```bash
-cargo run -- -c config-1.toml -l trace
-cargo run -- -c config-2.toml -l trace
+cargo run -- -c config-1.yaml -l TRACE
+cargo run -- -c config-2.yaml -l TRACE
 ```
 6. Subscribe to a subject (example is for first NATS server)
 ```bash
-./nats -s localhost:8009 sub "foo.*"
+./nats -s localhost:8009 sub "*.foo.*"
 ```
-7. Start a client and publish messages
+7. Start a NATS client and publish messages
 ```bash
-cargo run --bin rhio-client -- --subject foo.test --endpoint localhost:8009
+./nats -s localhost:9009 pub "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.meta" test
 ```
-8. Encode & import any file to MinIO database & request hash response via NATS Core
-```bash
-./nats -s localhost:8009 request rhio.import /home/<user>/sloth.png
-```
-9. Look at hash in rhio logs, go back to `rhio-client` and type `blob <hash>` to announce blob in network
