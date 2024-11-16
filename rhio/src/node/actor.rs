@@ -36,6 +36,7 @@ pub enum ToNodeActor {
 pub struct NodeActor {
     inbox: mpsc::Receiver<ToNodeActor>,
     subscriptions: Vec<Subscription>,
+    publications: Vec<Publication>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
@@ -58,6 +59,7 @@ impl NodeActor {
         Self {
             nats,
             subscriptions: Vec::new(),
+            publications: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             s3_watcher_rx,
@@ -155,6 +157,10 @@ impl NodeActor {
     }
 
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        self.publications.push(publication.clone());
+
+        // 1. Subscribe to p2panda gossip overlay for "live-mode".
+        //
         // When publishing we don't want to sync but only gossip. Only subscribing peers will want
         // to initiate sync sessions with us.
         //
@@ -172,14 +178,22 @@ impl NodeActor {
         let topic_id = topic_query.id();
         let network_rx = self.panda.subscribe(topic_query).await?;
 
+        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
+        // trait which is required by `SelectAll`.
+        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+
+        // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
+        //    the gossip overlay later.
         match publication {
             Publication::Bucket { bucket: _ } => {
-                // @TODO
+                // Do nothing here. We handle incoming new blob events via the "on_watcher_event"
+                // method.
             }
             Publication::Subject {
                 stream_name,
                 subject,
             } => {
+                // Subscribe to the NATS stream to receive new NATS messages from here.
                 let (_, nats_rx) = self
                     .nats
                     .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
@@ -187,10 +201,6 @@ impl NodeActor {
                 self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
             }
         };
-
-        // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
-        // trait which is required by `SelectAll`.
-        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
 
         Ok(())
     }
