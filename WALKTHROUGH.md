@@ -85,7 +85,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 bind_port: 8022
 network_id: "rhio-default-network-1"
 
-# d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076
+# Public Key: d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076
 private_key_path: "private-key-1.txt"
 
 s3:
@@ -131,7 +131,7 @@ subscribe:
 bind_port: 9022
 network_id: "rhio-default-network-1"
 
-# 5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee
+# Public Key: 5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee
 private_key_path: "private-key-2.txt"
 
 s3:
