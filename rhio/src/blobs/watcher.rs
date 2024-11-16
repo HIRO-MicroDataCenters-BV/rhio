@@ -139,10 +139,10 @@ impl S3Watcher {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected finished blob import");
                                 if event_tx
                                     .send(Ok(S3Event::BlobImportFinished(
-                                        bucket_name.clone(),
                                         hash,
-                                        size,
+                                        bucket_name.clone(),
                                         path.data(),
+                                        size,
                                     )))
                                     .await
                                     .is_err()
@@ -160,8 +160,8 @@ impl S3Watcher {
                                 if event_tx
                                     .send(Ok(S3Event::DetectedS3Object(
                                         bucket_name.clone(),
-                                        object.size,
                                         object.key,
+                                        object.size,
                                     )))
                                     .await
                                     .is_err()
@@ -187,10 +187,10 @@ impl S3Watcher {
                                 debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete blob download");
                                 if event_tx
                                     .send(Ok(S3Event::DetectedIncompleteBlob(
-                                        bucket_name.clone(),
                                         hash,
-                                        size,
+                                        bucket_name.clone(),
                                         path.data(),
+                                        size,
                                     )))
                                     .await
                                     .is_err()
@@ -216,7 +216,7 @@ impl S3Watcher {
 
 #[derive(Clone, Debug)]
 pub enum S3Event {
-    DetectedS3Object(BucketName, ObjectSize, ObjectKey),
-    BlobImportFinished(BucketName, BlobHash, ObjectSize, ObjectKey),
-    DetectedIncompleteBlob(BucketName, BlobHash, ObjectSize, ObjectKey),
+    DetectedS3Object(BucketName, ObjectKey, ObjectSize),
+    BlobImportFinished(BlobHash, BucketName, ObjectKey, ObjectSize),
+    DetectedIncompleteBlob(BlobHash, BucketName, ObjectKey, ObjectSize),
 }

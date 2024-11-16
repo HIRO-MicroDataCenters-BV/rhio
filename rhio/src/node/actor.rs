@@ -4,7 +4,7 @@ use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
-use rhio_blobs::BucketName;
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use rhio_core::message::NetworkPayload;
 use rhio_core::{NetworkMessage, ScopedBucket, ScopedSubject};
 use s3::error::S3Error;
@@ -304,7 +304,7 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
+            NetworkPayload::BlobAnnouncement(_hash, bucket, _key, _size) => {
                 if !is_bucket_matching(&self.subscriptions, &bucket) {
                     return Ok(());
                 }
@@ -347,35 +347,59 @@ impl NodeActor {
     /// also stored in S3 database next to the actual synced objects).
     async fn on_watcher_event(&self, event: S3Event) -> Result<()> {
         match event {
-            // Somebody uploaded a new object directly into the S3 store, let's import it into our
-            // blob store (generate a bao-encoding and make it ready for p2p sync).
-            S3Event::DetectedS3Object(bucket_name, size, key) => {
-                self.blobs.import_s3_object(bucket_name, key, size).await?;
+            S3Event::DetectedS3Object(bucket_name, key, size) => {
+                self.on_detected_s3_object(bucket_name, key, size).await?;
             }
-            // Blob store finished importing a new S3 object, it is ready now for distribution in
-            // the p2p network!
-            S3Event::BlobImportFinished(bucket_name, hash, size, key) => {
-                let Some(publication) = is_bucket_publishable(&self.publications, &bucket_name)
-                else {
-                    return Ok(());
-                };
-                let Publication::Bucket { bucket } = publication else {
-                    unreachable!("method will always return a bucket publication");
-                };
-                let topic_id = Query::from(publication.to_owned()).id();
-                let network_message =
-                    NetworkMessage::new_blob_announcement(hash, bucket.to_owned(), key, size);
-                self.panda
-                    .broadcast(network_message.to_bytes(), topic_id)
-                    .await
-                    .context("broadcast blob announcement")?;
+            S3Event::BlobImportFinished(hash, bucket_name, key, size) => {
+                self.on_import_finished(hash, bucket_name, key, size)
+                    .await?;
             }
             // We've detected an uncomplete blob, probably the process was exited before the
             // download finished.
-            S3Event::DetectedIncompleteBlob(_bucket_name, _hash, _size, _key) => {
+            S3Event::DetectedIncompleteBlob(_hash, _bucket_name, _key, _size) => {
                 // @TODO: Resume download!
             }
         }
+
+        Ok(())
+    }
+
+    /// Handler when user uploaded a new object directly into the S3 bucket.
+    async fn on_detected_s3_object(
+        &self,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
+        // Import the object into our blob store (generate a bao-encoding and make it ready for p2p
+        // sync).
+        self.blobs.import_s3_object(bucket_name, key, size).await?;
+        Ok(())
+    }
+
+    /// Handler when blob store finished importing new S3 object.
+    async fn on_import_finished(
+        &self,
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
+        let Some(publication) = is_bucket_publishable(&self.publications, &bucket_name) else {
+            return Ok(());
+        };
+        let Publication::Bucket { bucket } = publication else {
+            unreachable!("method will always return a bucket publication");
+        };
+
+        let topic_id = Query::from(publication.to_owned()).id();
+        let network_message =
+            NetworkMessage::new_blob_announcement(hash, bucket.to_owned(), key, size);
+
+        self.panda
+            .broadcast(network_message.to_bytes(), topic_id)
+            .await
+            .context("broadcast blob announcement")?;
 
         Ok(())
     }
