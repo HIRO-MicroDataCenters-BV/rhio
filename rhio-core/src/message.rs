@@ -57,7 +57,7 @@ impl NetworkMessage {
         self.signature = Some(signature);
     }
 
-    pub fn verify(&mut self, public_key: &PublicKey) -> bool {
+    pub fn verify(&self, public_key: &PublicKey) -> bool {
         match &self.signature {
             Some(signature) => {
                 let mut header = self.clone();
