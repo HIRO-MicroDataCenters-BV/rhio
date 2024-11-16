@@ -24,13 +24,25 @@ use crate::topic::Query;
 type Challenge = u64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
 pub enum Message {
+    #[serde(rename = "handshake")]
     Handshake(Query, Challenge),
+
+    #[serde(rename = "handshake_response")]
     HandshakeResponse(Signature),
+
+    #[serde(rename = "nats_have")]
     NatsHave(Vec<Hash>),
-    NatsMessages(Vec<NetworkMessage>),
+
+    #[serde(rename = "nats_messages")]
+    NatsData(Vec<NetworkMessage>),
+
+    #[serde(rename = "blobs_have")]
     BlobsHave(Vec<BlobHash>),
-    Blobs(Vec<NetworkMessage>),
+
+    #[serde(rename = "blobs_data")]
+    BlobsData(Vec<NetworkMessage>),
 }
 
 /// Simple sync protocol implementation to allow exchange of past NATS messages or blob
@@ -120,7 +132,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
                     "incoming message stream ended prematurely".into(),
                 ))??;
-                let Message::Blobs(remote_blob_announcements) = message else {
+                let Message::BlobsData(remote_blob_announcements) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
                     ));
@@ -181,7 +193,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
                     "incoming message stream ended prematurely".into(),
                 ))??;
-                let Message::NatsMessages(nats_messages) = message else {
+                let Message::NatsData(nats_messages) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
                     ));
@@ -267,9 +279,14 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             Query::Bucket { bucket_name, .. } => {
                 // Await message from other peer on the blobs they _have_, so we can calculate what
                 // they're missing and send that delta to them.
-                let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
-                    "incoming message stream ended prematurely".into(),
-                ))??;
+                let message = stream
+                    .next()
+                    .await
+                    .ok_or(SyncError::UnexpectedBehaviour(
+                        "incoming message stream ended prematurely".into(),
+                    ))
+                    .unwrap()
+                    .unwrap();
                 let Message::BlobsHave(remote_blob_hashes) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
@@ -291,7 +308,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     debug!(parent: &span,
                         "can't provide data, politely send empty array back",
                     );
-                    sink.send(Message::Blobs(vec![])).await?;
+                    sink.send(Message::BlobsData(vec![])).await?;
                     return Ok(());
                 }
 
@@ -319,7 +336,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "send {} blob announcements", blob_announcements.len());
 
-                sink.send(Message::Blobs(blob_announcements)).await?;
+                sink.send(Message::BlobsData(blob_announcements)).await?;
             }
             Query::Subject { subject, .. } => {
                 // Look up our config to find out if we have a NATS stream somewhere which fits the
@@ -359,7 +376,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     debug!(parent: &span,
                         "can't provide data, politely send empty array back",
                     );
-                    sink.send(Message::NatsMessages(vec![])).await?;
+                    sink.send(Message::NatsData(vec![])).await?;
                     return Ok(());
                 };
 
@@ -391,7 +408,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "downloaded {} NATS messages", nats_messages.len());
 
-                sink.send(Message::NatsMessages(nats_messages)).await?;
+                sink.send(Message::NatsData(nats_messages)).await?;
             }
             Query::NoSyncBucket { .. } => {
                 unreachable!("we've already returned before no-sync option")
