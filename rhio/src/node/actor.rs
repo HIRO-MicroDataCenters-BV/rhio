@@ -5,7 +5,7 @@ use futures_util::stream::SelectAll;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_core::message::NetworkPayload;
-use rhio_core::{NetworkMessage, ScopedSubject};
+use rhio_core::{NetworkMessage, ScopedBucket, ScopedSubject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -297,16 +297,19 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
-            NetworkPayload::BlobAnnouncement(_scoped_bucket) => {
+            NetworkPayload::BlobAnnouncement(bucket) => {
                 // @TODO: We've received a blob announcement here, check if we're interested in it
                 // and then start download.
+                if !is_bucket_matching(&self.subscriptions, &bucket) {
+                    return Ok(());
+                }
             }
             NetworkPayload::NatsMessage(message) => {
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
                 let subject = message.subject.clone().try_into()?;
-                if !is_matching(&self.subscriptions, &subject) {
+                if !is_subject_matching(&self.subscriptions, &subject) {
                     return Ok(());
                 }
 
@@ -354,7 +357,8 @@ impl NodeActor {
     }
 }
 
-fn is_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> bool {
+/// Returns true if incoming NATS message is of interested to our local node.
+fn is_subject_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> bool {
     for subscription in subscriptions {
         match subscription {
             Subscription::Bucket { .. } => continue,
@@ -367,5 +371,11 @@ fn is_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> b
             }
         }
     }
+    false
+}
+
+/// Returns true if incoming blob announcement is of interested to our local node.
+fn is_bucket_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedBucket) -> bool {
+    // @TODO
     false
 }
