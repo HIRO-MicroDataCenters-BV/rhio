@@ -76,8 +76,6 @@ rhio does not create or publish any messages by itself and serves merely as a "r
 
 Since NATS streams are also used for persistance with their own wide range of limit configurations, rhio does not create any streams automatically but merely consumes them. This allows rhio operators to have full flexibility over the nature of the stream. This is why for every published subject a "stream name" needs to be mentioned.
 
-To consume messages the regular NATS JetStream API is used.
-
 ### Blobs
 
 Large files of any size can be imported into the local MinIO database which will then be automatically announced on the network for other nodes to download them into their regarding MinIO databases. For this to take place in an efficient manner, the blob will be first encoded in the bao format. The resulting hash of this process is used as an unique identifier to announce the blob on the p2p network.
@@ -112,17 +110,13 @@ cargo run -- --log-level "async_nats=DEBUG"
 # Enable logging for _all_ targets
 cargo run -- --log-level "=TRACE"
 ```
-3. Launch `rhio-client` demo client
-```bash
-cargo run --bin rhio-client -- --subject foo.bar
-```
-4. Run tests, linters and format checkers
+3. Run tests, linters and format checkers
 ```bash
 cargo test
 cargo clippy
 cargo fmt
 ```
-5. Build `rhio` for production
+4. Build `rhio` for production
 ```bash
 cargo build --release
 ```
