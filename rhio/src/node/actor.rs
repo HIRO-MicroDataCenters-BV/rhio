@@ -305,6 +305,8 @@ impl NodeActor {
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
+                // We're interested in a bucket from a _specific_ public key. Filter out everything
+                // which is not the right bucket name or not the right author.
                 if is_bucket_matching(&self.subscriptions, &bucket) {
                     self.blobs
                         .download(hash, bucket.bucket_name(), key, size)
