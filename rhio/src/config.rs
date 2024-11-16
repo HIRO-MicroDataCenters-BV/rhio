@@ -355,7 +355,7 @@ subscribe:
                                     .unwrap(),
                             ],
                         }],
-                        private_key: PathBuf::new().join("/usr/app/rhio/private.key"),
+                        private_key: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
                     },
                     log_level: None,

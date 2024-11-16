@@ -116,14 +116,14 @@ mod tests {
             );
         };
 
-        assert_filter(format!("a.*"), format!("a.b"), true);
-        assert_filter(format!("a.*"), format!("a.b.c"), false);
-        assert_filter(format!("a.*.c"), format!("a.b.c"), true);
-        assert_filter(format!("*.*"), format!("a.b"), true);
-        assert_filter(format!("*.c"), format!("a.b.c"), false);
-        assert_filter(format!("*.*"), format!("a.b.c"), false);
-        assert_filter(format!("*.*.*"), format!("a.b.c"), true);
-        assert_filter(format!("a.b"), format!("a.b.c"), false);
-        assert_filter(format!("a.b.*"), format!("a.*.c"), true);
+        assert_filter("a.*".to_string(), "a.b".to_string(), true);
+        assert_filter("a.*".to_string(), "a.b.c".to_string(), false);
+        assert_filter("a.*.c".to_string(), "a.b.c".to_string(), true);
+        assert_filter("*.*".to_string(), "a.b".to_string(), true);
+        assert_filter("*.c".to_string(), "a.b.c".to_string(), false);
+        assert_filter("*.*".to_string(), "a.b.c".to_string(), false);
+        assert_filter("*.*.*".to_string(), "a.b.c".to_string(), true);
+        assert_filter("a.b".to_string(), "a.b.c".to_string(), false);
+        assert_filter("a.b.*".to_string(), "a.*.c".to_string(), true);
     }
 }

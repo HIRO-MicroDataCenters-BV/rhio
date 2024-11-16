@@ -108,7 +108,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             } => {
                 // Send over a list of blob hashes we have already to remote peer.
                 let blob_hashes: Vec<BlobHash> = self
-                    .complete_blobs(&bucket_name)
+                    .complete_blobs(bucket_name)
                     .await
                     .iter()
                     .map(|(hash, _, _, _)| hash.to_owned())
@@ -296,7 +296,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 }
 
                 let blob_announcements: Vec<NetworkMessage> = self
-                    .complete_blobs(&bucket_name)
+                    .complete_blobs(bucket_name)
                     .await
                     .into_iter()
                     .filter_map(|(hash, _, paths, size)| {

@@ -194,17 +194,17 @@ mod tests {
         // Buckets use "bucket name" as gossip topic id.
         let subscription_0: Query = Subscription::Bucket {
             bucket_name: "icecreams".into(),
-            public_key: public_key_2.clone(),
+            public_key: public_key_2,
         }
         .into();
         let subscription_1: Query = Subscription::Bucket {
             bucket_name: "icecreams".into(),
-            public_key: public_key_1.clone(),
+            public_key: public_key_1,
         }
         .into();
         let subscription_2: Query = Subscription::Bucket {
             bucket_name: "airplanes".into(),
-            public_key: public_key_1.clone(),
+            public_key: public_key_1,
         }
         .into();
         assert_ne!(subscription_0.id(), subscription_1.id());
@@ -214,7 +214,7 @@ mod tests {
         let subscription_3: Query = Subscription::Subject {
             stream_name: "data".into(),
             subject: "*.*.color".parse().unwrap(),
-            public_key: public_key_1.clone(),
+            public_key: public_key_1,
         }
         .into();
         assert_ne!(subscription_3.id(), subscription_1.id());
@@ -222,13 +222,13 @@ mod tests {
         let subscription_4: Query = Subscription::Subject {
             stream_name: "data".into(),
             subject: "tree.pine.*".parse().unwrap(),
-            public_key: public_key_1.clone(),
+            public_key: public_key_1,
         }
         .into();
         let subscription_5: Query = Subscription::Subject {
             stream_name: "data".into(),
             subject: "tree.pine.*".parse().unwrap(),
-            public_key: public_key_2.clone(),
+            public_key: public_key_2,
         }
         .into();
         assert_eq!(subscription_3.id(), subscription_4.id());
