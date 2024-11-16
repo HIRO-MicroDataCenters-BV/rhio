@@ -21,7 +21,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 {
   "name": "cluster-stream-1",
   "subjects": [
-    "*.foo.*"
+    "foo.*"
   ],
   "retention": "limits",
   "max_consumers": -1,
@@ -52,7 +52,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 {
   "name": "cluster-stream-2",
   "subjects": [
-    "*.foo.*"
+    "foo.*"
   ],
   "retention": "limits",
   "max_consumers": -1,
@@ -109,16 +109,19 @@ publish:
     - "bucket-1"
     - "bucket-2"
   nats_subjects:
-    - subject: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076.foo.*"
+    - subject: "foo.*"
       stream: "cluster-stream-1"
 
 subscribe:
   s3_buckets:
-    - "bucket-1/5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
-    - "bucket-2/5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
+    - bucket: "bucket-1"
+      public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
+    - bucket: "bucket-2"
+      public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
   nats_subjects:
-    - subject: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.meta"
+    - subject: "foo.meta"
       stream: "cluster-stream-1"
+      public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
 ```
 </details>
 
@@ -155,16 +158,19 @@ publish:
     - "bucket-1"
     - "bucket-2"
   nats_subjects:
-    - subject: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.*"
+    - subject: "foo.*"
       stream: "cluster-stream-2"
 
 subscribe:
   s3_buckets:
-    - "bucket-1/d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
-    - "bucket-2/d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
+    - bucket: "bucket-1"
+      public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
+    - bucket: "bucket-2"
+      public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
   nats_subjects:
-    - subject: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076.foo.*"
+    - subject: "foo.*"
       stream: "cluster-stream-2"
+      public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
 ```
 </details>
 
@@ -234,9 +240,9 @@ cargo run -- -c config-2.yaml -l TRACE
 ```
 6. Subscribe to a subject (example is for first NATS server)
 ```bash
-./nats -s localhost:8009 sub "*.foo.*"
+./nats -s localhost:8009 sub "foo.*"
 ```
 7. Start a NATS client and publish messages
 ```bash
-./nats -s localhost:9009 pub "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee.foo.meta" test
+./nats -s localhost:9009 pub "foo.meta" "test"
 ```
