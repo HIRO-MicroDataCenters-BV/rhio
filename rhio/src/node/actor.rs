@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
+use p2panda_core::PrivateKey;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
@@ -35,6 +36,7 @@ pub enum ToNodeActor {
 }
 
 pub struct NodeActor {
+    private_key: PrivateKey,
     inbox: mpsc::Receiver<ToNodeActor>,
     subscriptions: Vec<Subscription>,
     publications: Vec<Publication>,
@@ -50,6 +52,7 @@ pub struct NodeActor {
 
 impl NodeActor {
     pub fn new(
+        private_key: PrivateKey,
         nats: Nats,
         panda: Panda,
         blobs: Blobs,
@@ -58,16 +61,17 @@ impl NodeActor {
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     ) -> Self {
         Self {
-            nats,
+            private_key,
+            inbox,
             subscriptions: Vec::new(),
             publications: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             s3_watcher_rx,
+            nats,
             panda,
             blobs,
             watcher,
-            inbox,
         }
     }
 
@@ -263,10 +267,8 @@ impl NodeActor {
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
         let network_message = NetworkMessage::new_nats(message);
-        self.panda
-            .broadcast(network_message.to_bytes(), topic_id)
-            .await
-            .context("broadcast incoming operation from nats")?;
+        self.broadcast(network_message, topic_id).await?;
+
         Ok(())
     }
 
@@ -410,11 +412,7 @@ impl NodeActor {
         let topic_id = Query::from(publication.to_owned()).id();
         let network_message =
             NetworkMessage::new_blob_announcement(hash, bucket.to_owned(), key, size);
-
-        self.panda
-            .broadcast(network_message.to_bytes(), topic_id)
-            .await
-            .context("broadcast blob announcement")?;
+        self.broadcast(network_message, topic_id).await?;
 
         Ok(())
     }
@@ -429,6 +427,16 @@ impl NodeActor {
         size: ObjectSize,
     ) -> Result<()> {
         self.blobs.download(hash, bucket_name, key, size).await?;
+        Ok(())
+    }
+
+    /// Sign network message and broadcast it in gossip overlay for this topic.
+    async fn broadcast(&self, mut message: NetworkMessage, topic_id: [u8; 32]) -> Result<()> {
+        message.sign(&self.private_key);
+        self.panda
+            .broadcast(message.to_bytes(), topic_id)
+            .await
+            .context("broadcast message")?;
         Ok(())
     }
 

@@ -89,7 +89,15 @@ impl Node {
         // 6. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
         //    and NATS JetStream consumers.
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
-        let node_actor = NodeActor::new(nats, panda, blobs, watcher, node_actor_rx, watcher_rx);
+        let node_actor = NodeActor::new(
+            private_key,
+            nats,
+            panda,
+            blobs,
+            watcher,
+            node_actor_rx,
+            watcher_rx,
+        );
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = node_actor.run().await {
                 error!("node actor failed: {err:?}");
