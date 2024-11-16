@@ -70,7 +70,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // 2. We can sync over NATS messages or S3 blob announcements.
         match query {
-            Query::Bucket { .. } => todo!(),
+            Query::Bucket { ref bucket } => {
+                // @TODO
+            }
             Query::Subject { ref subject } => {
                 // NATS streams are configured locally for every peer, so we need to look it up
                 // ourselves to find out what stream configuration we have for this subject.
@@ -183,7 +185,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // 2. We can sync over NATS messages or S3 blob announcements.
         match &query {
-            Query::Bucket { .. } => todo!(),
+            Query::Bucket { bucket } => {
+                // @TODO
+            }
             Query::Subject { subject } => {
                 // Look up our config to find out if we have a NATS stream somewhere which fits the
                 // requested subject.

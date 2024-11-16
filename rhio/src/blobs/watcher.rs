@@ -125,7 +125,7 @@ impl S3Watcher {
                     {
                         let list = store.complete_blobs().await;
                         let mut inner = inner.write().await;
-                        for (hash, path, size) in list {
+                        for (hash, _, path, size) in list {
                             let is_new = inner.completed.insert(WatchedObject {
                                 size,
                                 key: path.data(),
@@ -177,7 +177,7 @@ impl S3Watcher {
                     {
                         let list = store.incomplete_blobs().await;
                         let mut inner = inner.write().await;
-                        for (hash, path, size) in list {
+                        for (hash, _, path, size) in list {
                             let is_new = inner.incomplete.insert(WatchedObject {
                                 size,
                                 key: path.data(),
