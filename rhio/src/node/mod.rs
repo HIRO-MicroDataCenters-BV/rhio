@@ -55,15 +55,20 @@ impl Node {
             ));
         }
 
-        let sync_protocol =
-            RhioSyncProtocol::new(config.clone(), nats.clone(), private_key.clone());
+        let blob_store = store_from_config(&config).await?;
+
+        let sync_protocol = RhioSyncProtocol::new(
+            config.clone(),
+            nats.clone(),
+            blob_store.clone(),
+            private_key.clone(),
+        );
 
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())
             .sync(sync_protocol);
 
         // 3. Configure and set up S3 store and connection handlers for blob replication.
-        let blob_store = store_from_config(&config).await?;
         let (network, blobs_handler) =
             BlobsHandler::from_builder(builder, blob_store.clone()).await?;
         let blobs = Blobs::new(config.s3.clone(), blob_store.clone(), blobs_handler);

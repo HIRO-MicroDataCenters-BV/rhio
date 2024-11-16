@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rhio_blobs::paths::{META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX};
-use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, S3Store};
+use rhio_blobs::{
+    BlobHash, BucketName, ObjectKey, ObjectSize, S3Store, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
+};
 use s3::error::S3Error;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio_util::task::LocalPoolHandle;

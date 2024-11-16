@@ -8,8 +8,8 @@ use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use serde::{Deserialize, Serialize};
 
-use crate::paths::Paths;
 use crate::s3_file::S3File;
+use crate::Paths;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BaoMeta {

@@ -21,6 +21,7 @@ pub enum MultiPartBufferError {
     PartBufferDrained,
 }
 
+#[allow(dead_code)]
 pub enum MultiPartBufferResult {
     PartComplete(PartNumber, Offset, Vec<u8>),
     PartExtended(PartNumber, Offset),

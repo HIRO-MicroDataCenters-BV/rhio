@@ -5,7 +5,7 @@ use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
-use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, S3Store};
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
 use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::error::S3Error;
@@ -31,6 +31,12 @@ pub enum ToBlobsActor {
         key: ObjectKey,
         size: ObjectSize,
         reply: oneshot::Sender<Result<()>>,
+    },
+    CompleteBlobs {
+        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
+    },
+    IncompleteBlobs {
+        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -118,6 +124,14 @@ impl BlobsActor {
                 reply,
             } => {
                 let result = self.on_download_blob(hash, bucket, key, size).await;
+                reply.send(result).ok();
+            }
+            ToBlobsActor::CompleteBlobs { reply } => {
+                let result = self.store.complete_blobs().await;
+                reply.send(result).ok();
+            }
+            ToBlobsActor::IncompleteBlobs { reply } => {
+                let result = self.store.incomplete_blobs().await;
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {

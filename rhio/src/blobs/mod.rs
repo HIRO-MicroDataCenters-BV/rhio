@@ -11,7 +11,7 @@ use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, S3Store};
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
 use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
 use s3::{Bucket, Region};
@@ -61,6 +61,26 @@ impl Blobs {
         }
     }
 
+    /// Query the blob store for all complete blobs.
+    pub async fn complete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::CompleteBlobs { reply })
+            .await?;
+        let result = reply_rx.await?;
+        Ok(result)
+    }
+
+    /// Query the blob store for all incomplete blobs.
+    pub async fn incomplete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::IncompleteBlobs { reply })
+            .await?;
+        let result = reply_rx.await?;
+        Ok(result)
+    }
+
     /// Download a blob from the network.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
@@ -87,7 +107,7 @@ impl Blobs {
         Ok(())
     }
 
-    /// Import an existing S3 object into our blob store, preparing it for p2p sync.
+    /// Import an existing, local S3 object into the blob store, preparing it for p2p sync.
     pub async fn import_s3_object(
         &self,
         bucket_name: String,
