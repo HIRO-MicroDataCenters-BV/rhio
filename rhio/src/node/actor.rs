@@ -297,7 +297,10 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
         match network_message.payload {
-            NetworkPayload::BlobAnnouncement(_scoped_bucket) => todo!(),
+            NetworkPayload::BlobAnnouncement(_scoped_bucket) => {
+                // @TODO: We've received a blob announcement here, check if we're interested in it
+                // and then start download.
+            }
             NetworkPayload::NatsMessage(message) => {
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
