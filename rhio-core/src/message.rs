@@ -1,6 +1,7 @@
 use anyhow::Result;
-use async_nats::Message as NatsMessage;
-use p2panda_core::{PrivateKey, PublicKey, Signature};
+use async_nats::{HeaderMap, Message as NatsMessage, Subject};
+use bytes::Bytes;
+use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +21,7 @@ pub struct NetworkMessage {
 impl NetworkMessage {
     pub fn new_nats(message: NatsMessage) -> Self {
         Self {
-            payload: NetworkPayload::NatsMessage(message),
+            payload: NetworkPayload::NatsMessage(message.subject, message.payload, message.headers),
             signature: None,
         }
     }
@@ -46,6 +47,10 @@ impl NetworkMessage {
         let mut bytes = Vec::new();
         ciborium::into_writer(&self, &mut bytes).expect("encoding network message");
         bytes
+    }
+
+    pub fn hash(&self) -> Hash {
+        Hash::new(self.to_bytes())
     }
 
     pub fn sign(&mut self, private_key: &PrivateKey) {
@@ -76,7 +81,7 @@ pub enum NetworkPayload {
     BlobAnnouncement(BlobHash, BucketName, ObjectKey, ObjectSize),
 
     #[serde(rename = "nats")]
-    NatsMessage(NatsMessage),
+    NatsMessage(Subject, Bytes, Option<HeaderMap>),
 }
 
 #[cfg(test)]
