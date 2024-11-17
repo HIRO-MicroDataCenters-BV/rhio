@@ -5,54 +5,66 @@ use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
+use rhio_core::ScopedBucket;
 use s3::creds::Credentials;
+use s3::error::S3Error;
 use s3::{Bucket, BucketConfiguration, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
-use tracing::error;
+use tracing::{debug, error};
 
+use crate::blobs::watcher::S3Event;
 use crate::topic::Query;
 
+#[allow(clippy::large_enum_variant)]
 pub enum ToBlobsActor {
-    ImportFile {
-        file_path: PathBuf,
-        reply: oneshot::Sender<Result<Hash>>,
-    },
-    ExportBlobMinio {
-        hash: Hash,
+    ImportS3Object {
         bucket_name: String,
-        region: Region,
-        credentials: Credentials,
+        key: String,
+        size: u64,
         reply: oneshot::Sender<Result<()>>,
     },
     DownloadBlob {
-        hash: Hash,
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
         reply: oneshot::Sender<Result<()>>,
+    },
+    CompleteBlobs {
+        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
+    },
+    IncompleteBlobs {
+        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
     },
 }
 
-pub struct BlobsActor<S>
-where
-    S: Store,
-{
+pub struct BlobsActor {
+    store: S3Store,
     inbox: mpsc::Receiver<ToBlobsActor>,
-    blobs: BlobsHandler<Query, S>,
+    blobs: BlobsHandler<Query, S3Store>,
 }
 
-impl<S> BlobsActor<S>
-where
-    S: Store,
-{
-    pub fn new(blobs: BlobsHandler<Query, S>, inbox: mpsc::Receiver<ToBlobsActor>) -> Self {
-        Self { inbox, blobs }
+impl BlobsActor {
+    pub fn new(
+        store: S3Store,
+        blobs: BlobsHandler<Query, S3Store>,
+        inbox: mpsc::Receiver<ToBlobsActor>,
+    ) -> Self {
+        Self {
+            store,
+            inbox,
+            blobs,
+        }
     }
 
     pub async fn run(mut self) -> Result<()> {
         // Take oneshot sender from external API awaited by `shutdown` call and fire it as soon as
-        // shutdown completed
+        // shutdown completed.
         let shutdown_completed_signal = self.run_inner().await;
         if let Err(err) = self.shutdown().await {
             error!(?err, "error during shutdown");
@@ -70,6 +82,7 @@ where
     async fn run_inner(&mut self) -> Result<oneshot::Sender<()>> {
         loop {
             tokio::select! {
+                biased;
                 Some(msg) = self.inbox.recv() => {
                     match msg {
                         ToBlobsActor::Shutdown { reply } => {
@@ -94,24 +107,31 @@ where
 
     async fn on_actor_message(&mut self, msg: ToBlobsActor) -> Result<()> {
         match msg {
-            ToBlobsActor::ImportFile { file_path, reply } => {
-                let result = self.on_import_file(file_path).await;
-                reply.send(result).ok();
-            }
-            ToBlobsActor::DownloadBlob { hash, reply } => {
-                let result = self.on_download_blob(hash).await;
-                reply.send(result).ok();
-            }
-            ToBlobsActor::ExportBlobMinio {
-                hash,
+            ToBlobsActor::ImportS3Object {
                 bucket_name,
-                region,
-                credentials,
+                key,
+                size,
                 reply,
             } => {
-                let result = self
-                    .on_export_blob_minio(hash, bucket_name.clone(), region, credentials)
-                    .await;
+                let result = self.store.import_object(&bucket_name, key, size).await;
+                reply.send(result).ok();
+            }
+            ToBlobsActor::DownloadBlob {
+                hash,
+                bucket_name,
+                key,
+                size,
+                reply,
+            } => {
+                let result = self.on_download_blob(hash, bucket_name, key, size).await;
+                reply.send(result).ok();
+            }
+            ToBlobsActor::CompleteBlobs { reply } => {
+                let result = self.store.complete_blobs().await;
+                reply.send(result).ok();
+            }
+            ToBlobsActor::IncompleteBlobs { reply } => {
+                let result = self.store.incomplete_blobs().await;
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {
@@ -122,102 +142,29 @@ where
         Ok(())
     }
 
-    async fn on_import_file(&mut self, path: PathBuf) -> Result<Hash> {
-        let mut stream = Box::pin(self.blobs.import_blob(path.to_path_buf()).await);
+    async fn on_download_blob(
+        &mut self,
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
+        self.store
+            .blob_discovered(hash, &bucket_name, key.clone(), size)
+            .await?;
 
-        // @TODO(adz): Yes, we know this never loops as all enum cases are currently terminating,
-        // but as soon as we're adding more to `p2panda-blobs` this code becomes crucial.
-        #[allow(clippy::never_loop)]
-        let hash = loop {
-            match stream.next().await {
-                Some(ImportBlobEvent::Done(hash)) => {
-                    break Ok(hash);
-                }
-                Some(ImportBlobEvent::Abort(err)) => {
-                    break Err(anyhow!("failed importing blob: {err}"));
-                }
-                None => {
-                    break Err(anyhow!("failed importing blob"));
-                }
-            }
-        }?;
-
-        Ok(hash)
-    }
-
-    async fn on_download_blob(&mut self, hash: Hash) -> Result<()> {
+        let hash = Hash::from_bytes(*hash.as_bytes());
         let mut stream = Box::pin(self.blobs.download_blob(hash).await);
         while let Some(event) = stream.next().await {
             match event {
                 DownloadBlobEvent::Abort(err) => {
-                    error!("failed downloading file: {err}");
+                    error!(%err, "failed downloading blob");
                 }
-                DownloadBlobEvent::Done => (),
+                DownloadBlobEvent::Done => {
+                    debug!(%hash, %bucket_name, %key, %size, "finished downloading blob");
+                }
             }
         }
-        Ok(())
-    }
-
-    async fn on_export_blob_minio(
-        &mut self,
-        hash: Hash,
-        bucket_name: String,
-        region: Region,
-        credentials: Credentials,
-    ) -> Result<()> {
-        let entry = self
-            .blobs
-            .get(hash)
-            .await?
-            .ok_or(anyhow!("requested blob hash was not found in blob store"))?;
-
-        // Initiate the minio bucket
-        let mut bucket =
-            Bucket::new(&bucket_name, region.clone(), credentials.clone())?.with_path_style();
-        if !bucket.exists().await? {
-            bucket = Bucket::create_with_path_style(
-                &bucket_name,
-                region,
-                credentials.clone(),
-                BucketConfiguration::default(),
-            )
-            .await?
-            .bucket;
-        };
-
-        // Start a multi-part upload
-        let mut parts = Vec::new();
-        let mpu = bucket
-            .initiate_multipart_upload(&hash.to_string(), "application/octet-stream")
-            .await?;
-
-        // Access the actual blob data and iterate over it's bytes in chunks
-        let mut reader = entry.data_reader().await?;
-        let size = reader.size().await?;
-        for (index, offset) in (0..size).step_by(5 * 1024 * 1024).enumerate() {
-            // Upload this chunk to the minio bucket
-            let bytes = reader.read_at(offset, 5 * 1024 * 1024).await?;
-            let part = bucket
-                .put_multipart_chunk(
-                    bytes.to_vec(),
-                    &hash.to_string(),
-                    { index + 1 } as u32,
-                    &mpu.upload_id,
-                    "application/octet-stream",
-                )
-                .await?;
-            parts.push(part);
-        }
-
-        let response = bucket
-            .complete_multipart_upload(&hash.to_string(), &mpu.upload_id, parts)
-            .await?;
-
-        if response.status_code() != 200 {
-            error!("uploading blob to minio bucket failed with: {response}");
-            return Err(anyhow!(response));
-        }
-
         Ok(())
     }
 

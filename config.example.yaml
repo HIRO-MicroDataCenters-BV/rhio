@@ -76,7 +76,7 @@
 # (they need to be hosted with a static IP address).
 #
 # nodes:
-#   - public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+#   - public_key: "<public-key>"
 #     endpoints:
 #       - "192.168.178.100:9102"
 #       - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9103"
@@ -87,20 +87,20 @@
 
 # publish:
 #   s3_buckets:
-#     - "local_bucket_1"
-#     - "local_bucket_2"
+#     - "bucket-1"
+#     - "bucket-2"
 #   nats_subjects:
-#     - subject: "<public_key>.workload.berlin.energy"
+#     - subject: "<public-key>.workload.berlin.energy"
 #       stream: "workload"
-#     - subject: "<public_key>.workload.rotterdam.energy"
+#     - subject: "<public-key>.workload.rotterdam.energy"
 #       stream: "workload"
 #
 # subscribe:
 #   s3_buckets:
-#     - "<public_key>/remote_bucket_1"
-#     - "<public_key>/remote_bucket_2"
+#     - "bucket-1/<public-key>"
+#     - "bucket-2/<public-key>"
 #   nats_subjects:
-#     - subject: "<public_key>.workload.*.energy"
+#     - subject: "<public-key>.workload.*.energy"
 #       stream: "workload"
-#     - subject: "<public_key>.data.thehague.meta"
+#     - subject: "<public-key>.data.thehague.meta"
 #       stream: "data"

@@ -3,7 +3,7 @@ use std::fmt;
 use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::Topic;
-use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
+use rhio_core::{ScopedBucket, ScopedSubject};
 use serde::{Deserialize, Serialize};
 
 use crate::nats::StreamName;
@@ -45,7 +45,7 @@ impl Subscription {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Publication {
     Bucket {
-        bucket_name: Bucket,
+        bucket: ScopedBucket,
     },
     Subject {
         stream_name: StreamName,
@@ -55,12 +55,13 @@ pub enum Publication {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Query {
-    Bucket { bucket_name: Bucket },
+    Bucket { bucket: ScopedBucket },
     Subject { subject: ScopedSubject },
     // @TODO(adz): p2panda's API currently does not allow an explicit way to _not_ sync with other
     // peers. We're using this hacky workaround to indicate in the topic that we're not interested
     // in syncing. The custom rhio sync implementation will check this before and abort the sync
     // process if this value is set.
+    NoSyncBucket { public_key: PublicKey },
     NoSyncSubject { public_key: PublicKey },
 }
 
@@ -69,6 +70,7 @@ impl Query {
         match self {
             Self::Bucket { .. } => "bucket",
             Self::Subject { .. } => "subject",
+            Self::NoSyncBucket { .. } => "bucket",
             Self::NoSyncSubject { .. } => "subject",
         }
     }
@@ -77,9 +79,7 @@ impl Query {
 impl From<Subscription> for Query {
     fn from(value: Subscription) -> Self {
         match value {
-            Subscription::Bucket { bucket } => Self::Bucket {
-                bucket_name: bucket.bucket_name(),
-            },
+            Subscription::Bucket { bucket } => Self::Bucket { bucket },
             Subscription::Subject { subject, .. } => Self::Subject { subject },
         }
     }
@@ -88,7 +88,7 @@ impl From<Subscription> for Query {
 impl From<Publication> for Query {
     fn from(value: Publication) -> Self {
         match value {
-            Publication::Bucket { bucket_name } => Self::Bucket { bucket_name },
+            Publication::Bucket { bucket } => Self::Bucket { bucket },
             Publication::Subject { subject, .. } => Self::Subject { subject },
         }
     }
@@ -97,12 +97,13 @@ impl From<Publication> for Query {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Query::Bucket { bucket_name } => {
-                write!(f, "s3 bucket_name={}", bucket_name)
+            Query::Bucket { bucket } => {
+                write!(f, "s3 bucket={}", bucket)
             }
             Query::Subject { subject } => {
                 write!(f, "nats subject={}", subject)
             }
+            Query::NoSyncBucket { .. } => write!(f, "no-sync"),
             Query::NoSyncSubject { .. } => write!(f, "no-sync"),
         }
     }
@@ -112,14 +113,19 @@ impl fmt::Display for Query {
 /// message stream.
 impl Topic for Query {}
 
-/// For gossip ("live-mode") we're subscribing to all S3 data from this _bucket name_ or all NATS
-/// messages from this _author_.
+/// For gossip ("live-mode") we're subscribing to all S3 data or all NATS messages from this
+/// _author_.
 impl TopicId for Query {
     fn id(&self) -> [u8; 32] {
         let hash = match self {
-            Self::Bucket { bucket_name } => Hash::new(format!("{}{}", self.prefix(), bucket_name)),
+            Self::Bucket { bucket } => {
+                Hash::new(format!("{}{}", self.prefix(), bucket.public_key()))
+            }
             Self::Subject { subject, .. } => {
                 Hash::new(format!("{}{}", self.prefix(), subject.public_key()))
+            }
+            Self::NoSyncBucket { public_key } => {
+                Hash::new(format!("{}{}", self.prefix(), public_key))
             }
             Self::NoSyncSubject { public_key } => {
                 Hash::new(format!("{}{}", self.prefix(), public_key))
@@ -145,19 +151,19 @@ mod tests {
 
         // Buckets use "bucket name" as gossip topic id.
         let subscription_0: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_2, "icecreams"),
+            bucket: ScopedBucket::new("icecreams", public_key_2),
         }
         .into();
         let subscription_1: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_1, "icecreams"),
+            bucket: ScopedBucket::new("icecreams", public_key_1),
         }
         .into();
         let subscription_2: Query = Subscription::Bucket {
-            bucket: ScopedBucket::new(public_key_1, "airplanes"),
+            bucket: ScopedBucket::new("airplanes", public_key_1),
         }
         .into();
-        assert_eq!(subscription_0.id(), subscription_1.id());
-        assert_ne!(subscription_1.id(), subscription_2.id());
+        assert_ne!(subscription_0.id(), subscription_1.id());
+        assert_eq!(subscription_1.id(), subscription_2.id());
 
         // NATS subjects use public key as gossip topic id.
         let subscription_3: Query = Subscription::Subject {

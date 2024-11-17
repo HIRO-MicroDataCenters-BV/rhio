@@ -3,40 +3,45 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, bail};
 use p2panda_core::PublicKey;
+use rhio_blobs::BucketName;
 use serde::{Deserialize, Serialize};
 
 const KEY_PREFIX_TOKEN: &str = "/";
-
-pub type Bucket = String;
 
 /// Special S3 bucket name for the "rhio" application which holds a regular S3 bucket name next to
 /// a peer's Ed25519 public key.
 ///
 /// This makes the S3 bucket name "scoped" to this particular identity.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ScopedBucket(PublicKey, Bucket);
+pub struct ScopedBucket(BucketName, PublicKey);
 
 impl ScopedBucket {
-    pub fn new(public_key: PublicKey, bucket_name: &str) -> Self {
-        Self(public_key, bucket_name.to_string())
+    pub fn new(bucket_name: &str, public_key: PublicKey) -> Self {
+        Self(bucket_name.to_string(), public_key)
     }
 
     pub fn public_key(&self) -> PublicKey {
-        self.0
+        self.1
     }
 
-    pub fn bucket_name(&self) -> Bucket {
-        self.1.clone()
+    pub fn bucket_name(&self) -> BucketName {
+        self.0.clone()
     }
 
     pub fn is_owner(&self, public_key: &PublicKey) -> bool {
-        &self.0 == public_key
+        &self.1 == public_key
     }
 }
 
 impl fmt::Display for ScopedBucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}{}", self.0, KEY_PREFIX_TOKEN, self.bucket_name())
+        write!(
+            f,
+            "{}{}{}",
+            self.bucket_name(),
+            KEY_PREFIX_TOKEN,
+            self.public_key()
+        )
     }
 }
 
@@ -52,10 +57,10 @@ impl FromStr for ScopedBucket {
             );
         }
 
-        let public_key = PublicKey::from_str(parts[0])
+        let public_key = PublicKey::from_str(parts[1])
             .map_err(|err| anyhow!("invalid public key in rhio subject: {err}"))?;
 
-        Ok(Self(public_key, parts[1].to_string()))
+        Ok(Self(parts[0].to_string(), public_key))
     }
 }
 

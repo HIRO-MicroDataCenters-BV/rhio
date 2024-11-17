@@ -7,7 +7,8 @@ use directories::ProjectDirs;
 use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
 use p2panda_core::PublicKey;
-use rhio_core::{Bucket, ScopedBucket, ScopedSubject};
+use rhio_blobs::BucketName;
+use rhio_core::{ScopedBucket, ScopedSubject};
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
@@ -209,7 +210,7 @@ pub struct KnownNode {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PublishConfig {
     #[serde(default)]
-    pub s3_buckets: Vec<Bucket>,
+    pub s3_buckets: Vec<BucketName>,
     #[serde(default)]
     pub nats_subjects: Vec<NatsSubject>,
 }
@@ -275,8 +276,8 @@ nodes:
 
 publish:
     s3_buckets:
-        - "local_bucket_1"
-        - "local_bucket_2"
+        - "local-bucket-1"
+        - "local-bucket-2"
     nats_subjects:
         - subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy"
           stream: "workload"
@@ -285,8 +286,8 @@ publish:
 
 subscribe:
     s3_buckets:
-      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1"
-      - "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2"
+      - "remote-bucket-1/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+      - "remote-bucket-2/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
     nats_subjects:
       - subject: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy"
         stream: "workload"
@@ -342,7 +343,7 @@ subscribe:
                     },
                     log_level: None,
                     publish: Some(PublishConfig {
-                        s3_buckets: vec!["local_bucket_1".into(), "local_bucket_2".into()],
+                        s3_buckets: vec!["local-bucket-1".into(), "local-bucket-2".into()],
                         nats_subjects: vec![
                             NatsSubject {
                                 stream_name: "workload".into(),
@@ -356,10 +357,10 @@ subscribe:
                     }),
                     subscribe: Some(SubscribeConfig {
                         s3_buckets: vec![
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_1"
+                            "remote-bucket-1/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
-                            "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a/remote_bucket_2"
+                            "remote-bucket-2/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
                         ],

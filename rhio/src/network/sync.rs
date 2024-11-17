@@ -10,6 +10,7 @@ use p2panda_core::{Hash, PrivateKey};
 use p2panda_net::TopicId;
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
+use rhio_blobs::{BlobHash, BucketName, ObjectSize, Paths, S3Store};
 use rhio_core::{NetworkMessage, ScopedSubject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
@@ -24,12 +25,22 @@ pub enum Message {
     Query(Query),
     NatsHave(Vec<Hash>),
     NatsMessages(Vec<NetworkMessage>),
+    BlobsHave(Vec<BlobHash>),
+    Blobs(Vec<NetworkMessage>),
 }
 
+/// Simple sync protocol implementation to allow exchange of past NATS messages or blob
+/// announcements.
+// @TODO(adz): This implementation is sub-optimal as it requires the peers to send over
+// _everything_ they know about. This can be optimized later with a smarter set reconciliation
+// strategy though it'll be tricky to find out how to organize the data to make it more efficient
+// (NATS messages do not have timestamps but we could sort them by sequential order of the filtered
+// consumer, blobs could be sorted by S3 key (the absolute path)?).
 #[derive(Clone, Debug)]
 pub struct RhioSyncProtocol {
     config: Config,
     nats: Nats,
+    blob_store: S3Store,
     private_key: PrivateKey,
 }
 
@@ -63,14 +74,47 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // The current p2panda API does not give any control to turn off syncing for some data
         // stream subscriptions, this is why we're doing it this hacky way.
-        if matches!(query, Query::NoSyncSubject { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. })
+            || matches!(query, Query::NoSyncBucket { .. })
+        {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
         // 2. We can sync over NATS messages or S3 blob announcements.
         match query {
-            Query::Bucket { .. } => todo!(),
+            Query::Bucket { ref bucket } => {
+                // Send over a list of blob hashes we have already to remote peer.
+                let blob_hashes: Vec<BlobHash> = self
+                    .complete_blobs(&bucket.bucket_name())
+                    .await
+                    .iter()
+                    .map(|(hash, _, _, _)| hash.to_owned())
+                    .collect();
+                debug!(parent: &span, "we have {} completed blobs", blob_hashes.len());
+                sink.send(Message::BlobsHave(blob_hashes)).await?;
+
+                // Wait for other peer to send us what we're missing.
+                let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
+                    "incoming message stream ended prematurely".into(),
+                ))??;
+                let Message::Blobs(remote_blob_announcements) = message else {
+                    return Err(SyncError::UnexpectedBehaviour(
+                        "did not receive expected message".into(),
+                    ));
+                };
+
+                debug!(parent: &span,
+                    "received {} new blob announcements from remote peer",
+                    remote_blob_announcements.len()
+                );
+
+                for blob_announcement in remote_blob_announcements {
+                    app_tx
+                        .send(FromSync::Data(blob_announcement.to_bytes(), None))
+                        .await?;
+                }
+            }
             Query::Subject { ref subject } => {
                 // NATS streams are configured locally for every peer, so we need to look it up
                 // ourselves to find out what stream configuration we have for this subject.
@@ -132,6 +176,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         .await?;
                 }
             }
+            Query::NoSyncBucket { .. } => {
+                unreachable!("returned already earlier on no-sync option")
+            }
             Query::NoSyncSubject { .. } => {
                 unreachable!("returned already earlier on no-sync option")
             }
@@ -176,14 +223,72 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSyncSubject { .. }) {
+        if matches!(query, Query::NoSyncSubject { .. })
+            || matches!(query, Query::NoSyncBucket { .. })
+        {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
         // 2. We can sync over NATS messages or S3 blob announcements.
         match &query {
-            Query::Bucket { .. } => todo!(),
+            Query::Bucket { bucket } => {
+                // Await message from other peer on the blobs they _have_, so we can calculate what
+                // they're missing and send that delta to them.
+                let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
+                    "incoming message stream ended prematurely".into(),
+                ))??;
+                let Message::BlobsHave(remote_blob_hashes) = message else {
+                    return Err(SyncError::UnexpectedBehaviour(
+                        "did not receive expected message".into(),
+                    ));
+                };
+
+                let is_publishing = match &self.config.publish {
+                    Some(publications) => publications
+                        .s3_buckets
+                        .iter()
+                        .find(|bucket_name| &&bucket.bucket_name() == bucket_name),
+                    None => None,
+                }
+                .is_some();
+
+                if !is_publishing {
+                    // Inform the other peer politely that we need to end here as we can't provide for
+                    // this S3 bucket by sending them an empty array back.
+                    debug!(parent: &span,
+                        "can't provide data, politely send empty array back",
+                    );
+                    sink.send(Message::Blobs(vec![])).await?;
+                    return Ok(());
+                }
+
+                let blob_announcements: Vec<NetworkMessage> = self
+                    .complete_blobs(&bucket.bucket_name())
+                    .await
+                    .into_iter()
+                    .filter_map(|(hash, _, paths, size)| {
+                        if remote_blob_hashes.contains(&hash) {
+                            None
+                        } else {
+                            Some({
+                                let mut signed_msg = NetworkMessage::new_blob_announcement(
+                                    hash,
+                                    bucket.clone(),
+                                    paths.data(),
+                                    size,
+                                );
+                                signed_msg.sign(&self.private_key);
+                                signed_msg
+                            })
+                        }
+                    })
+                    .collect();
+
+                debug!(parent: &span, "send {} blob announcements", blob_announcements.len());
+
+                sink.send(Message::Blobs(blob_announcements)).await?;
+            }
             Query::Subject { subject } => {
                 // Look up our config to find out if we have a NATS stream somewhere which fits the
                 // requested subject.
@@ -256,6 +361,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 sink.send(Message::NatsMessages(nats_messages)).await?;
             }
+            Query::NoSyncBucket { .. } => {
+                unreachable!("we've already returned before no-sync option")
+            }
             Query::NoSyncSubject { .. } => {
                 unreachable!("we've already returned before no-sync option")
             }
@@ -272,12 +380,26 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 }
 
 impl RhioSyncProtocol {
-    pub fn new(config: Config, nats: Nats, private_key: PrivateKey) -> Self {
+    pub fn new(config: Config, nats: Nats, blob_store: S3Store, private_key: PrivateKey) -> Self {
         Self {
             config,
             nats,
+            blob_store,
             private_key,
         }
+    }
+
+    /// Get a list of blobs we have ourselves already in the blob store for this query.
+    async fn complete_blobs(
+        &self,
+        bucket_name: &BucketName,
+    ) -> Vec<(BlobHash, BucketName, Paths, ObjectSize)> {
+        self.blob_store
+            .complete_blobs()
+            .await
+            .into_iter()
+            .filter(|(_, store_bucket_name, _, _)| store_bucket_name == bucket_name)
+            .collect()
     }
 
     /// Download all NATS messages we have for that subject and return them as a stream.

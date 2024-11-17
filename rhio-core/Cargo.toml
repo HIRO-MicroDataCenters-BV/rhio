@@ -3,8 +3,11 @@ name = "rhio-core"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
-anyhow = "1.0.86"
+anyhow = "1.0.93"
 async-nats = "0.37.0"
 ciborium = "0.2.2"
 constcat = "0.5.1"
@@ -13,11 +16,9 @@ p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f80
 p2panda-engine = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 p2panda-store = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "14e45f807d800c79a3caa5d918b99d83f6e0cce9" }
+rhio-blobs = { path = "../rhio-blobs" }
 serde = { version = "1.0.209", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"
-tokio = { version = "1.40.0", features = ["rt", "macros"] }
-
-[lints]
-workspace = true
+tokio = { version = "1.41.1", features = ["rt", "macros"] }

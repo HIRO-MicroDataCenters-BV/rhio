@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use rhio::config::{load_config, NatsSubject};
 use rhio::tracing::setup_tracing;
 use rhio::{Node, Publication, Subscription};
-use rhio_core::load_private_key_from_file;
-use tracing::info;
+use rhio_core::{load_private_key_from_file, ScopedBucket, ScopedSubject};
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -15,6 +15,7 @@ async fn main() -> Result<()> {
             "could not load private key from file {}",
             config.node.private_key.display(),
         ))?;
+    let public_key = private_key.public_key();
 
     let node = Node::spawn(config.clone(), private_key).await?;
 
@@ -27,7 +28,7 @@ async fn main() -> Result<()> {
     info!("‣ network id:");
     info!("  - {}", config.node.network_id);
     info!("‣ node public key:");
-    info!("  - {}", node.id());
+    info!("  - {}", public_key);
     info!("‣ node addresses:");
     for address in addresses {
         info!("  - {}", address);
@@ -35,7 +36,9 @@ async fn main() -> Result<()> {
 
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
-            node.publish(Publication::Bucket { bucket_name }).await?;
+            // Assign our own public key to S3 bucket info.
+            let bucket = ScopedBucket::new(&bucket_name, public_key);
+            node.publish(Publication::Bucket { bucket }).await?;
         }
 
         for NatsSubject {
@@ -43,6 +46,15 @@ async fn main() -> Result<()> {
             subject,
         } in publish.nats_subjects
         {
+            if subject.public_key() != public_key {
+                warn!(
+                    "given public key in 'publish' configuration does not match actual local
+                    public key"
+                );
+            }
+
+            // Assign our own public key to NATS subject info.
+            let subject = ScopedSubject::new(public_key, &subject.subject().to_string());
             node.publish(Publication::Subject {
                 stream_name,
                 subject,

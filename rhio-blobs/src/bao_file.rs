@@ -3,49 +3,30 @@ use bytes::{Bytes, BytesMut};
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
 use iroh_blobs::store::bao_tree::BaoTree;
-use iroh_blobs::Hash;
-
-use iroh_blobs::IROH_BLOCK_SIZE;
+use iroh_blobs::{Hash, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
+use serde::{Deserialize, Serialize};
 
-use crate::paths::Paths;
+use crate::s3_file::S3File;
+use crate::Paths;
 
-use super::s3_file::S3File;
-
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BaoMeta {
     pub hash: Hash,
     pub size: u64,
     pub complete: bool,
+    #[serde(rename = "key")]
     pub path: String,
 }
 
 impl BaoMeta {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(self.hash.as_bytes());
-        bytes.extend_from_slice(&self.size.to_le_bytes());
-        bytes.extend_from_slice(&(self.complete as i32).to_le_bytes());
-        bytes.extend_from_slice(self.path.as_bytes());
-        bytes
+        serde_json::to_vec(self).expect("json encoding of meta data")
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let hash_bytes: [u8; 32] = bytes[..32].try_into()?;
-        let hash = Hash::from_bytes(hash_bytes);
-        let size_bytes: [u8; 8] = bytes[32..40].try_into()?;
-        let size = u64::from_le_bytes(size_bytes);
-        let complete_bytes: [u8; 4] = bytes[40..44].try_into()?;
-        let complete = i32::from_le_bytes(complete_bytes) != 0;
-        let path = String::from_utf8(bytes[44..].to_vec())?;
-
-        Ok(Self {
-            size,
-            hash,
-            complete,
-            path,
-        })
+        Ok(serde_json::from_slice(bytes)?)
     }
 }
 
