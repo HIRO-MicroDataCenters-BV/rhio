@@ -91,9 +91,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // The current p2panda API does not give any control to turn off syncing for some data
         // stream subscriptions, this is why we're doing it this hacky way.
-        if matches!(query, Query::NoSyncSubject { .. })
-            || matches!(query, Query::NoSyncBucket { .. })
-        {
+        if query.is_no_sync() {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
@@ -257,9 +255,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSyncSubject { .. })
-            || matches!(query, Query::NoSyncBucket { .. })
-        {
+        if query.is_no_sync() {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }

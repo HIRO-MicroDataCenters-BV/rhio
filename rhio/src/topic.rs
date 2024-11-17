@@ -83,6 +83,13 @@ impl Query {
         }
     }
 
+    pub fn is_no_sync(&self) -> bool {
+        match self {
+            Self::NoSyncBucket { .. } | Self::NoSyncSubject { .. } => true,
+            _ => false,
+        }
+    }
+
     fn prefix(&self) -> &str {
         match self {
             Self::Bucket { .. } => "bucket",
