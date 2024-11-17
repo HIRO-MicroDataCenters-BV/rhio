@@ -353,7 +353,7 @@ impl NodeActor {
                     None => HeaderMap::new(),
                 };
                 let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-                headers.append(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
+                headers.insert(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
 
                 self.nats
                     .publish(
