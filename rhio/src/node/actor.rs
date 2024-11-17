@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{HeaderMap, Message as NatsMessage};
 use futures_util::stream::SelectAll;
-use p2panda_core::{PrivateKey, PublicKey};
+use p2panda_core::PrivateKey;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
@@ -21,7 +21,9 @@ use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats, NATS_FROM_RHIO_HEADER};
 use crate::network::Panda;
 use crate::node::Publication;
-use crate::topic::{Query, Subscription};
+use crate::topic::{
+    is_bucket_matching, is_bucket_publishable, is_subject_matching, Query, Subscription,
+};
 
 pub enum ToNodeActor {
     Publish {
@@ -455,79 +457,4 @@ impl NodeActor {
         self.blobs.shutdown().await?;
         Ok(())
     }
-}
-
-/// Returns true if incoming NATS message from that public key is of interest to our local node.
-fn is_subject_matching(
-    subscriptions: &Vec<Subscription>,
-    incoming: &Subject,
-    delivered_from: &PublicKey,
-) -> bool {
-    for subscription in subscriptions {
-        match subscription {
-            Subscription::Bucket { .. } => continue,
-            Subscription::Subject {
-                subject,
-                public_key,
-                ..
-            } => {
-                if subject.is_matching(incoming) && public_key == delivered_from {
-                    return true;
-                } else {
-                    continue;
-                }
-            }
-        }
-    }
-    false
-}
-
-/// Returns true if incoming blob announcement from that public key is of interest to our local
-/// node.
-fn is_bucket_matching(
-    subscriptions: &Vec<Subscription>,
-    incoming: &BucketName,
-    delivered_from: &PublicKey,
-) -> bool {
-    for subscription in subscriptions {
-        match subscription {
-            Subscription::Bucket {
-                bucket_name,
-                public_key,
-            } => {
-                if bucket_name == incoming && public_key == delivered_from {
-                    return true;
-                } else {
-                    continue;
-                }
-            }
-            Subscription::Subject { .. } => {
-                continue;
-            }
-        }
-    }
-    false
-}
-
-/// Returns the publication info for the blob announcement if it exists in our config, returns
-/// `None` otherwise.
-fn is_bucket_publishable<'a>(
-    publications: &'a Vec<Publication>,
-    outgoing: &BucketName,
-) -> Option<&'a Publication> {
-    for publication in publications {
-        match publication {
-            Publication::Bucket { bucket_name, .. } => {
-                if bucket_name == outgoing {
-                    return Some(publication);
-                } else {
-                    continue;
-                }
-            }
-            Publication::Subject { .. } => {
-                continue;
-            }
-        }
-    }
-    None
 }

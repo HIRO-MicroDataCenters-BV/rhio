@@ -179,6 +179,81 @@ impl TopicId for Query {
     }
 }
 
+/// Returns true if incoming NATS message from that public key is of interest to our local node.
+pub fn is_subject_matching(
+    subscriptions: &Vec<Subscription>,
+    incoming: &Subject,
+    delivered_from: &PublicKey,
+) -> bool {
+    for subscription in subscriptions {
+        match subscription {
+            Subscription::Bucket { .. } => continue,
+            Subscription::Subject {
+                subject,
+                public_key,
+                ..
+            } => {
+                if subject.is_matching(incoming) && public_key == delivered_from {
+                    return true;
+                } else {
+                    continue;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Returns true if incoming blob announcement from that public key is of interest to our local
+/// node.
+pub fn is_bucket_matching(
+    subscriptions: &Vec<Subscription>,
+    incoming: &BucketName,
+    delivered_from: &PublicKey,
+) -> bool {
+    for subscription in subscriptions {
+        match subscription {
+            Subscription::Bucket {
+                bucket_name,
+                public_key,
+            } => {
+                if bucket_name == incoming && public_key == delivered_from {
+                    return true;
+                } else {
+                    continue;
+                }
+            }
+            Subscription::Subject { .. } => {
+                continue;
+            }
+        }
+    }
+    false
+}
+
+/// Returns the publication info for the blob announcement if it exists in our config, returns
+/// `None` otherwise.
+pub fn is_bucket_publishable<'a>(
+    publications: &'a Vec<Publication>,
+    outgoing: &BucketName,
+) -> Option<&'a Publication> {
+    for publication in publications {
+        match publication {
+            Publication::Bucket { bucket_name, .. } => {
+                if bucket_name == outgoing {
+                    return Some(publication);
+                } else {
+                    continue;
+                }
+            }
+            Publication::Subject { .. } => {
+                continue;
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use p2panda_core::PrivateKey;
