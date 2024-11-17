@@ -1,21 +1,27 @@
 mod actor;
+pub mod watcher;
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use async_nats::jetstream::publish;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::Hash;
-use s3::Region;
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
+use s3::creds::Credentials;
+use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
-use crate::config::S3Config;
+use crate::blobs::watcher::S3Watcher;
+use crate::config::{Config, S3Config};
 use crate::topic::Query;
 use crate::JoinErrToStr;
 
@@ -28,11 +34,15 @@ pub struct Blobs {
 }
 
 impl Blobs {
-    pub fn new<S: Store>(config: S3Config, blobs_handler: BlobsHandler<Query, S>) -> Self {
+    pub fn new(
+        config: S3Config,
+        blob_store: S3Store,
+        blobs_handler: BlobsHandler<Query, S3Store>,
+    ) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
-        let blobs_actor = BlobsActor::new(blobs_handler, blobs_actor_rx);
-        let pool = LocalPoolHandle::new(1);
+        let blobs_actor = BlobsActor::new(blob_store.clone(), blobs_handler, blobs_actor_rx);
 
+        let pool = LocalPoolHandle::new(1);
         let actor_handle = pool.spawn_pinned(|| async move {
             if let Err(err) = blobs_actor.run().await {
                 error!("blobs actor failed: {err:?}");
@@ -50,81 +60,69 @@ impl Blobs {
         }
     }
 
-    /// Import a file into the node's blob store on the file system and sync it with the internal
-    /// MinIO database.
-    // @TODO: We're currently using the filesystem blob store to calculate the bao-tree hashes
-    // for the file. This is the only way to retrieve the blob hash right now. In the future we
-    // want to do all of this inside of MinIO and skip loading the file onto the file-system
-    // first.
-    // Related issue: https://github.com/HIRO-MicroDataCenters-BV/rhio/issues/51
-    pub async fn import_file(&self, file_path: PathBuf) -> Result<Hash> {
+    /// Query the blob store for all complete blobs.
+    pub async fn complete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::ImportFile { file_path, reply })
+            .send(ToBlobsActor::CompleteBlobs { reply })
             .await?;
-        let hash = reply_rx.await??;
-
-        self.export_blob_minio(
-            hash,
-            self.config.region.clone(),
-            self.config.endpoint.clone(),
-            // @TODO: Remove this placeholder
-            "placeholder".to_string(),
-        )
-        .await?;
-
-        Ok(hash)
+        let result = reply_rx.await?;
+        Ok(result)
     }
 
-    /// Export a blob to a minio bucket.
-    ///
-    /// Copies an existing blob from the blob store to the provided minio bucket.
-    pub async fn export_blob_minio(
-        &self,
-        hash: Hash,
-        region: String,
-        endpoint: String,
-        bucket_name: String,
-    ) -> Result<()> {
-        let Some(credentials) = &self.config.credentials else {
-            return Err(anyhow!("no minio credentials provided"));
-        };
-
-        // Get the blobs entry from the blob store
+    /// Query the blob store for all incomplete blobs.
+    pub async fn incomplete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::ExportBlobMinio {
-                hash,
-                bucket_name,
-                region: Region::Custom { region, endpoint },
-                credentials: credentials.clone(),
-                reply,
-            })
+            .send(ToBlobsActor::IncompleteBlobs { reply })
             .await?;
-        reply_rx.await?
+        let result = reply_rx.await?;
+        Ok(result)
     }
 
     /// Download a blob from the network.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
     /// bucket.
-    pub async fn download_blob(&self, hash: Hash) -> Result<()> {
+    pub async fn download(
+        &self,
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::DownloadBlob { hash, reply })
+            .send(ToBlobsActor::DownloadBlob {
+                hash,
+                bucket_name,
+                key,
+                size,
+                reply,
+            })
             .await?;
         let result = reply_rx.await?;
         result?;
+        Ok(())
+    }
 
-        self.export_blob_minio(
-            hash,
-            self.config.region.clone(),
-            self.config.endpoint.clone(),
-            // @TODO: Remove this placeholder
-            "placeholder".to_string(),
-        )
-        .await?;
-
+    /// Import an existing, local S3 object into the blob store, preparing it for p2p sync.
+    pub async fn import_s3_object(
+        &self,
+        bucket_name: String,
+        key: String,
+        size: u64,
+    ) -> Result<()> {
+        let (reply, reply_rx) = oneshot::channel();
+        self.blobs_actor_tx
+            .send(ToBlobsActor::ImportS3Object {
+                bucket_name,
+                key,
+                size,
+                reply,
+            })
+            .await?;
+        let result = reply_rx.await?;
         Ok(())
     }
 
@@ -136,4 +134,49 @@ impl Blobs {
         reply_rx.await?;
         Ok(())
     }
+}
+
+/// Initiates and returns a blob store handler for S3 backends based on the rhio config.
+pub async fn store_from_config(config: &Config) -> Result<S3Store> {
+    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+
+    let credentials = config
+        .s3
+        .credentials
+        .as_ref()
+        .ok_or(anyhow!("s3 credentials are not set"))
+        .context("reading s3 credentials from config")?;
+    let region: Region = Region::Custom {
+        region: config.s3.region.clone(),
+        endpoint: config.s3.endpoint.clone(),
+    };
+
+    // Merge all buckets mentioned in the regarding publish and subscribe config sections and
+    // de-duplicate them. On this level we want them to be all handled by the same interface.
+    if let Some(publish) = &config.publish {
+        for bucket_name in &publish.s3_buckets {
+            let bucket =
+                Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
+            buckets.insert(bucket_name.clone(), *bucket);
+        }
+    }
+
+    if let Some(subscribe) = &config.subscribe {
+        for remote_bucket in &subscribe.s3_buckets {
+            let bucket = Bucket::new(
+                &remote_bucket.bucket_name,
+                region.clone(),
+                credentials.clone(),
+            )?
+            .with_path_style();
+            buckets.insert(remote_bucket.bucket_name.clone(), *bucket);
+        }
+    }
+
+    let buckets: Vec<Bucket> = buckets.values().cloned().collect();
+    let store = S3Store::new(buckets)
+        .await
+        .context("could not initialize s3 interface")?;
+
+    Ok(store)
 }

@@ -6,7 +6,7 @@ use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{ConnectOptions, HeaderMap};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rhio_core::ScopedSubject;
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -16,6 +16,12 @@ use crate::config::{Config, NatsCredentials};
 use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::{ConsumerId, JetStreamEvent, StreamName};
 use crate::JoinErrToStr;
+
+/// Custom rhio header for NATS messages we add to every ingested message.
+///
+/// This prevents the system to "re-ingest" messages via the incoming NATS consumer for gossip
+/// broadcast which might be the same stream for incoming and outgoing messages.
+pub const NATS_FROM_RHIO_HEADER: &str = "X-From-Rhio";
 
 #[derive(Clone, Debug)]
 pub struct Nats {
@@ -69,7 +75,7 @@ impl Nats {
     pub async fn subscribe(
         &self,
         stream_name: StreamName,
-        subject: ScopedSubject,
+        subject: Subject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {

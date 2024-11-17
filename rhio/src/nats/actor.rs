@@ -5,7 +5,7 @@ use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
 use async_nats::{Client as NatsClient, HeaderMap};
 use rand::random;
-use rhio_core::ScopedSubject;
+use rhio_core::Subject;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error};
 
@@ -45,7 +45,7 @@ pub enum ToNatsActor {
         /// Streams can hold different subjects. By using a "subject filter" we're able to
         /// "consume" only the ones we're interested in. This forms "filtered views" on top of
         /// streams.
-        subject: ScopedSubject,
+        subject: Subject,
 
         /// Consumer delivery policy.
         ///
@@ -206,7 +206,7 @@ impl NatsActor {
     async fn on_subscribe(
         &mut self,
         stream_name: StreamName,
-        filter_subject: ScopedSubject,
+        filter_subject: Subject,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rhio::config::{load_config, NatsSubject};
+use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject};
 use rhio::tracing::setup_tracing;
 use rhio::{Node, Publication, Subscription};
 use rhio_core::load_private_key_from_file;
@@ -15,6 +15,7 @@ async fn main() -> Result<()> {
             "could not load private key from file {}",
             config.node.private_key.display(),
         ))?;
+    let public_key = private_key.public_key();
 
     let node = Node::spawn(config.clone(), private_key).await?;
 
@@ -27,7 +28,7 @@ async fn main() -> Result<()> {
     info!("‣ network id:");
     info!("  - {}", config.node.network_id);
     info!("‣ node public key:");
-    info!("  - {}", node.id());
+    info!("  - {}", public_key);
     info!("‣ node addresses:");
     for address in addresses {
         info!("  - {}", address);
@@ -35,35 +36,48 @@ async fn main() -> Result<()> {
 
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
-            node.publish(Publication::Bucket { bucket_name }).await?;
+            // Assign our own public key to S3 bucket info.
+            node.publish(Publication::Bucket {
+                bucket_name,
+                public_key,
+            })
+            .await?;
         }
 
-        for NatsSubject {
+        for LocalNatsSubject {
             stream_name,
             subject,
         } in publish.nats_subjects
         {
+            // Assign our own public key to NATS subject info.
             node.publish(Publication::Subject {
                 stream_name,
                 subject,
+                public_key,
             })
             .await?;
         }
     };
 
     if let Some(subscribe) = config.subscribe {
-        for bucket in subscribe.s3_buckets {
-            node.subscribe(Subscription::Bucket { bucket }).await?;
+        for remote_bucket in subscribe.s3_buckets {
+            node.subscribe(Subscription::Bucket {
+                bucket_name: remote_bucket.bucket_name,
+                public_key: remote_bucket.public_key,
+            })
+            .await?;
         }
 
-        for NatsSubject {
+        for RemoteNatsSubject {
             stream_name,
             subject,
+            public_key,
         } in subscribe.nats_subjects
         {
             node.subscribe(Subscription::Subject {
                 stream_name,
                 subject,
+                public_key,
             })
             .await?;
         }

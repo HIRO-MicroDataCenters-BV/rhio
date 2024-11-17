@@ -1,9 +1,8 @@
 use anyhow::Result;
 use async_nats::Message as NatsMessage;
 use p2panda_core::{PrivateKey, PublicKey, Signature};
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use serde::{Deserialize, Serialize};
-
-use crate::ScopedBucket;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMessage {
@@ -26,6 +25,18 @@ impl NetworkMessage {
         }
     }
 
+    pub fn new_blob_announcement(
+        hash: BlobHash,
+        bucket_name: BucketName,
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Self {
+        Self {
+            payload: NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size),
+            signature: None,
+        }
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let message: Self = ciborium::from_reader(bytes)?;
         Ok(message)
@@ -44,7 +55,7 @@ impl NetworkMessage {
         self.signature = Some(signature);
     }
 
-    pub fn verify(&mut self, public_key: &PublicKey) -> bool {
+    pub fn verify(&self, public_key: &PublicKey) -> bool {
         match &self.signature {
             Some(signature) => {
                 let mut header = self.clone();
@@ -62,7 +73,7 @@ impl NetworkMessage {
 #[serde(tag = "type", content = "value")]
 pub enum NetworkPayload {
     #[serde(rename = "blob")]
-    BlobAnnouncement(ScopedBucket),
+    BlobAnnouncement(BlobHash, BucketName, ObjectKey, ObjectSize),
 
     #[serde(rename = "nats")]
     NatsMessage(NatsMessage),
@@ -71,8 +82,7 @@ pub enum NetworkPayload {
 #[cfg(test)]
 mod tests {
     use p2panda_core::PrivateKey;
-
-    use crate::ScopedBucket;
+    use rhio_blobs::BlobHash;
 
     use super::{NetworkMessage, NetworkPayload};
 
@@ -81,10 +91,12 @@ mod tests {
         let private_key = PrivateKey::new();
         let public_key = private_key.public_key();
         let mut header = NetworkMessage {
-            payload: NetworkPayload::BlobAnnouncement(ScopedBucket::new(
-                public_key,
+            payload: NetworkPayload::BlobAnnouncement(
+                BlobHash::new(b"test"),
                 "my_bucket".into(),
-            )),
+                "path/to/my.file".into(),
+                5911,
+            ),
             signature: None,
         };
         assert!(!header.verify(&public_key));
