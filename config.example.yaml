@@ -25,15 +25,9 @@
 # IDENTITY
 # ﾟ･｡+☆+｡･
 
-# Path to persist the node's Ed25519 private key file. The key is used to
-# identify the node towards other nodes during network discovery and
+# Path to file containing hexadecimal-encoded Ed25519 private key. The key is
+# used to identify the node towards other nodes during network discovery and
 # replication. This key is _not_ used to create and sign data.
-#
-# If a path is set, a new key will be generated and stored under this path when
-# node starts for the first time.
-#
-# When no path is set, your node will generate an ephemeral private key on
-# every start up and _not_ persist it.
 #
 # private_key_path: "private-key.txt"
 
