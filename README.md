@@ -33,7 +33,7 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 ## Usage
 
 1. Copy the [configuration file](config.example.yaml) and adjust it to your setup: `cp config.example.yaml config.yaml`
-2. Generate an hexadecimal-encoded Ed25519 private key file:
+2. Generate hexadecimal-encoded Ed25519 private key file:
     ```bash
     # Generate random Ed25519 private key via openssl
     openssl genpkey -algorithm ed25519 -outform der -out private-key.hex
