@@ -6,12 +6,13 @@ use async_trait::async_trait;
 use futures_util::future::{self};
 use futures_util::stream::BoxStream;
 use futures_util::{AsyncRead, AsyncWrite, Sink, SinkExt, StreamExt, TryStreamExt};
-use p2panda_core::{Hash, PrivateKey};
+use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
 use p2panda_net::TopicId;
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
+use rand::random;
 use rhio_blobs::{BlobHash, BucketName, ObjectSize, Paths, S3Store};
-use rhio_core::{NetworkMessage, ScopedSubject};
+use rhio_core::{NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, span, Level};
@@ -20,13 +21,28 @@ use crate::config::Config;
 use crate::nats::{ConsumerId, JetStreamEvent, Nats};
 use crate::topic::Query;
 
+type Challenge = u64;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
 pub enum Message {
-    Query(Query),
+    #[serde(rename = "handshake")]
+    Handshake(Query, Challenge),
+
+    #[serde(rename = "handshake_response")]
+    HandshakeResponse(Signature),
+
+    #[serde(rename = "nats_have")]
     NatsHave(Vec<Hash>),
-    NatsMessages(Vec<NetworkMessage>),
+
+    #[serde(rename = "nats_messages")]
+    NatsData(Vec<NetworkMessage>),
+
+    #[serde(rename = "blobs_have")]
     BlobsHave(Vec<BlobHash>),
-    Blobs(Vec<NetworkMessage>),
+
+    #[serde(rename = "blobs_data")]
+    BlobsData(Vec<NetworkMessage>),
 }
 
 /// Simple sync protocol implementation to allow exchange of past NATS messages or blob
@@ -67,26 +83,42 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         app_tx
             .send(FromSync::HandshakeSuccess(query.clone()))
             .await?;
-        sink.send(Message::Query(query.clone())).await?;
+        let (message, challenge) = init_handshake(query.clone());
+        sink.send(message).await?;
 
         // @TODO(adz): This is a workaround to disable syncing in some cases, for example when
         // we're a publishing peer we don't want to initiate syncing.
         //
         // The current p2panda API does not give any control to turn off syncing for some data
         // stream subscriptions, this is why we're doing it this hacky way.
-        if matches!(query, Query::NoSyncSubject { .. })
-            || matches!(query, Query::NoSyncBucket { .. })
-        {
+        if query.is_no_sync() {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
-        // 2. We can sync over NATS messages or S3 blob announcements.
+        // 2. Verify that this peer is the one we're subscribed to.
+        let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
+            "incoming message stream ended prematurely".into(),
+        ))??;
+        let Message::HandshakeResponse(signature) = message else {
+            return Err(SyncError::UnexpectedBehaviour(
+                "did not receive expected message".into(),
+            ));
+        };
+
+        if !verify_handshake(&signature, challenge, query.public_key()) {
+            debug!(parent: &span, "end sync session as remote peer did not match our subscribed public keys");
+            return Ok(());
+        }
+
+        // 3. We can sync over NATS messages or S3 blob announcements.
         match query {
-            Query::Bucket { ref bucket } => {
+            Query::Bucket {
+                ref bucket_name, ..
+            } => {
                 // Send over a list of blob hashes we have already to remote peer.
                 let blob_hashes: Vec<BlobHash> = self
-                    .complete_blobs(&bucket.bucket_name())
+                    .complete_blobs(bucket_name)
                     .await
                     .iter()
                     .map(|(hash, _, _, _)| hash.to_owned())
@@ -98,7 +130,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
                     "incoming message stream ended prematurely".into(),
                 ))??;
-                let Message::Blobs(remote_blob_announcements) = message else {
+                let Message::BlobsData(remote_blob_announcements) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
                     ));
@@ -115,7 +147,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         .await?;
                 }
             }
-            Query::Subject { ref subject } => {
+            Query::Subject { ref subject, .. } => {
                 // NATS streams are configured locally for every peer, so we need to look it up
                 // ourselves to find out what stream configuration we have for this subject.
                 let stream_name = match &self.config.subscribe {
@@ -159,7 +191,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
                     "incoming message stream ended prematurely".into(),
                 ))??;
-                let Message::NatsMessages(nats_messages) = message else {
+                let Message::NatsData(nats_messages) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
                     ));
@@ -206,7 +238,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
             "incoming message stream ended prematurely".into(),
         ))??;
-        let Message::Query(query) = message else {
+        let Message::Handshake(query, challenge) = message else {
             return Err(SyncError::UnexpectedBehaviour(
                 "did not receive expected message".into(),
             ));
@@ -223,16 +255,24 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         //
         // @TODO(adz): This is a workaround to disable syncing in some cases as the current p2panda
         // API does not give any control to turn off syncing for some topics.
-        if matches!(query, Query::NoSyncSubject { .. })
-            || matches!(query, Query::NoSyncBucket { .. })
-        {
+        if query.is_no_sync() {
             debug!(parent: &span, "end sync session prematurely as we don't want to have one");
             return Ok(());
         }
 
-        // 2. We can sync over NATS messages or S3 blob announcements.
+        // 2. Check if we are the peer the initiator is asking for, proof it if we are, otherwise
+        //    send invalid proof and stop here.
+        let accept_message = accept_handshake(challenge, &self.private_key);
+        sink.send(accept_message).await?;
+
+        if query.public_key() != &self.private_key.public_key() {
+            debug!(parent: &span, "end sync session prematurely as we are not the peer the initiator asked for");
+            return Ok(());
+        }
+
+        // 3. We can sync over NATS messages or S3 blob announcements.
         match &query {
-            Query::Bucket { bucket } => {
+            Query::Bucket { bucket_name, .. } => {
                 // Await message from other peer on the blobs they _have_, so we can calculate what
                 // they're missing and send that delta to them.
                 let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
@@ -248,7 +288,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     Some(publications) => publications
                         .s3_buckets
                         .iter()
-                        .find(|bucket_name| &&bucket.bucket_name() == bucket_name),
+                        .find(|local_bucket_name| &bucket_name == local_bucket_name),
                     None => None,
                 }
                 .is_some();
@@ -259,12 +299,12 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     debug!(parent: &span,
                         "can't provide data, politely send empty array back",
                     );
-                    sink.send(Message::Blobs(vec![])).await?;
+                    sink.send(Message::BlobsData(vec![])).await?;
                     return Ok(());
                 }
 
                 let blob_announcements: Vec<NetworkMessage> = self
-                    .complete_blobs(&bucket.bucket_name())
+                    .complete_blobs(bucket_name)
                     .await
                     .into_iter()
                     .filter_map(|(hash, _, paths, size)| {
@@ -274,7 +314,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             Some({
                                 let mut signed_msg = NetworkMessage::new_blob_announcement(
                                     hash,
-                                    bucket.clone(),
+                                    bucket_name.clone(),
                                     paths.data(),
                                     size,
                                 );
@@ -287,9 +327,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "send {} blob announcements", blob_announcements.len());
 
-                sink.send(Message::Blobs(blob_announcements)).await?;
+                sink.send(Message::BlobsData(blob_announcements)).await?;
             }
-            Query::Subject { subject } => {
+            Query::Subject { subject, .. } => {
                 // Look up our config to find out if we have a NATS stream somewhere which fits the
                 // requested subject.
                 let stream_name = match &self.config.publish {
@@ -327,7 +367,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     debug!(parent: &span,
                         "can't provide data, politely send empty array back",
                     );
-                    sink.send(Message::NatsMessages(vec![])).await?;
+                    sink.send(Message::NatsData(vec![])).await?;
                     return Ok(());
                 };
 
@@ -359,7 +399,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "downloaded {} NATS messages", nats_messages.len());
 
-                sink.send(Message::NatsMessages(nats_messages)).await?;
+                sink.send(Message::NatsData(nats_messages)).await?;
             }
             Query::NoSyncBucket { .. } => {
                 unreachable!("we've already returned before no-sync option")
@@ -406,7 +446,7 @@ impl RhioSyncProtocol {
     async fn nats_stream(
         &self,
         stream_name: String,
-        subject: &ScopedSubject,
+        subject: &Subject,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
         let (consumer_id, nats_rx) = self
@@ -451,5 +491,60 @@ impl RhioSyncProtocol {
             SyncError::Critical(format!("can't unsubscribe from NATS stream: {}", err))
         })?;
         Ok(())
+    }
+}
+
+fn init_handshake(query: Query) -> (Message, Challenge) {
+    let challenge: u64 = random();
+    (Message::Handshake(query, challenge), challenge)
+}
+
+fn accept_handshake(challenge: Challenge, private_key: &PrivateKey) -> Message {
+    let signature = private_key.sign(&challenge.to_ne_bytes());
+    Message::HandshakeResponse(signature)
+}
+
+fn verify_handshake(signature: &Signature, challenge: Challenge, public_key: &PublicKey) -> bool {
+    public_key.verify(&challenge.to_ne_bytes(), signature)
+}
+
+#[cfg(test)]
+mod tests {
+    use p2panda_core::PrivateKey;
+
+    use crate::topic::Query;
+
+    use super::{accept_handshake, init_handshake, verify_handshake, Message};
+
+    #[test]
+    fn handshake() {
+        let subscribe_private_key = PrivateKey::new();
+        let subscribe_public_key = subscribe_private_key.public_key();
+        let query = Query::Bucket {
+            bucket_name: "bucket-1".into(),
+            // We're interested in the data of this peer.
+            public_key: subscribe_public_key,
+        };
+
+        // 1. Initializing peer sends handshake to remote and keeps challenge around.
+        let (init_message, challenge) = init_handshake(query.clone());
+        assert!(matches!(init_message, Message::Handshake(..)));
+
+        // Challenges should be different each time.
+        let (_, challenge_again) = init_handshake(query);
+        assert_ne!(challenge, challenge_again);
+
+        // 2. Accepting peer signs challenge with their own private key and sends it back.
+        let accept_message = accept_handshake(challenge, &subscribe_private_key);
+
+        // 3. Initializing peer verifies signature with challenge.
+        let Message::HandshakeResponse(signature) = accept_message else {
+            panic!("this is not a handshake response");
+        };
+        assert!(verify_handshake(
+            &signature,
+            challenge,
+            &subscribe_public_key
+        ))
     }
 }

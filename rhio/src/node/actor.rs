@@ -1,13 +1,15 @@
+use std::time::SystemTime;
+
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
-use async_nats::Message as NatsMessage;
+use async_nats::{HeaderMap, Message as NatsMessage};
 use futures_util::stream::SelectAll;
 use p2panda_core::PrivateKey;
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use rhio_core::message::NetworkPayload;
-use rhio_core::{NetworkMessage, ScopedBucket, ScopedSubject};
+use rhio_core::{NetworkMessage, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -16,10 +18,12 @@ use tracing::{debug, error, warn};
 
 use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
-use crate::nats::{JetStreamEvent, Nats};
+use crate::nats::{JetStreamEvent, Nats, NATS_FROM_RHIO_HEADER};
 use crate::network::Panda;
 use crate::node::Publication;
-use crate::topic::{Query, Subscription};
+use crate::topic::{
+    is_bucket_matching, is_bucket_publishable, is_subject_matching, Query, Subscription,
+};
 
 pub enum ToNodeActor {
     Publish {
@@ -174,11 +178,11 @@ impl NodeActor {
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { bucket } => Query::NoSyncBucket {
-                public_key: bucket.public_key(),
+            Publication::Bucket { public_key, .. } => Query::NoSyncBucket {
+                public_key: *public_key,
             },
-            Publication::Subject { subject, .. } => Query::NoSyncSubject {
-                public_key: subject.public_key(),
+            Publication::Subject { public_key, .. } => Query::NoSyncSubject {
+                public_key: *public_key,
             },
         };
 
@@ -192,13 +196,14 @@ impl NodeActor {
         // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
         //    the gossip overlay later.
         match publication {
-            Publication::Bucket { bucket: _ } => {
+            Publication::Bucket { .. } => {
                 // Do nothing here. We handle incoming new blob events via the "on_watcher_event"
                 // method.
             }
             Publication::Subject {
                 stream_name,
                 subject,
+                ..
             } => {
                 // Subscribe to the NATS stream to receive new NATS messages from here.
                 let (_, nats_rx) = self
@@ -265,6 +270,14 @@ impl NodeActor {
             return Ok(());
         }
 
+        // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
+        // right after we've ingested them on the same stream.
+        if let Some(headers) = &message.headers {
+            if headers.get(NATS_FROM_RHIO_HEADER).is_some() {
+                return Ok(());
+            }
+        }
+
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
         let network_message = NetworkMessage::new_nats(message);
         self.broadcast(network_message, topic_id).await?;
@@ -313,24 +326,12 @@ impl NodeActor {
         }
 
         match &network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, bucket, key, size) => {
-                // Make sure the bucket comes from the same peer.
-                if !network_message.verify(&bucket.public_key()) {
-                    warn!(node_id = %delivered_from, "ignored blob announcement with invalid owner");
-                    return Ok(());
-                }
-
+            NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size) => {
                 // We're interested in a bucket from a _specific_ public key. Filter out everything
                 // which is not the right bucket name or not the right author.
-                if is_bucket_matching(&self.subscriptions, bucket) {
+                if is_bucket_matching(&self.subscriptions, bucket_name, &delivered_from) {
                     self.blobs
-                        .download(
-                            *hash,
-                            bucket.bucket_name(),
-                            // Blobs from remote peers are namespaced by their public key.
-                            format!("{}/{}", bucket.public_key(), key),
-                            *size,
-                        )
+                        .download(*hash, bucket_name.to_owned(), key.to_owned(), *size)
                         .await?;
                 }
             }
@@ -338,23 +339,27 @@ impl NodeActor {
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
-                let subject: ScopedSubject = message.subject.clone().try_into()?;
-
-                // Make sure the NATS message comes from the same peer.
-                if !network_message.verify(&subject.public_key()) {
-                    warn!(node_id = %delivered_from, "ignored NATS message with invalid owner");
+                let subject: Subject = message.subject.clone().try_into()?;
+                if !is_subject_matching(&self.subscriptions, &subject, &delivered_from) {
                     return Ok(());
                 }
 
-                if !is_subject_matching(&self.subscriptions, &subject) {
-                    return Ok(());
-                }
+                // We're adding a custom rhio header to the NATS message, to mark this message as
+                // "ingested" by rhio. This helps us to identify messages which already have been
+                // processed by us, so we don't need to send them again when they arrive at a NATS
+                // consumer for gossip broadcast.
+                let mut headers = match &message.headers {
+                    Some(headers) => headers.clone(),
+                    None => HeaderMap::new(),
+                };
+                let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+                headers.append(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
 
                 self.nats
                     .publish(
                         true,
                         message.subject.to_string(),
-                        message.headers.clone(),
+                        Some(headers),
                         message.payload.to_vec(),
                     )
                     .await?;
@@ -411,13 +416,13 @@ impl NodeActor {
         let Some(publication) = is_bucket_publishable(&self.publications, &bucket_name) else {
             return Ok(());
         };
-        let Publication::Bucket { bucket } = publication else {
+        let Publication::Bucket { bucket_name, .. } = publication else {
             unreachable!("method will always return a bucket publication");
         };
 
         let topic_id = Query::from(publication.to_owned()).id();
         let network_message =
-            NetworkMessage::new_blob_announcement(hash, bucket.to_owned(), key, size);
+            NetworkMessage::new_blob_announcement(hash, bucket_name.to_owned(), key, size);
         self.broadcast(network_message, topic_id).await?;
 
         Ok(())
@@ -452,62 +457,4 @@ impl NodeActor {
         self.blobs.shutdown().await?;
         Ok(())
     }
-}
-
-/// Returns true if incoming NATS message is of interested to our local node.
-fn is_subject_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedSubject) -> bool {
-    for subscription in subscriptions {
-        match subscription {
-            Subscription::Bucket { .. } => continue,
-            Subscription::Subject { subject, .. } => {
-                if subject.is_matching(incoming) {
-                    return true;
-                } else {
-                    continue;
-                }
-            }
-        }
-    }
-    false
-}
-
-/// Returns true if incoming blob announcement is of interested to our local node.
-fn is_bucket_matching(subscriptions: &Vec<Subscription>, incoming: &ScopedBucket) -> bool {
-    for subscription in subscriptions {
-        match subscription {
-            Subscription::Bucket { bucket } => {
-                if bucket == incoming {
-                    return true;
-                } else {
-                    continue;
-                }
-            }
-            Subscription::Subject { .. } => {
-                continue;
-            }
-        }
-    }
-    false
-}
-
-/// Returns the public key for the blob announcement if we're okay with publishing it.
-fn is_bucket_publishable<'a>(
-    publications: &'a Vec<Publication>,
-    bucket_name: &BucketName,
-) -> Option<&'a Publication> {
-    for publication in publications {
-        match publication {
-            Publication::Bucket { bucket } => {
-                if &bucket.bucket_name() == bucket_name {
-                    return Some(publication);
-                } else {
-                    continue;
-                }
-            }
-            Publication::Subject { .. } => {
-                continue;
-            }
-        }
-    }
-    None
 }

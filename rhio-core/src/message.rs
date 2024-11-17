@@ -1,10 +1,8 @@
 use anyhow::Result;
 use async_nats::Message as NatsMessage;
 use p2panda_core::{PrivateKey, PublicKey, Signature};
-use rhio_blobs::{BlobHash, ObjectKey, ObjectSize};
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use serde::{Deserialize, Serialize};
-
-use crate::ScopedBucket;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkMessage {
@@ -29,12 +27,12 @@ impl NetworkMessage {
 
     pub fn new_blob_announcement(
         hash: BlobHash,
-        bucket: ScopedBucket,
+        bucket_name: BucketName,
         key: ObjectKey,
         size: ObjectSize,
     ) -> Self {
         Self {
-            payload: NetworkPayload::BlobAnnouncement(hash, bucket, key, size),
+            payload: NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size),
             signature: None,
         }
     }
@@ -75,7 +73,7 @@ impl NetworkMessage {
 #[serde(tag = "type", content = "value")]
 pub enum NetworkPayload {
     #[serde(rename = "blob")]
-    BlobAnnouncement(BlobHash, ScopedBucket, ObjectKey, ObjectSize),
+    BlobAnnouncement(BlobHash, BucketName, ObjectKey, ObjectSize),
 
     #[serde(rename = "nats")]
     NatsMessage(NatsMessage),
@@ -86,8 +84,6 @@ mod tests {
     use p2panda_core::PrivateKey;
     use rhio_blobs::BlobHash;
 
-    use crate::ScopedBucket;
-
     use super::{NetworkMessage, NetworkPayload};
 
     #[test]
@@ -97,7 +93,7 @@ mod tests {
         let mut header = NetworkMessage {
             payload: NetworkPayload::BlobAnnouncement(
                 BlobHash::new(b"test"),
-                ScopedBucket::new("my_bucket".into(), public_key),
+                "my_bucket".into(),
                 "path/to/my.file".into(),
                 5911,
             ),

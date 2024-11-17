@@ -8,7 +8,7 @@ use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
 use p2panda_core::PublicKey;
 use rhio_blobs::BucketName;
-use rhio_core::{ScopedBucket, ScopedSubject};
+use rhio_core::Subject;
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
@@ -212,22 +212,37 @@ pub struct PublishConfig {
     #[serde(default)]
     pub s3_buckets: Vec<BucketName>,
     #[serde(default)]
-    pub nats_subjects: Vec<NatsSubject>,
+    pub nats_subjects: Vec<LocalNatsSubject>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubscribeConfig {
     #[serde(default)]
-    pub s3_buckets: Vec<ScopedBucket>,
+    pub s3_buckets: Vec<RemoteS3Bucket>,
     #[serde(default)]
-    pub nats_subjects: Vec<NatsSubject>,
+    pub nats_subjects: Vec<RemoteNatsSubject>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NatsSubject {
+pub struct RemoteS3Bucket {
+    #[serde(rename = "bucket")]
+    pub bucket_name: BucketName,
+    pub public_key: PublicKey,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LocalNatsSubject {
+    pub subject: Subject,
     #[serde(rename = "stream")]
     pub stream_name: StreamName,
-    pub subject: ScopedSubject,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RemoteNatsSubject {
+    pub subject: Subject,
+    #[serde(rename = "stream")]
+    pub stream_name: StreamName,
+    pub public_key: PublicKey,
 }
 
 #[cfg(test)]
@@ -239,11 +254,9 @@ mod tests {
     use s3::creds::Credentials;
 
     use crate::config::{
-        KnownNode, NatsConfig, NatsCredentials, NodeConfig, PublishConfig, S3Config,
-        SubscribeConfig,
+        Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig,
+        PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
     };
-
-    use super::{Config, NatsSubject};
 
     #[test]
     fn parse_yaml_file() {
@@ -276,23 +289,27 @@ nodes:
 
 publish:
     s3_buckets:
-        - "local-bucket-1"
-        - "local-bucket-2"
+        - "bucket-1"
+        - "bucket-2"
     nats_subjects:
-        - subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy"
+        - subject: "workload.berlin.energy"
           stream: "workload"
-        - subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy"
+        - subject: "workload.rotterdam.energy"
           stream: "workload"
 
 subscribe:
     s3_buckets:
-      - "remote-bucket-1/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
-      - "remote-bucket-2/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+      - bucket: "bucket-1"
+        public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+      - bucket: "bucket-2"
+        public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
     nats_subjects:
-      - subject: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy"
+      - subject: "workload.*.energy"
         stream: "workload"
-      - subject: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta"
+        public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+      - subject: "data.thehague.meta"
         stream: "data"
+        public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
             "#,
             )?;
 
@@ -338,41 +355,48 @@ subscribe:
                                     .unwrap(),
                             ],
                         }],
-                        private_key: PathBuf::new().join("/usr/app/rhio/private.key"),
+                        private_key: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
                     },
                     log_level: None,
                     publish: Some(PublishConfig {
-                        s3_buckets: vec!["local-bucket-1".into(), "local-bucket-2".into()],
+                        s3_buckets: vec!["bucket-1".into(), "bucket-2".into()],
                         nats_subjects: vec![
-                            NatsSubject {
+                            LocalNatsSubject {
                                 stream_name: "workload".into(),
-                            subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.berlin.energy".parse().unwrap(),
+                                subject: "workload.berlin.energy".parse().unwrap(),
                             },
-                            NatsSubject {
+                            LocalNatsSubject {
                                 stream_name: "workload".into(),
-                            subject: "8e0d63ef8b499503d541132b798beb718f763a61f0334262206be097c8db106e.workload.rotterdam.energy".parse().unwrap(),
+                                subject: "workload.rotterdam.energy".parse().unwrap(),
                             }
                         ],
                     }),
                     subscribe: Some(SubscribeConfig {
                         s3_buckets: vec![
-                            "remote-bucket-1/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+                            RemoteS3Bucket {
+                                bucket_name: "bucket-1".to_string(),
+                                public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
-                            "remote-bucket-2/6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
+                            },
+                            RemoteS3Bucket {
+                                bucket_name: "bucket-2".to_string(),
+                                public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
+                            },
                         ],
                         nats_subjects: vec![
-                            NatsSubject {
+                            RemoteNatsSubject {
+                                subject: "workload.*.energy".parse().unwrap(),
                                 stream_name: "workload".into(),
-                                subject:                             "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.workload.*.energy".parse().unwrap(),
-
+                                public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a".parse().unwrap(),
                             },
-                            NatsSubject {
+                            RemoteNatsSubject {
+                                subject: "data.thehague.meta".parse().unwrap(),
                                 stream_name: "data".into(),
-                                subject:                             "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a.data.thehague.meta".parse().unwrap(),
+                                public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a".parse().unwrap(),
                             },
                         ],
                     }),

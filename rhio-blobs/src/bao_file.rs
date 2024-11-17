@@ -195,8 +195,8 @@ mod tests {
             path: String::from("path/to/file.txt"),
         };
 
-        let mut bytes = meta.to_bytes();
-        let meta_again = BaoMeta::from_bytes(&mut bytes[..]).unwrap();
+        let bytes = meta.to_bytes();
+        let meta_again = BaoMeta::from_bytes(&bytes[..]).unwrap();
 
         assert_eq!(meta, meta_again)
     }
