@@ -457,7 +457,7 @@ impl NodeActor {
     }
 }
 
-/// Returns true if incoming NATS message is of interested to our local node.
+/// Returns true if incoming NATS message from that public key is of interest to our local node.
 fn is_subject_matching(
     subscriptions: &Vec<Subscription>,
     incoming: &Subject,
@@ -482,7 +482,8 @@ fn is_subject_matching(
     false
 }
 
-/// Returns true if incoming blob announcement is of interested to our local node.
+/// Returns true if incoming blob announcement from that public key is of interest to our local
+/// node.
 fn is_bucket_matching(
     subscriptions: &Vec<Subscription>,
     incoming: &BucketName,
@@ -508,7 +509,8 @@ fn is_bucket_matching(
     false
 }
 
-/// Returns the public key for the blob announcement if we're okay with publishing it.
+/// Returns the publication info for the blob announcement if it exists in our config, returns
+/// `None` otherwise.
 fn is_bucket_publishable<'a>(
     publications: &'a Vec<Publication>,
     outgoing: &BucketName,

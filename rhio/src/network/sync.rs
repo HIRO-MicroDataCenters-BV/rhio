@@ -279,14 +279,9 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             Query::Bucket { bucket_name, .. } => {
                 // Await message from other peer on the blobs they _have_, so we can calculate what
                 // they're missing and send that delta to them.
-                let message = stream
-                    .next()
-                    .await
-                    .ok_or(SyncError::UnexpectedBehaviour(
-                        "incoming message stream ended prematurely".into(),
-                    ))
-                    .unwrap()
-                    .unwrap();
+                let message = stream.next().await.ok_or(SyncError::UnexpectedBehaviour(
+                    "incoming message stream ended prematurely".into(),
+                ))??;
                 let Message::BlobsHave(remote_blob_hashes) = message else {
                     return Err(SyncError::UnexpectedBehaviour(
                         "did not receive expected message".into(),
