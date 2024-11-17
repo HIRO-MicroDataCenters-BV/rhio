@@ -33,8 +33,13 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 ## Usage
 
 1. Copy the [configuration file](config.example.yaml) and adjust it to your setup: `cp config.example.yaml config.yaml`
-2. Run the `rhio` process via `rhio -c config.yaml`
-3. The process can be further configured via ENV vars or command line arguments:
+2. Generate an hexadecimal-encoded Ed25519 private key file used by `rhio`
+    ```
+    openssl genpkey -algorithm ed25519 -outform der -out private-key.hex
+    echo -n $(xxd -plain -cols 32 -s -32 private-key.hex) > private-key.hex
+    ```
+3. Run the `rhio` process via `rhio -c config.yaml -k private-key.hex`
+4. The process can be further configured via ENV vars or command line arguments:
 
 ```
 Peer-to-peer message and blob streaming with MinIO and NATS JetStream support
