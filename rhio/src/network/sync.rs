@@ -19,6 +19,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, span, Level};
 
 use crate::config::Config;
+use crate::nats::message::hash_nats_message;
 use crate::nats::{ConsumerId, JetStreamEvent, Nats};
 use crate::topic::Query;
 
@@ -238,7 +239,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let (consumer_id, nats_stream) =
                     self.nats_stream(stream_name, subject, query.id()).await?;
                 let mut nats_stream = nats_stream.map(|event| match event {
-                    Ok(message) => Ok(Hash::new(&message.payload)),
+                    Ok(message) => Ok(hash_nats_message(&message)),
                     Err(err) => Err(err),
                 });
 
@@ -496,7 +497,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
                         Ok(message) => {
-                            let hash = Hash::new(&message.payload);
+                            let hash = hash_nats_message(&message);
                             if remote_nats_hashes.contains(&hash) {
                                 None
                             } else {
