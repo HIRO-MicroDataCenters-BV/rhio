@@ -227,7 +227,7 @@ d00f23f44b598d0b789b7ff0f1d99a24dc11eda434ad485f692786b624ac83f4
 ```bash
 docker-compose up -d
 ```
-3. Make sure the "bucket-1" and "bucket-2" buckets exists and that they are both set to public (@TODO) in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
+3. Make sure the "bucket-1" and "bucket-2" buckets exists in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
 4. Create streams on both NATS servers
 ```bash
 ./nats -s localhost:8009 str add --config cluster-stream-1.json
