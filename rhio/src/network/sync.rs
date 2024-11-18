@@ -232,18 +232,18 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         Ok(message) => {
                             // Remove all messages which are not from the public key we are
                             // interested in.
-                            if nats::is_public_key_eq(&message, public_key) {
-                                match nats::wrap_and_sign_nats_message(message, &self.private_key) {
-                                    Ok(network_message) => Some(Ok(network_message.hash())),
-                                    Err(err) => {
-                                        // Filter out invalid NATS signatures (they should have not
-                                        // arrived here at this point though).
-                                        warn!("detected invalid signature of NATS message in stream: {err}");
-                                        None
-                                    },
-                                }
-                            } else {
-                                None
+                            if !nats::is_public_key_eq(&message, public_key) {
+                                return None;
+                            }
+
+                            match nats::wrap_and_sign_nats_message(message, &self.private_key) {
+                                Ok(network_message) => Some(Ok(network_message.hash())),
+                                Err(err) => {
+                                    // Filter out invalid NATS signatures (they should have not
+                                    // arrived here at this point though).
+                                    warn!("detected invalid signature of NATS message in stream: {err}");
+                                    None
+                                },
                             }
                         }
                         Err(err) => Some(Err(err)),

@@ -61,7 +61,11 @@ impl NetworkMessage {
             .parse()?;
 
         Ok(Self {
-            payload: NetworkPayload::NatsMessage(message.subject, message.payload, message.headers),
+            payload: NetworkPayload::NatsMessage(
+                message.subject,
+                message.payload,
+                remove_custom_nats_headers(headers),
+            ),
             public_key,
             signature: Some(signature),
         })
