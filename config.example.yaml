@@ -91,9 +91,9 @@
 #
 # subscribe:
 #   s3_buckets:
-#     - bucket: "bucket-1"
+#     - bucket: "bucket-3"
 #       public_key: "<public-key>"
-#     - bucket: "bucket-2"
+#     - bucket: "bucket-4"
 #       public_key: "<public-key>"
 #   nats_subjects:
 #     - subject: "workload.*.energy"
