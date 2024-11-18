@@ -512,7 +512,10 @@ impl NodeActor {
     }
 }
 
-fn validate_publication_config(publications: &Vec<Publication>, publication: &Publication) -> Result<()> {
+fn validate_publication_config(
+    publications: &Vec<Publication>,
+    publication: &Publication,
+) -> Result<()> {
     // 1. Published bucket names need to be unique.
     // 2. Published NATS subject + stream name tuples need to be unique.
     for existing_publication in publications {
@@ -537,27 +540,33 @@ fn validate_publication_config(publications: &Vec<Publication>, publication: &Pu
                 subject,
                 stream_name,
                 ..
-            } => {
-                match existing_publication {
-                    Publication::Bucket { .. } => continue,
-                    Publication::Subject {
-                        subject: existing_subject,
-                        stream_name: existing_stream_name,
-                        ..
-                    } => {
-                        if existing_subject == subject && existing_stream_name == stream_name {
-                            bail!("publish config contains duplicate NATS subject {} and stream {}", subject, stream_name);
-                        }
+            } => match existing_publication {
+                Publication::Bucket { .. } => continue,
+                Publication::Subject {
+                    subject: existing_subject,
+                    stream_name: existing_stream_name,
+                    ..
+                } => {
+                    if existing_subject == subject && existing_stream_name == stream_name {
+                        bail!(
+                            "publish config contains duplicate NATS subject {} and stream {}",
+                            subject,
+                            stream_name
+                        );
                     }
                 }
-            }
+            },
         }
     }
 
     Ok(())
 }
 
-fn validate_subscription_config(publications: &Vec<Publication>, subscriptions: &Vec<Subscription>, subscription: &Subscription) -> Result<()> {
+fn validate_subscription_config(
+    publications: &Vec<Publication>,
+    subscriptions: &Vec<Subscription>,
+    subscription: &Subscription,
+) -> Result<()> {
     // 1. Subscribed bucket names can't be used for publishing as well.
     for existing_publication in publications {
         match &subscription {
