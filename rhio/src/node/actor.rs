@@ -518,7 +518,7 @@ fn validate_publication_config(
     publication: &Publication,
 ) -> Result<()> {
     // 1. Published bucket names need to be unique.
-    // 2. Published NATS subject + stream name tuples need to be unique.
+    // 2. Published NATS subject need to be unique.
     for existing_publication in publications {
         match &publication {
             Publication::Bucket { bucket_name, .. } => match existing_publication {
@@ -537,23 +537,14 @@ fn validate_publication_config(
                     continue;
                 }
             },
-            Publication::Subject {
-                subject,
-                stream_name,
-                ..
-            } => match existing_publication {
+            Publication::Subject { subject, .. } => match existing_publication {
                 Publication::Bucket { .. } => continue,
                 Publication::Subject {
                     subject: existing_subject,
-                    stream_name: existing_stream_name,
                     ..
                 } => {
-                    if existing_subject == subject && existing_stream_name == stream_name {
-                        bail!(
-                            "publish config contains duplicate NATS subject {} and stream {}",
-                            subject,
-                            stream_name
-                        );
+                    if existing_subject == subject {
+                        bail!("publish config contains duplicate NATS subject {}", subject);
                     }
                 }
             },
