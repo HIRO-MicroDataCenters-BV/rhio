@@ -83,7 +83,7 @@ impl NodeActor {
 
     pub async fn run(mut self) -> Result<()> {
         // Take oneshot sender from external API awaited by `shutdown` call and fire it as soon as
-        // shutdown completed to signal
+        // shutdown completed to signal.
         let shutdown_completed_signal = self.run_inner().await;
         if let Err(err) = self.shutdown().await {
             error!(?err, "error during shutdown");
@@ -173,6 +173,49 @@ impl NodeActor {
     /// initiate sync sessions with us, as publishing peers we're only _accepting_ these sync
     /// sessions.
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
+        // Configuration sanity checks.
+        //
+        // 1. Published bucket names need to be unique.
+        // 2. Published NATS subject + stream name tuples need to be unique.
+        for existing_publication in &self.publications {
+            match &publication {
+                Publication::Bucket { bucket_name, .. } => match existing_publication {
+                    Publication::Bucket {
+                        bucket_name: existing_bucket_name,
+                        ..
+                    } => {
+                        if existing_bucket_name == bucket_name {
+                            bail!(
+                                "publish config contains duplicate S3 bucket {}",
+                                bucket_name
+                            );
+                        }
+                    }
+                    Publication::Subject { .. } => {
+                        continue;
+                    }
+                },
+                Publication::Subject {
+                    subject,
+                    stream_name,
+                    ..
+                } => {
+                    match existing_publication {
+                        Publication::Bucket { .. } => continue,
+                        Publication::Subject {
+                            subject: existing_subject,
+                            stream_name: existing_stream_name,
+                            ..
+                        } => {
+                            if existing_subject == subject && existing_stream_name == stream_name {
+                                bail!("publish config contains duplicate NATS subject {} and stream {}", subject, stream_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         self.publications.push(publication.clone());
 
         // 1. Subscribe to p2panda gossip overlay for "live-mode".
@@ -189,11 +232,16 @@ impl NodeActor {
         };
 
         let topic_id = topic_query.id();
+
+        // This method returns `None` if we're already subscribed to the same gossip overlay for
+        // publications. We only need to do that once.
         let network_rx = self.panda.subscribe(topic_query).await?;
 
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
-        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+        if let Some(network_rx) = network_rx {
+            self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+        }
 
         // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
         //    the gossip overlay later.
@@ -219,13 +267,84 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Application decided to subscribe to a new NATS message stream or S3 bucket.
+    /// Application decided to subscribe to NATS messages or blobs from an author.
     ///
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
+        // Configuration sanity checks.
+        //
+        // 1. Subscribed bucket names can't be used for publishing as well.
+        for existing_publication in &self.publications {
+            match &subscription {
+                Subscription::Bucket { bucket_name, .. } => match existing_publication {
+                    Publication::Bucket {
+                        bucket_name: existing_bucket_name,
+                        ..
+                    } => {
+                        if existing_bucket_name == bucket_name {
+                            bail!("bucket {} is already used in publish config", bucket_name);
+                        }
+                    }
+                    Publication::Subject { .. } => {
+                        continue;
+                    }
+                },
+                Subscription::Subject { .. } => {
+                    continue;
+                }
+            }
+        }
+
+        // 2. Subscribed public key can't be re-used for another bucket.
+        // 3. Subscribed NATS subject + stream name tuples need to be unique.
+        for existing_subscribtion in &self.subscriptions {
+            match &subscription {
+                Subscription::Bucket { public_key, .. } => match existing_subscribtion {
+                    Subscription::Bucket {
+                        public_key: existing_public_key,
+                        ..
+                    } => {
+                        if existing_public_key == public_key {
+                            bail!(
+                                "public key {} is used multiple times in subscribe S3 config",
+                                public_key
+                            );
+                        }
+                    }
+                    Subscription::Subject { .. } => {
+                        continue;
+                    }
+                },
+                Subscription::Subject {
+                    public_key,
+                    subject,
+                    ..
+                } => match existing_subscribtion {
+                    Subscription::Bucket { .. } => continue,
+                    Subscription::Subject {
+                        subject: existing_subject,
+                        public_key: existing_public_key,
+                        ..
+                    } => {
+                        if public_key == existing_public_key && subject == existing_subject {
+                            bail!(
+                                "public key {} and subject {} is used multiple times in subscribe NATS config",
+                                public_key, 
+                                subject
+                            );
+                        }
+                    }
+                },
+            }
+        }
+
         self.subscriptions.push(subscription.clone());
-        let network_rx = self.panda.subscribe(subscription.into()).await?;
+        let network_rx = self
+            .panda
+            .subscribe(subscription.into())
+            .await?
+            .expect("queries for subscriptions should always return channel");
         self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
         Ok(())
     }
