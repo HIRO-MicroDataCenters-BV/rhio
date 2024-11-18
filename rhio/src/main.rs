@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject};
+use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use rhio::tracing::setup_tracing;
 use rhio::{Node, Publication, Subscription};
 use rhio_core::load_private_key_from_file;
@@ -11,9 +11,9 @@ async fn main() -> Result<()> {
     setup_tracing(config.log_level.clone());
 
     let private_key =
-        load_private_key_from_file(config.node.private_key.clone()).context(format!(
+        load_private_key_from_file(&config.node.private_key_path).context(format!(
             "could not load private key from file {}",
-            config.node.private_key.display(),
+            config.node.private_key_path.display(),
         ))?;
     let public_key = private_key.public_key();
 
@@ -60,10 +60,14 @@ async fn main() -> Result<()> {
     };
 
     if let Some(subscribe) = config.subscribe {
-        for remote_bucket in subscribe.s3_buckets {
+        for RemoteS3Bucket {
+            bucket_name,
+            public_key,
+        } in subscribe.s3_buckets
+        {
             node.subscribe(Subscription::Bucket {
-                bucket_name: remote_bucket.bucket_name,
-                public_key: remote_bucket.public_key,
+                bucket_name,
+                public_key,
             })
             .await?;
         }

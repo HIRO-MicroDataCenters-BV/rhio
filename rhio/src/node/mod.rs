@@ -24,7 +24,6 @@ use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
 
 pub struct Node {
-    pub config: Config,
     node_id: PublicKey,
     direct_addresses: Vec<SocketAddr>,
     node_actor_tx: mpsc::Sender<ToNodeActor>,
@@ -34,8 +33,7 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        // 1. Connect with NATS client to server and consume streams over "subjects" we're
-        //    interested in.
+        // 1. Connect to NATS server and consume streams over "subjects" we would like to publish.
         let nats = Nats::new(config.clone()).await?;
 
         // 2. Configure rhio network.
@@ -68,17 +66,17 @@ impl Node {
             .private_key(private_key.clone())
             .sync(sync_protocol);
 
-        // 3. Configure and set up S3 store and connection handlers for blob replication.
+        // 3. Configure and set up blob store and connection handlers for blob replication.
         let (network, blobs_handler) =
             BlobsHandler::from_builder(builder, blob_store.clone()).await?;
         let blobs = Blobs::new(config.s3.clone(), blob_store.clone(), blobs_handler);
 
-        // 4. Start a service which watches the S3 store for changes.
+        // 4. Start a service which watches the S3 buckets for changes.
         let (watcher_tx, watcher_rx) = mpsc::channel(256);
         let watcher = S3Watcher::new(blob_store, watcher_tx);
 
-        // 5. Move all networking logic into dedicated "panda" actor, dealing with p2p networking,
-        //    data replication and gossipping.
+        // 5. Move all networking logic into dedicated "p2panda" actor, dealing with p2p
+        //    networking, data replication and gossipping.
         let node_id = network.node_id();
         let direct_addresses = network
             .direct_addresses()
@@ -86,8 +84,8 @@ impl Node {
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
         let panda = Panda::new(network);
 
-        // 6. Finally spawn actor which orchestrates blob storage and handling, p2panda networking
-        //    and NATS JetStream consumers.
+        // 6. Finally spawn actor which orchestrates the "business logic", with the help of the
+        //    blob store, p2panda network and NATS JetStream consumers.
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
         let node_actor = NodeActor::new(
             private_key,
@@ -109,7 +107,6 @@ impl Node {
             .shared();
 
         let node = Node {
-            config,
             node_id,
             direct_addresses,
             node_actor_tx,
@@ -119,7 +116,7 @@ impl Node {
         Ok(node)
     }
 
-    /// Returns the PublicKey of this node which is used as it's ID.
+    /// Returns the public key of this node which is used as it's ID.
     ///
     /// This ID is the unique addressing information of this node and other peers must know it to
     /// be able to connect to this node.
@@ -138,6 +135,7 @@ impl Node {
         self.direct_addresses.clone()
     }
 
+    /// Inform our node that we want to publish certain data.
     pub async fn publish(&self, publication: Publication) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx
@@ -146,6 +144,7 @@ impl Node {
         reply_rx.await?
     }
 
+    /// Inform our node that we're interested in certain data from remote peers.
     pub async fn subscribe(&self, subscription: Subscription) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx

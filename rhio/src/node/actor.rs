@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{HeaderMap, Message as NatsMessage};
 use futures_util::stream::SelectAll;
-use p2panda_core::PrivateKey;
+use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
@@ -14,7 +14,7 @@ use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
@@ -41,6 +41,7 @@ pub enum ToNodeActor {
 
 pub struct NodeActor {
     private_key: PrivateKey,
+    public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
     subscriptions: Vec<Subscription>,
     publications: Vec<Publication>,
@@ -65,6 +66,7 @@ impl NodeActor {
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     ) -> Self {
         Self {
+            public_key: private_key.public_key(),
             private_key,
             inbox,
             subscriptions: Vec::new(),
@@ -258,17 +260,23 @@ impl NodeActor {
     /// Handler for incoming messages from the NATS JetStream consumer.
     ///
     /// From here we're broadcasting the NATS messages in the related gossip overlay network.
+    ///
+    /// These consumers have been set up based on our publication configuration, we can be sure
+    /// that we _want_ to publish the messages coming via this channel, no further checks are
+    /// required.
     async fn on_nats_message(
         &mut self,
         is_init: bool,
         topic_id: [u8; 32],
         message: NatsMessage,
     ) -> Result<()> {
+        // @TODO: Check if this is really necessary, this should always be false here anyway?
         // Ignore messages when they're from the past, at this point we're only forwarding new
         // messages.
-        if is_init {
-            return Ok(());
-        }
+        assert!(
+            !is_init,
+            "we should never receive old NATS messages on this channel"
+        );
 
         // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
         // right after we've ingested them on the same stream.
@@ -279,7 +287,9 @@ impl NodeActor {
         }
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
-        let network_message = NetworkMessage::new_nats(message);
+
+        // Sign message as at this point it definitely comes from us.
+        let network_message = NetworkMessage::new_nats(message, &self.public_key);
         self.broadcast(network_message, topic_id).await?;
 
         Ok(())
@@ -294,10 +304,9 @@ impl NodeActor {
                 bytes,
                 delivered_from,
             } => {
-                debug!(
+                trace!(
                     source = "gossip",
                     bytes = bytes.len(),
-                    delivered_from = %delivered_from,
                     "received network message"
                 );
                 (bytes, delivered_from)
@@ -307,10 +316,9 @@ impl NodeActor {
                 delivered_from,
                 ..
             } => {
-                debug!(
+                trace!(
                     source = "sync",
                     bytes = header.len(),
-                    delivered_from = %delivered_from,
                     "received network message"
                 );
                 (header, delivered_from)
@@ -319,19 +327,24 @@ impl NodeActor {
 
         let network_message = NetworkMessage::from_bytes(&bytes)?;
 
-        // Make sure the message comes from the same peer.
-        if !network_message.verify(&delivered_from) {
-            warn!(node_id = %delivered_from, "ignored network message with invalid signature");
+        // Check the signature of the blob announcement or NATS message.
+        if !network_message.verify() {
+            warn!(
+                %delivered_from, public_key = %network_message.public_key,
+                "ignored network message with invalid signature"
+            );
             return Ok(());
         }
 
         match &network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size) => {
-                debug!(%hash, %bucket_name, %key, %size, "received blob announcement");
+            NetworkPayload::BlobAnnouncement(hash, key, size) => {
+                debug!(%hash, %key, %size, "received blob announcement");
 
-                // We're interested in a bucket from a _specific_ public key. Filter out everything
-                // which is not the right bucket name or not the right author.
-                if is_bucket_matching(&self.subscriptions, bucket_name, &delivered_from) {
+                // We're interested in blobs from a _specific_ public key. Filter out everything
+                // which is _not_ the right author.
+                if let Some(Subscription::Bucket { bucket_name, .. }) =
+                    is_bucket_matching(&self.subscriptions, &network_message.public_key)
+                {
                     self.blobs
                         .download(*hash, bucket_name.to_owned(), key.to_owned(), *size)
                         .await?;
@@ -340,14 +353,19 @@ impl NodeActor {
             NetworkPayload::NatsMessage(subject, payload, headers) => {
                 debug!(%subject, ?payload, "received NATS message");
 
+                // We're interested in NATS messages from a _specific_ public key and matching
+                // subject (with wildcard support).
+                //
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
-                let subject: Subject = subject.clone().try_into()?;
-                if !is_subject_matching(&self.subscriptions, &subject, &delivered_from) {
+                let subject: Subject = subject.parse()?;
+                if !is_subject_matching(&self.subscriptions, &subject, &network_message.public_key)
+                {
                     return Ok(());
                 }
 
+                // @TODO: Revisit this ..
                 // We're adding a custom rhio header to the NATS message, to mark this message as
                 // "ingested" by rhio. This helps us to identify messages which already have been
                 // processed by us, so we don't need to send them again when they arrive at a NATS
@@ -412,18 +430,28 @@ impl NodeActor {
         key: ObjectKey,
         size: ObjectSize,
     ) -> Result<()> {
-        let Some(publication) = is_bucket_publishable(&self.publications, &bucket_name) else {
+        // @TODO: Revisit this .. we actually support also publishing other author's blobs!
+        // Make sure we're allowing publishing from this bucket.
+        let Some(Publication::Bucket {
+            bucket_name,
+            public_key,
+        }) = is_bucket_publishable(&self.publications, &bucket_name)
+        else {
             return Ok(());
-        };
-        let Publication::Bucket { bucket_name, .. } = publication else {
-            unreachable!("method will always return a bucket publication");
         };
 
         debug!(%hash, %bucket_name, %key, %size, "broadcast blob announcement");
 
-        let topic_id = Query::from(publication.to_owned()).id();
+        let topic_id = Query::Bucket {
+            // @TODO: Revisit this ..
+            public_key: *public_key,
+        }
+        .id();
+
+        // @TODO: Sign message when blob is coming from us, otherwise just forward the signature
+        // and public key.
         let network_message =
-            NetworkMessage::new_blob_announcement(hash, bucket_name.to_owned(), key, size);
+            NetworkMessage::new_blob_announcement(hash, key, size, &self.public_key);
         self.broadcast(network_message, topic_id).await?;
 
         Ok(())
@@ -442,13 +470,20 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Sign network message and broadcast it in gossip overlay for this topic.
+    /// Broadcast message in gossip overlay for this topic and sign it if it wasn't already.
     async fn broadcast(&self, mut message: NetworkMessage, topic_id: [u8; 32]) -> Result<()> {
-        message.sign(&self.private_key);
+        // If signature exists already it was already signed by another peer and we're just
+        // forwarding it here. If no signature is given it must have come from us and we need to
+        // sign it now:
+        if message.signature.is_none() {
+            message.sign(&self.private_key);
+        }
+
         self.panda
             .broadcast(message.to_bytes(), topic_id)
             .await
             .context("broadcast message")?;
+
         Ok(())
     }
 
