@@ -1,7 +1,7 @@
+use anyhow::Result;
 use iroh_blobs::store::bao_tree::io::sync::WriteAt;
 use iroh_blobs::util::SparseMemFile;
 use s3::Bucket;
-use anyhow::Result;
 
 use crate::bao_file::BaoMeta;
 use crate::Paths;
@@ -45,6 +45,6 @@ pub async fn get_outboard(bucket: &Bucket, paths: &Paths) -> Result<SparseMemFil
         ));
     }
     let mut outboard = SparseMemFile::new();
-    outboard.write_all_at(0, &response.as_slice())?;
+    outboard.write_all_at(0, response.as_slice())?;
     Ok(outboard)
 }
