@@ -23,6 +23,7 @@ pub struct S3Watcher {
 #[derive(Clone, Debug)]
 struct WatchedObject {
     pub size: ObjectSize,
+    pub bucket_name: BucketName,
     pub key: ObjectKey,
     pub import_state: ImportState,
 }
@@ -81,8 +82,6 @@ impl S3Watcher {
 
             loop {
                 for bucket in store.buckets() {
-                    let bucket_name = bucket.name();
-
                     // 1. List of _all_ S3 objects in this bucket.
                     let mut maybe_to_be_imported = Vec::new();
                     match bucket.list(NO_PREFIX, None).await {
@@ -101,6 +100,7 @@ impl S3Watcher {
 
                                     let item = WatchedObject {
                                         size: object.size,
+                                        bucket_name: bucket.name(),
                                         key: object.key,
                                         import_state: ImportState::NotImported,
                                     };
@@ -126,9 +126,10 @@ impl S3Watcher {
                     {
                         let list = store.complete_blobs().await;
                         let mut inner = inner.write().await;
-                        for (hash, _, path, size) in list {
+                        for (hash, bucket_name, path, size) in list {
                             let is_new = inner.completed.insert(WatchedObject {
                                 size,
+                                bucket_name: bucket_name.clone(),
                                 key: path.data(),
                                 import_state: ImportState::Imported(hash),
                             });
@@ -137,11 +138,11 @@ impl S3Watcher {
                             // of completed items. For all further iterations we're sending events
                             // as soon as a new object was completed.
                             if is_new && !first_run {
-                                debug!(key = %path.data(), size = %size, hash = %hash, "detected finished blob import");
+                                debug!(key = %path.data(), %size, %hash, %bucket_name, "detected finished blob import");
                                 if event_tx
                                     .send(Ok(S3Event::BlobImportFinished(
                                         hash,
-                                        bucket_name.clone(),
+                                        bucket_name,
                                         path.data(),
                                         size,
                                     )))
@@ -157,10 +158,10 @@ impl S3Watcher {
                         // which object has not yet been imported.
                         for object in maybe_to_be_imported {
                             if !inner.completed.contains(&object) {
-                                debug!(key = %object.key, size = %object.size, "detected new S3 object to be imported");
+                                debug!(key = %object.key, size = %object.size, bucket_name = %object.bucket_name, "detected new S3 object to be imported");
                                 if event_tx
                                     .send(Ok(S3Event::DetectedS3Object(
-                                        bucket_name.clone(),
+                                        object.bucket_name,
                                         object.key,
                                         object.size,
                                     )))
@@ -178,18 +179,19 @@ impl S3Watcher {
                     {
                         let list = store.incomplete_blobs().await;
                         let mut inner = inner.write().await;
-                        for (hash, _, path, size) in list {
+                        for (hash, bucket_name, path, size) in list {
                             let is_new = inner.incomplete.insert(WatchedObject {
                                 size,
+                                bucket_name: bucket_name.clone(),
                                 key: path.data(),
                                 import_state: ImportState::Imported(hash),
                             });
                             if is_new {
-                                debug!(key = %path.data(), size = %size, hash = %hash, "detected incomplete blob download");
+                                debug!(key = %path.data(), %size, %hash, %bucket_name, "detected incomplete blob download");
                                 if event_tx
                                     .send(Ok(S3Event::DetectedIncompleteBlob(
                                         hash,
-                                        bucket_name.clone(),
+                                        bucket_name,
                                         path.data(),
                                         size,
                                     )))
