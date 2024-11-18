@@ -335,11 +335,11 @@ impl NodeActor {
                         .await?;
                 }
             }
-            NetworkPayload::NatsMessage(message) => {
+            NetworkPayload::NatsMessage(subject, payload, headers) => {
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
-                let subject: Subject = message.subject.clone().try_into()?;
+                let subject: Subject = subject.clone().try_into()?;
                 if !is_subject_matching(&self.subscriptions, &subject, &delivered_from) {
                     return Ok(());
                 }
@@ -348,20 +348,15 @@ impl NodeActor {
                 // "ingested" by rhio. This helps us to identify messages which already have been
                 // processed by us, so we don't need to send them again when they arrive at a NATS
                 // consumer for gossip broadcast.
-                let mut headers = match &message.headers {
+                let mut headers = match &headers {
                     Some(headers) => headers.clone(),
                     None => HeaderMap::new(),
                 };
                 let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-                headers.append(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
+                headers.insert(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
 
                 self.nats
-                    .publish(
-                        true,
-                        message.subject.to_string(),
-                        Some(headers),
-                        message.payload.to_vec(),
-                    )
+                    .publish(true, subject.to_string(), Some(headers), payload.to_vec())
                     .await?;
             }
         }

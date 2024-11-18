@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 anyhow = "1.0.93"
 async-nats = "0.37.0"
+bytes = "1.7.1"
 ciborium = "0.2.2"
 hex = "0.4.3"
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "cf78381ba2dbe06f1b6b0ce81d7b34d4b041fffc" }

@@ -4102,6 +4102,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-nats",
+ "bytes",
  "ciborium",
  "hex",
  "p2panda-core",

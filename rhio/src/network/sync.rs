@@ -13,7 +13,7 @@ use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
 use rand::random;
 use rhio_blobs::{BlobHash, BucketName, ObjectSize, Paths, S3Store};
-use rhio_core::{NetworkMessage, Subject};
+use rhio_core::{hash_nats_message, NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, span, Level};
@@ -238,7 +238,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let (consumer_id, nats_stream) =
                     self.nats_stream(stream_name, subject, query.id()).await?;
                 let mut nats_stream = nats_stream.map(|event| match event {
-                    Ok(message) => Ok(Hash::new(&message.payload)),
+                    Ok(message) => Ok(hash_nats_message(&message)),
                     Err(err) => Err(err),
                 });
 
@@ -496,7 +496,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
                         Ok(message) => {
-                            let hash = Hash::new(&message.payload);
+                            let hash = hash_nats_message(&message);
                             if remote_nats_hashes.contains(&hash) {
                                 None
                             } else {
