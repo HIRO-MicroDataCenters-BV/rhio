@@ -544,6 +544,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             // in.
                             if !nats::is_public_key_eq(&message, requested_public_key)
                                 && !nats::is_public_key_eq(&message, &self.public_key)
+                                    && nats::has_nats_signature(&message.headers)
                             {
                                 return None;
                             }
