@@ -1,6 +1,5 @@
 mod actor;
 mod consumer;
-pub mod message;
 
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;

@@ -13,13 +13,12 @@ use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
 use rand::random;
 use rhio_blobs::{BlobHash, BucketName, ObjectSize, Paths, S3Store};
-use rhio_core::{NetworkMessage, Subject};
+use rhio_core::{hash_nats_message, NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
 use tracing::{debug, span, Level};
 
 use crate::config::Config;
-use crate::nats::message::hash_nats_message;
 use crate::nats::{ConsumerId, JetStreamEvent, Nats};
 use crate::topic::Query;
 

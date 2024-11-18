@@ -84,6 +84,10 @@ pub enum NetworkPayload {
     NatsMessage(Subject, Bytes, Option<HeaderMap>),
 }
 
+pub fn hash_nats_message(message: &NatsMessage) -> Hash {
+    Hash::new(message.subject.as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use p2panda_core::PrivateKey;
