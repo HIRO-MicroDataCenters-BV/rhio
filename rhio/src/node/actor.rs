@@ -533,7 +533,10 @@ fn validate_publication_config(
                     ..
                 } => {
                     if existing_subject == subject {
-                        bail!("publish config contains duplicate NATS subject {}", subject);
+                        bail!(
+                            "publish config contains duplicate NATS subject '{}'",
+                            subject
+                        );
                     }
                 }
             },
@@ -557,7 +560,10 @@ fn validate_subscription_config(
                     ..
                 } => {
                     if existing_bucket_name == bucket_name {
-                        bail!("bucket {} is already used in publish config", bucket_name);
+                        bail!(
+                            "bucket '{}' for subscribe config is already used in publish config",
+                            bucket_name
+                        );
                     }
                 }
                 Publication::Subject { .. } => {
@@ -603,7 +609,7 @@ fn validate_subscription_config(
                 } => {
                     if public_key == existing_public_key && subject == existing_subject {
                         bail!(
-                            "public key {} and subject {} is used multiple times in subscribe NATS config",
+                            "public key {} and subject '{}' is used multiple times in subscribe NATS config",
                             public_key,
                             subject,
                         );
