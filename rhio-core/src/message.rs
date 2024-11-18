@@ -192,6 +192,7 @@ mod tests {
         };
         let mut message = NetworkMessage::new_nats(nats_message.clone(), &public_key);
         message.sign(&private_key);
+        let hash = message.hash();
 
         // Add authentication data to NATS message itself.
         nats_message.headers = Some({
@@ -206,5 +207,6 @@ mod tests {
         // Re-create network message from NATS message and check signature.
         let message = NetworkMessage::new_signed_nats(nats_message).unwrap();
         assert!(message.verify());
+        assert_eq!(hash, message.hash());
     }
 }
