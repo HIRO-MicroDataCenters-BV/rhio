@@ -13,14 +13,16 @@ use iroh_blobs::store::{
     ImportProgress, Map, MapEntry, MapEntryMut, MapMut, ReadableStore, Store,
 };
 use iroh_blobs::util::progress::{BoxedProgressSender, IdGenerator, ProgressSender};
+use iroh_blobs::util::SparseMemFile;
 use iroh_blobs::{BlobFormat, HashAndFormat, Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::warn;
+use tracing::{debug, warn};
 
-use crate::bao_file::{get_meta, put_meta, BaoFileHandle, BaoMeta};
+use crate::bao_file::{BaoFileHandle, BaoMeta};
 use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
+use crate::utils::{get_meta, get_outboard, put_meta};
 use crate::{BlobHash, BucketName, ObjectKey, ObjectSize};
 
 /// An s3 backed iroh blobs store.
@@ -57,9 +59,19 @@ impl S3Store {
             for list in results {
                 for object in list.contents {
                     if object.key.ends_with(META_SUFFIX) {
-                        let meta = get_meta(bucket, object.key).await?;
-                        let paths = Paths::new(meta.path.clone());
-                        let bao_file = BaoFileHandle::new(bucket.clone(), paths, meta.size);
+                        let paths = Paths::new(
+                            object.key[0..object.key.len() - META_SUFFIX.len()].to_string(),
+                        );
+                        let meta = get_meta(bucket, &paths).await?;
+                        let outboard = match get_outboard(bucket, &paths).await {
+                            Ok(outboard) => outboard,
+                            Err(_) => {
+                                debug!("no outboard file found for blob {}", meta.hash);
+                                SparseMemFile::new()
+                            }
+                        };
+                        let bao_file =
+                            BaoFileHandle::new(bucket.clone(), paths, outboard, meta.size);
                         let entry = Entry::new(bao_file, meta);
                         self.write_lock().await.entries.insert(entry.hash(), entry);
                     };
@@ -110,7 +122,7 @@ impl S3Store {
             complete: false,
         };
         put_meta(&bucket, &paths, &meta).await?;
-        let bao_file = BaoFileHandle::new(bucket, paths, size);
+        let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), size);
         let entry = Entry::new(bao_file, meta);
         Ok(self.write_lock().await.entries.insert(hash, entry))
     }
