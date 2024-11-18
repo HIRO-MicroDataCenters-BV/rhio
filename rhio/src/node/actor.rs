@@ -1,14 +1,12 @@
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
-use async_nats::{HeaderMap, Message as NatsMessage};
+use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
-use rhio_core::{
-    NetworkMessage, NetworkPayload, Subject, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE,
-};
+use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -297,12 +295,8 @@ impl NodeActor {
         //
         // This can happen if there's an overlap in subject filters, depending on the publish and
         // subscribe config.
-        if let Some(headers) = &message.headers {
-            if headers.get(NATS_RHIO_SIGNATURE).is_some()
-                || headers.get(NATS_RHIO_PUBLIC_KEY).is_some()
-            {
-                return Ok(());
-            }
+        if nats::has_nats_signature(&message.headers) {
+            return Ok(());
         }
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
@@ -372,7 +366,7 @@ impl NodeActor {
                         .await?;
                 }
             }
-            NetworkPayload::NatsMessage(subject, payload, headers) => {
+            NetworkPayload::NatsMessage(subject, payload, previous_headers) => {
                 debug!(%subject, ?payload, "received NATS message");
 
                 // We're interested in NATS messages from a _specific_ public key and matching
@@ -389,18 +383,13 @@ impl NodeActor {
 
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.
-                let mut headers = match &headers {
-                    Some(headers) => headers.clone(),
-                    None => HeaderMap::new(),
-                };
-                headers.insert(
-                    NATS_RHIO_SIGNATURE,
+                let headers = nats::add_custom_nats_headers(
+                    previous_headers,
                     network_message
                         .signature
-                        .expect("signature is given at this point")
-                        .to_string(),
+                        .expect("signatures was already checked at this point and should be given"),
+                    network_message.public_key,
                 );
-                headers.insert(NATS_RHIO_PUBLIC_KEY, network_message.public_key.to_string());
 
                 self.nats
                     .publish(true, subject.to_string(), Some(headers), payload.to_vec())

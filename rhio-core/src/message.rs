@@ -1,9 +1,11 @@
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use async_nats::{HeaderMap, Message as NatsMessage, Subject};
 use bytes::Bytes;
 use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
 use rhio_blobs::{BlobHash, ObjectKey, ObjectSize};
 use serde::{Deserialize, Serialize};
+
+use crate::nats::{remove_custom_nats_headers, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
 
 /// Messages which are exchanged in the p2panda network, via sync or gossip.
 ///
@@ -35,6 +37,35 @@ impl NetworkMessage {
             public_key: public_key.to_owned(),
             signature: None,
         }
+    }
+
+    pub fn new_signed_nats(message: NatsMessage) -> Result<Self> {
+        let Some(headers) = &message.headers else {
+            return Err(anyhow!("no headers given in NATS message"));
+        };
+
+        let signature: Signature = {
+            let bytes = hex::decode(
+                headers
+                    .get(NATS_RHIO_SIGNATURE)
+                    .ok_or(anyhow!("no signature given in NATS message"))?
+                    .to_string(),
+            )
+            .context("decode signature in NATS message")?;
+            Signature::try_from(&bytes[..]).context("parse signature in NATS message")?
+        };
+
+        let public_key: PublicKey = headers
+            .get(NATS_RHIO_PUBLIC_KEY)
+            .ok_or(anyhow!("no public key given in NATS message"))?
+            .to_string()
+            .parse()?;
+
+        Ok(Self {
+            payload: NetworkPayload::NatsMessage(message.subject, message.payload, message.headers),
+            public_key,
+            signature: Some(signature),
+        })
     }
 
     pub fn new_blob_announcement(
@@ -76,9 +107,23 @@ impl NetworkMessage {
     pub fn verify(&self) -> bool {
         match &self.signature {
             Some(signature) => {
-                let mut header = self.clone();
-                header.signature = None;
-                let bytes = header.to_bytes();
+                let mut message = self.clone();
+
+                // Remove existing signature.
+                message.signature = None;
+
+                // Remove potentially existing custom NATS headers for rhio.
+                if let NetworkPayload::NatsMessage(subject, payload, headers) = &message.payload {
+                    if let Some(headers) = headers {
+                        message.payload = NetworkPayload::NatsMessage(
+                            subject.to_owned(),
+                            payload.to_owned(),
+                            remove_custom_nats_headers(headers),
+                        );
+                    }
+                }
+
+                let bytes = message.to_bytes();
                 self.public_key.verify(&bytes, signature)
             }
             None => false,
@@ -97,30 +142,13 @@ pub enum NetworkPayload {
     NatsMessage(Subject, Bytes, Option<HeaderMap>),
 }
 
-// @TODO: Remove this
-pub fn hash_nats_message(message: &NatsMessage) -> Hash {
-    let mut buf = vec![];
-    buf.extend_from_slice(message.subject.as_bytes());
-    buf.extend_from_slice(b"\r\n");
-    if let Some(headers) = &message.headers {
-        for (k, vs) in headers.iter() {
-            for v in vs.iter() {
-                buf.extend_from_slice(k.to_string().as_bytes());
-                buf.extend_from_slice(b": ");
-                buf.extend_from_slice(v.to_string().as_bytes());
-                buf.extend_from_slice(b"\r\n");
-            }
-        }
-        buf.extend_from_slice(b"\r\n");
-    }
-    buf.extend_from_slice(&message.payload);
-    Hash::new(&buf)
-}
-
 #[cfg(test)]
 mod tests {
+    use async_nats::{HeaderMap, Message as NatsMessage};
     use p2panda_core::PrivateKey;
     use rhio_blobs::BlobHash;
+
+    use crate::{NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
 
     use super::{NetworkMessage, NetworkPayload};
 
@@ -128,7 +156,7 @@ mod tests {
     fn signature() {
         let private_key = PrivateKey::new();
         let public_key = private_key.public_key();
-        let mut header = NetworkMessage {
+        let mut message = NetworkMessage {
             payload: NetworkPayload::BlobAnnouncement(
                 BlobHash::new(b"test"),
                 "path/to/my.file".into(),
@@ -137,10 +165,43 @@ mod tests {
             public_key: public_key.clone(),
             signature: None,
         };
-        assert!(!header.verify());
-        header.sign(&private_key);
-        assert!(header.verify());
-        header.public_key = PrivateKey::new().public_key();
-        assert!(!header.verify());
+        assert!(!message.verify());
+        message.sign(&private_key);
+        assert!(message.verify());
+        message.public_key = PrivateKey::new().public_key();
+        assert!(!message.verify());
+    }
+
+    #[test]
+    fn nats_signatures() {
+        let private_key = PrivateKey::new();
+        let public_key = private_key.public_key();
+
+        // Encode and sign NATS message wrapped in network message.
+        let mut nats_message = NatsMessage {
+            subject: "foo.meta".into(),
+            reply: None,
+            payload: vec![1, 2, 3].into(),
+            headers: None,
+            status: None,
+            description: None,
+            length: 0,
+        };
+        let mut message = NetworkMessage::new_nats(nats_message.clone(), &public_key);
+        message.sign(&private_key);
+
+        // Add authentication data to NATS message itself.
+        nats_message.headers = Some({
+            let mut headers = HeaderMap::new();
+            let signature = message.signature.unwrap().to_string();
+            let public_key = message.public_key.to_string();
+            headers.insert(NATS_RHIO_SIGNATURE, signature);
+            headers.insert(NATS_RHIO_PUBLIC_KEY, public_key);
+            headers
+        });
+
+        // Re-create network message from NATS message and check signature.
+        let message = NetworkMessage::new_signed_nats(nats_message).unwrap();
+        assert!(message.verify());
     }
 }

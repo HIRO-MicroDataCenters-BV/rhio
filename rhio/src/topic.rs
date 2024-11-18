@@ -94,15 +94,6 @@ pub enum Query {
 impl Topic for Query {}
 
 impl Query {
-    pub fn public_key(&self) -> &PublicKey {
-        match self {
-            Query::Bucket { public_key, .. } => public_key,
-            Query::Subject { public_key, .. } => public_key,
-            Query::NoSyncBucket { public_key } => public_key,
-            Query::NoSyncSubject { public_key } => public_key,
-        }
-    }
-
     pub fn is_no_sync(&self) -> bool {
         matches!(self, Self::NoSyncBucket { .. } | Self::NoSyncSubject { .. })
     }
