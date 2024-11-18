@@ -1,5 +1,3 @@
-use std::time::SystemTime;
-
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::{HeaderMap, Message as NatsMessage};
@@ -8,7 +6,6 @@ use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
-use rhio_core::message::NetworkPayload;
 use rhio_core::{NetworkMessage, NetworkPayload, Subject, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
@@ -391,12 +388,12 @@ impl NodeActor {
                 // "ingested" by rhio. This helps us to identify messages which already have been
                 // processed by us, so we don't need to send them again when they arrive at a NATS
                 // consumer for gossip broadcast.
-                let mut headers = match &headers {
+                let headers = match &headers {
                     Some(headers) => headers.clone(),
                     None => HeaderMap::new(),
                 };
-                let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-                headers.insert(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
+                // let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+                // headers.insert(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
 
                 self.nats
                     .publish(true, subject.to_string(), Some(headers), payload.to_vec())
