@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use iroh_blobs::IROH_BLOCK_SIZE;
-use iroh_io::HttpAdapter;
+use iroh_io::AsyncSliceReader;
 use s3::bucket::Bucket;
 use s3::serde_types::Part;
 use thiserror::Error;
@@ -84,6 +84,7 @@ impl MultiPartBuffer {
 
 #[derive(Debug)]
 pub struct S3File {
+    size: u64,
     bucket: Bucket,
     buffer: MultiPartBuffer,
     path: String,
@@ -92,8 +93,9 @@ pub struct S3File {
 }
 
 impl S3File {
-    pub fn new(bucket: Bucket, path: String) -> Self {
+    pub fn new(bucket: Bucket, path: String, size: u64) -> Self {
         Self {
+            size,
             bucket,
             path,
             buffer: MultiPartBuffer::new(MIN_PART_SIZE),
@@ -114,12 +116,12 @@ impl S3File {
     /// behavior would only occur when we download a blob from multiple peers in parallel, and as
     /// we can make sure this doesn't happen in the iroh blob download API I thought this was the
     /// pragmatic approach for now.
-    pub async fn write_all_at(&mut self, offset: usize, bytes: Vec<u8>) -> Result<()> {
+    pub async fn write_all_at(&mut self, offset: usize, bytes: &[u8]) -> Result<()> {
         if self.buffer.processed_bytes != offset {
             return Err(anyhow!("bytes mut be written to the file in order"));
         }
         let part_number = offset_to_part_number(MIN_PART_SIZE, offset);
-        match self.buffer.extend(part_number, bytes) {
+        match self.buffer.extend(part_number, bytes.to_vec()) {
             Ok(result) => match result {
                 MultiPartBufferResult::PartComplete(part_number, _, bytes) => {
                     self.upload_part(part_number, bytes).await?;
@@ -186,12 +188,36 @@ impl S3File {
         Ok(())
     }
 
-    pub fn reader(&self) -> HttpAdapter {
-        // @TODO(adz): This currently requires the bucket to be _public_. We can sign the HTTP
-        // request to fullfil the S3 authentication API or use the S3 API straight away.
-        // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html
-        let url = self.bucket.url();
-        HttpAdapter::new(url::Url::from_str(&format!("{url}/{}", &self.path)).unwrap())
+    pub fn reader(&self) -> S3Reader {
+        S3Reader {
+            size: self.size,
+            bucket: self.bucket.clone(),
+            path: self.path.clone(),
+        }
+    }
+}
+
+pub struct S3Reader {
+    size: u64,
+    bucket: Bucket,
+    path: String,
+}
+
+impl AsyncSliceReader for S3Reader {
+    async fn read_at(&mut self, offset: u64, len: usize) -> std::io::Result<Bytes> {
+        let res = self
+            .bucket
+            .get_object_range(&self.path, offset, Some(offset + len as u64))
+            .await
+            .map_err(std::io::Error::other)?;
+        let mut data = res.into_bytes();
+        // we do not want to rely on the server sending the exact amount of bytes
+        data.truncate(len);
+        Ok(data)
+    }
+
+    async fn size(&mut self) -> std::io::Result<u64> {
+        Ok(self.size)
     }
 }
 
