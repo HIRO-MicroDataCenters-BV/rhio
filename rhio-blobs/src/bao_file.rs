@@ -2,13 +2,16 @@ use anyhow::Result;
 use bytes::{Bytes, BytesMut};
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
+use iroh_blobs::store::bao_tree::io::sync::WriteAt;
 use iroh_blobs::store::bao_tree::BaoTree;
+use iroh_blobs::util::SparseMemFile;
 use iroh_blobs::{Hash, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use serde::{Deserialize, Serialize};
 
 use crate::s3_file::S3File;
+use crate::utils::{put_meta, put_outboard};
 use crate::Paths;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,8 +35,10 @@ impl BaoMeta {
 
 #[derive(Debug)]
 pub struct BaoFileHandle {
+    pub paths: Paths,
+    pub bucket: Bucket,
     pub data: S3File,
-    pub outboard: S3File,
+    pub outboard: SparseMemFile,
     pub data_size: u64,
 }
 
@@ -41,12 +46,15 @@ impl BaoFileHandle {
     /// Construct a BAO file handle.
     ///
     /// This method returns a handle onto an incomplete BAO file using the expected paths. It
-    /// doesn't create any files yet or transfer any data.
-    pub fn new(bucket: Bucket, paths: Paths, data_size: u64) -> Self {
+    /// doesn't create any files yet or transfer any data. The provided in-memory outboard can be
+    /// in an incomplete or complete state.
+    pub fn new(bucket: Bucket, paths: Paths, outboard: SparseMemFile, data_size: u64) -> Self {
         Self {
-            data: S3File::new(bucket.clone(), paths.data()),
-            outboard: S3File::new(bucket.clone(), paths.outboard()),
+            data: S3File::new(bucket.clone(), paths.data(), data_size),
+            outboard,
             data_size,
+            bucket,
+            paths,
         }
     }
 }
@@ -63,7 +71,7 @@ impl BaoFileHandle {
         size: u64,
     ) -> anyhow::Result<(Self, BaoMeta)> {
         let paths = Paths::new(path.clone());
-        let data_file = S3File::new(bucket.clone(), paths.data());
+        let data_file = S3File::new(bucket.clone(), paths.data(), size);
 
         let (hash, outboard) = {
             let outboard =
@@ -72,9 +80,10 @@ impl BaoFileHandle {
             Ok::<_, anyhow::Error>((outboard.root, outboard.data))
         }?;
 
-        let mut outboard_file = S3File::new(bucket.clone(), paths.outboard());
-        outboard_file.write_all_at(0, outboard.to_vec()).await?;
-        outboard_file.complete().await?;
+        let mut mem_file = SparseMemFile::new();
+        mem_file.write_all_at(0, outboard.as_ref())?;
+
+        put_outboard(&bucket, &paths, &outboard).await?;
 
         let meta = BaoMeta {
             hash: hash.into(),
@@ -88,14 +97,16 @@ impl BaoFileHandle {
         let res = Self {
             data: data_file,
             data_size: size,
-            outboard: outboard_file,
+            outboard: mem_file,
+            bucket,
+            paths,
         };
 
         Ok((res, meta))
     }
 
     pub(super) async fn read_data_at(&self, offset: u64, len: usize) -> std::io::Result<Bytes> {
-        copy_limited_slice_s3(&self.data, offset, len).await
+        self.data.reader().read_at(offset, len).await
     }
 
     pub(super) fn data_len(&self) -> u64 {
@@ -103,12 +114,11 @@ impl BaoFileHandle {
     }
 
     pub(super) async fn read_outboard_at(&self, offset: u64, len: usize) -> std::io::Result<Bytes> {
-        copy_limited_slice_s3(&self.outboard, offset, len).await
+        Ok(copy_limited_slice(&self.outboard, offset, len))
     }
 
     pub(super) async fn outboard_len(&self) -> Result<u64> {
-        let size = self.outboard.reader().size().await?;
-        Ok(size)
+        Ok(self.outboard.len() as u64)
     }
 
     pub(super) async fn write_batch(
@@ -126,17 +136,13 @@ impl BaoFileHandle {
                             .expect("u64 overflow multiplying to hash pair offset");
                         let o1 = o0.checked_add(32).expect("u64 overflow");
                         let outboard = &mut self.outboard;
-                        outboard
-                            .write_all_at(o0 as usize, parent.pair.0.as_bytes().to_vec())
-                            .await?;
-                        outboard
-                            .write_all_at(o1 as usize, parent.pair.1.as_bytes().to_vec())
-                            .await?;
+                        outboard.write_all_at(o0, parent.pair.0.as_bytes().as_ref())?;
+                        outboard.write_all_at(o1, parent.pair.1.as_bytes().as_ref())?;
                     }
                 }
                 BaoContentItem::Leaf(leaf) => {
                     self.data
-                        .write_all_at(leaf.offset as usize, leaf.data.to_vec())
+                        .write_all_at(leaf.offset as usize, leaf.data.as_ref())
                         .await?;
                 }
             }
@@ -145,39 +151,26 @@ impl BaoFileHandle {
     }
 
     pub async fn complete(&mut self) -> Result<()> {
-        self.data.complete().await?;
-        self.outboard.complete().await
+        put_outboard(&self.bucket, &self.paths, self.outboard.as_ref()).await?;
+        self.data.complete().await
     }
 }
 
 /// copy a limited slice from a slice as a `Bytes`.
-pub(crate) async fn copy_limited_slice_s3(
-    file: &S3File,
-    offset: u64,
-    len: usize,
-) -> std::io::Result<Bytes> {
-    let bytes = file.reader().read_at(offset, len).await?;
-    Ok(bytes)
+pub(crate) fn copy_limited_slice(bytes: &[u8], offset: u64, len: usize) -> Bytes {
+    bytes[limited_range(offset, len, bytes.len())]
+        .to_vec()
+        .into()
 }
 
-pub async fn put_meta(bucket: &Bucket, paths: &Paths, meta: &BaoMeta) -> Result<()> {
-    let response = bucket.put_object(paths.meta(), &meta.to_bytes()).await?;
-    if response.status_code() != 200 {
-        return Err(anyhow::anyhow!(
-            "Failed to upload blob meta file to s3 bucket"
-        ));
+pub(crate) fn limited_range(offset: u64, len: usize, buf_len: usize) -> std::ops::Range<usize> {
+    if offset < buf_len as u64 {
+        let start = offset as usize;
+        let end = start.saturating_add(len).min(buf_len);
+        start..end
+    } else {
+        0..0
     }
-
-    Ok(())
-}
-
-pub async fn get_meta(bucket: &Bucket, path: String) -> Result<BaoMeta> {
-    let response = bucket.get_object(path).await?;
-    if response.status_code() != 200 {
-        return Err(anyhow::anyhow!("Failed to get blob meta file to s3 bucket"));
-    }
-    let meta = BaoMeta::from_bytes(response.as_slice())?;
-    Ok(meta)
 }
 
 #[cfg(test)]

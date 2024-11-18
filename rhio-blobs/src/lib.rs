@@ -2,6 +2,7 @@ mod bao_file;
 mod paths;
 mod s3_file;
 mod store;
+mod utils;
 
 pub use iroh_blobs::Hash as BlobHash;
 
