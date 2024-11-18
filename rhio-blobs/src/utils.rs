@@ -2,6 +2,7 @@ use anyhow::Result;
 use iroh_blobs::store::bao_tree::io::sync::WriteAt;
 use iroh_blobs::util::SparseMemFile;
 use s3::Bucket;
+use tracing::debug;
 
 use crate::bao_file::BaoMeta;
 use crate::Paths;
@@ -14,6 +15,12 @@ pub async fn put_meta(bucket: &Bucket, paths: &Paths, meta: &BaoMeta) -> Result<
         ));
     }
 
+    debug!(
+        key = %paths.meta(),
+        complete = %meta.complete,
+        "upload complete",
+    );
+
     Ok(())
 }
 
@@ -24,6 +31,12 @@ pub async fn put_outboard(bucket: &Bucket, paths: &Paths, outboard: &[u8]) -> Re
             "Failed to upload blob outboard file to s3 bucket"
         ));
     }
+
+    debug!(
+        key = %paths.outboard(),
+        bytes = %outboard.len(),
+        "upload complete",
+    );
 
     Ok(())
 }
