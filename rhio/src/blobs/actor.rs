@@ -152,8 +152,11 @@ impl BlobsActor {
             .blob_discovered(hash, &bucket_name, key.clone(), size)
             .await?;
 
-        let hash = Hash::from_bytes(*hash.as_bytes());
-        let mut stream = Box::pin(self.blobs.download_blob(hash).await);
+        let mut stream = {
+            let p2panda_hash = Hash::from_bytes(*hash.as_bytes());
+            Box::pin(self.blobs.download_blob(p2panda_hash).await)
+        };
+
         while let Some(event) = stream.next().await {
             match event {
                 DownloadBlobEvent::Abort(err) => {
@@ -164,6 +167,7 @@ impl BlobsActor {
                 }
             }
         }
+
         Ok(())
     }
 

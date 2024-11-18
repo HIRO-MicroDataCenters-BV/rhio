@@ -327,6 +327,8 @@ impl NodeActor {
 
         match &network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size) => {
+                debug!(%hash, %bucket_name, %key, %size, "received blob announcement");
+
                 // We're interested in a bucket from a _specific_ public key. Filter out everything
                 // which is not the right bucket name or not the right author.
                 if is_bucket_matching(&self.subscriptions, bucket_name, &delivered_from) {
@@ -336,6 +338,8 @@ impl NodeActor {
                 }
             }
             NetworkPayload::NatsMessage(subject, payload, headers) => {
+                debug!(%subject, ?payload, "received NATS message");
+
                 // Filter out all incoming messages we're not subscribed to. This can happen
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
@@ -414,6 +418,8 @@ impl NodeActor {
         let Publication::Bucket { bucket_name, .. } = publication else {
             unreachable!("method will always return a bucket publication");
         };
+
+        debug!(%hash, %bucket_name, %key, %size, "broadcast blob announcement");
 
         let topic_id = Query::from(publication.to_owned()).id();
         let network_message =

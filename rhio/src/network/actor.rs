@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use p2panda_net::network::{FromNetwork, ToNetwork};
 use p2panda_net::{Network, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::topic::Query;
 
@@ -113,6 +113,11 @@ impl PandaActor {
 
     async fn on_subscribe(&mut self, query: Query) -> Result<broadcast::Receiver<FromNetwork>> {
         let topic_id = query.id();
+        debug!(
+            topic_id = hex::encode(topic_id),
+            %query,
+            "subscribe to topic"
+        );
         let (tx, rx, _) = self.network.subscribe(query).await?;
         if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx_map.entry(topic_id) {
             entry.insert(tx);
