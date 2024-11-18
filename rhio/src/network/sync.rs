@@ -447,22 +447,51 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             }
             Query::Subject {
                 subject,
-                ref public_key,
+                public_key: requested_public_key,
                 ..
             } => {
                 // Look up our config to find out if we have a NATS stream somewhere which fits the
-                // requested subject.
-                let stream_name = match &self.config.publish {
-                    Some(publications) => {
-                        publications.nats_subjects.iter().find_map(|publication| {
-                            if publication.subject.is_matching(subject) {
-                                Some(publication.stream_name.clone())
-                            } else {
-                                None
+                // requested subject and public key.
+                //
+                // - Are we publishing the requested data ourselves?
+                let stream_name = {
+                    if requested_public_key != &self.public_key {
+                        None
+                    } else {
+                        match &self.config.publish {
+                            Some(publications) => {
+                                publications.nats_subjects.iter().find_map(|publication| {
+                                    if publication.subject.is_matching(subject) {
+                                        Some(publication.stream_name.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
                             }
-                        })
+                            None => None,
+                        }
                     }
-                    None => None,
+                };
+
+                // - Can we forward data from someone else?
+                let stream_name = {
+                    match stream_name {
+                        Some(stream_name) => Some(stream_name),
+                        None => match &self.config.subscribe {
+                            Some(subscriptions) => {
+                                subscriptions.nats_subjects.iter().find_map(|subscription| {
+                                    if subscription.subject.is_matching(subject)
+                                        && &subscription.public_key == requested_public_key
+                                    {
+                                        Some(subscription.stream_name.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            }
+                            None => None,
+                        },
+                    }
                 };
 
                 // 5. Await message from other peer on the NATS messages they _have_, so we can
@@ -513,8 +542,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             // If no public key is given in the NATS message header, we assume it's
                             // our message and check if that's what the remote peer was interested
                             // in.
-                            if !nats::is_public_key_eq(&message, public_key)
-                                && public_key != &self.public_key
+                            if !nats::is_public_key_eq(&message, requested_public_key)
+                                && !nats::is_public_key_eq(&message, &self.public_key)
                             {
                                 return None;
                             }
