@@ -383,17 +383,14 @@ impl NodeActor {
                     return Ok(());
                 }
 
-                // @TODO: Revisit this ..
-                // We're adding a custom rhio header to the NATS message, to mark this message as
-                // "ingested" by rhio. This helps us to identify messages which already have been
-                // processed by us, so we don't need to send them again when they arrive at a NATS
-                // consumer for gossip broadcast.
-                let headers = match &headers {
+                // Move the authentication data into the NATS message itself, so it doesn't get
+                // lost after storing it in the NATS server.
+                let mut headers = match &headers {
                     Some(headers) => headers.clone(),
                     None => HeaderMap::new(),
                 };
-                // let timestamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
-                // headers.insert(NATS_FROM_RHIO_HEADER, timestamp.as_secs().to_string());
+                headers.insert(NATS_RHIO_SIGNATURE, network_message.signature.unwrap().to_string());
+                headers.insert(NATS_RHIO_PUBLIC_KEY, network_message.public_key.to_string());
 
                 self.nats
                     .publish(true, subject.to_string(), Some(headers), payload.to_vec())
