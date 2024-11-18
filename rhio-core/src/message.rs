@@ -85,7 +85,22 @@ pub enum NetworkPayload {
 }
 
 pub fn hash_nats_message(message: &NatsMessage) -> Hash {
-    Hash::new(message.subject.as_bytes())
+    let mut buf = vec![];
+    buf.extend_from_slice(message.subject.as_bytes());
+    buf.extend_from_slice(b"\r\n");
+    if let Some(headers) = &message.headers {
+        for (k, vs) in headers.iter() {
+            for v in vs.iter() {
+                buf.extend_from_slice(k.to_string().as_bytes());
+                buf.extend_from_slice(b": ");
+                buf.extend_from_slice(v.to_string().as_bytes());
+                buf.extend_from_slice(b"\r\n");
+            }
+        }
+        buf.extend_from_slice(b"\r\n");
+    }
+    buf.extend_from_slice(&message.payload);
+    Hash::new(&buf)
 }
 
 #[cfg(test)]
