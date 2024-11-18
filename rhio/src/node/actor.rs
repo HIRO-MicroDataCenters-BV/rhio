@@ -6,7 +6,9 @@ use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
-use rhio_core::{NetworkMessage, NetworkPayload, Subject, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
+use rhio_core::{
+    NetworkMessage, NetworkPayload, Subject, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE,
+};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -296,7 +298,9 @@ impl NodeActor {
         // This can happen if there's an overlap in subject filters, depending on the publish and
         // subscribe config.
         if let Some(headers) = &message.headers {
-            if headers.get(NATS_RHIO_SIGNATURE).is_some() || headers.get(NATS_RHIO_PUBLIC_KEY).is_some() {
+            if headers.get(NATS_RHIO_SIGNATURE).is_some()
+                || headers.get(NATS_RHIO_PUBLIC_KEY).is_some()
+            {
                 return Ok(());
             }
         }
@@ -389,7 +393,13 @@ impl NodeActor {
                     Some(headers) => headers.clone(),
                     None => HeaderMap::new(),
                 };
-                headers.insert(NATS_RHIO_SIGNATURE, network_message.signature.unwrap().to_string());
+                headers.insert(
+                    NATS_RHIO_SIGNATURE,
+                    network_message
+                        .signature
+                        .expect("signature is given at this point")
+                        .to_string(),
+                );
                 headers.insert(NATS_RHIO_PUBLIC_KEY, network_message.public_key.to_string());
 
                 self.nats
@@ -614,8 +624,8 @@ fn validate_subscription_config(
                     if public_key == existing_public_key && subject == existing_subject {
                         bail!(
                             "public key {} and subject {} is used multiple times in subscribe NATS config",
-                            public_key, 
-                            subject
+                            public_key,
+                            subject,
                         );
                     }
                 }
