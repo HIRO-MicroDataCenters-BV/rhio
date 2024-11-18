@@ -232,7 +232,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         Ok(message) => {
                             // Remove all messages which are not from the public key we are
                             // interested in.
-                            if nats::is_public_key_eq(&message, &public_key) {
+                            if nats::is_public_key_eq(&message, public_key) {
                                 match nats::wrap_and_sign_nats_message(message, &self.private_key) {
                                     Ok(network_message) => Some(Ok(network_message.hash())),
                                     Err(err) => {
@@ -513,7 +513,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             // If no public key is given in the NATS message header, we assume it's
                             // our message and check if that's what the remote peer was interested
                             // in.
-                            if !nats::is_public_key_eq(&message, &public_key)
+                            if !nats::is_public_key_eq(&message, public_key)
                                 && public_key != &self.public_key
                             {
                                 return None;

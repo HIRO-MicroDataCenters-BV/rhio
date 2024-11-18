@@ -48,8 +48,7 @@ impl NetworkMessage {
             let bytes = hex::decode(
                 headers
                     .get(NATS_RHIO_SIGNATURE)
-                    .ok_or(anyhow!("no signature given in NATS message"))?
-                    .to_string(),
+                    .ok_or(anyhow!("no signature given in NATS message"))?,
             )
             .context("decode signature in NATS message")?;
             Signature::try_from(&bytes[..]).context("parse signature in NATS message")?
@@ -113,14 +112,14 @@ impl NetworkMessage {
                 message.signature = None;
 
                 // Remove potentially existing custom NATS headers for rhio.
-                if let NetworkPayload::NatsMessage(subject, payload, headers) = &message.payload {
-                    if let Some(headers) = headers {
-                        message.payload = NetworkPayload::NatsMessage(
-                            subject.to_owned(),
-                            payload.to_owned(),
-                            remove_custom_nats_headers(headers),
-                        );
-                    }
+                if let NetworkPayload::NatsMessage(subject, payload, Some(headers)) =
+                    &message.payload
+                {
+                    message.payload = NetworkPayload::NatsMessage(
+                        subject.to_owned(),
+                        payload.to_owned(),
+                        remove_custom_nats_headers(headers),
+                    );
                 }
 
                 let bytes = message.to_bytes();
@@ -162,7 +161,7 @@ mod tests {
                 "path/to/my.file".into(),
                 5911,
             ),
-            public_key: public_key.clone(),
+            public_key,
             signature: None,
         };
         assert!(!message.verify());

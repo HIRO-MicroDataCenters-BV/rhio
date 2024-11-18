@@ -72,7 +72,7 @@ pub fn remove_custom_nats_headers(previous_header: &HeaderMap) -> Option<HeaderM
         }
     }
 
-    if header.len() == 0 {
+    if header.is_empty() {
         None
     } else {
         Some(header)
@@ -88,7 +88,7 @@ pub fn wrap_and_sign_nats_message(
 ) -> Result<NetworkMessage> {
     // Wrap already signed NATS messages in a network message.
     if has_nats_signature(&message.headers) {
-        return Ok(NetworkMessage::new_signed_nats(message)?);
+        return NetworkMessage::new_signed_nats(message);
     }
 
     // Sign them with our private key in case they are not.
