@@ -9,7 +9,7 @@ use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
 use rhio_core::message::NetworkPayload;
-use rhio_core::{NetworkMessage, Subject};
+use rhio_core::{NetworkMessage, NetworkPayload, Subject, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::BroadcastStream;
@@ -18,7 +18,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
-use crate::nats::{JetStreamEvent, Nats, NATS_FROM_RHIO_HEADER};
+use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::node::Publication;
 use crate::topic::{
@@ -287,9 +287,7 @@ impl NodeActor {
         topic_id: [u8; 32],
         message: NatsMessage,
     ) -> Result<()> {
-        // @TODO: Check if this is really necessary, this should always be false here anyway?
-        // Ignore messages when they're from the past, at this point we're only forwarding new
-        // messages.
+        // Sanity check.
         assert!(
             !is_init,
             "we should never receive old NATS messages on this channel"
@@ -297,16 +295,22 @@ impl NodeActor {
 
         // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
         // right after we've ingested them on the same stream.
+        //
+        // This can happen if there's an overlap in subject filters, depending on the publish and
+        // subscribe config.
         if let Some(headers) = &message.headers {
-            if headers.get(NATS_FROM_RHIO_HEADER).is_some() {
+            if headers.get(NATS_RHIO_SIGNATURE).is_some() || headers.get(NATS_RHIO_PUBLIC_KEY).is_some() {
                 return Ok(());
             }
         }
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
 
-        // Sign message as at this point it definitely comes from us.
-        let network_message = NetworkMessage::new_nats(message, &self.public_key);
+        // Sign message as it definitely comes from us at this point (it doesn't have any signature
+        // or public key yet).
+        let mut network_message = NetworkMessage::new_nats(message, &self.public_key);
+        network_message.sign(&self.private_key);
+
         self.broadcast(network_message, topic_id).await?;
 
         Ok(())
@@ -487,15 +491,8 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Broadcast message in gossip overlay for this topic and sign it if it wasn't already.
-    async fn broadcast(&self, mut message: NetworkMessage, topic_id: [u8; 32]) -> Result<()> {
-        // If signature exists already it was already signed by another peer and we're just
-        // forwarding it here. If no signature is given it must have come from us and we need to
-        // sign it now:
-        if message.signature.is_none() {
-            message.sign(&self.private_key);
-        }
-
+    /// Broadcast message in gossip overlay for this topic.
+    async fn broadcast(&self, message: NetworkMessage, topic_id: [u8; 32]) -> Result<()> {
         self.panda
             .broadcast(message.to_bytes(), topic_id)
             .await
