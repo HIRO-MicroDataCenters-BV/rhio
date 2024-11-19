@@ -55,6 +55,36 @@ pub enum CompletedBlob {
     Signed(SignedBlobInfo),
 }
 
+impl CompletedBlob {
+    pub fn bucket_name(&self) -> BucketName {
+        match self {
+            CompletedBlob::Unsigned(UnsignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
+            CompletedBlob::Signed(SignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
+        }
+    }
+
+    pub fn size(&self) -> ObjectSize {
+        match self {
+            CompletedBlob::Unsigned(UnsignedBlobInfo { size, .. }) => *size,
+            CompletedBlob::Signed(SignedBlobInfo { size, .. }) => *size,
+        }
+    }
+
+    pub fn key(&self) -> ObjectKey {
+        match self {
+            CompletedBlob::Unsigned(UnsignedBlobInfo { key, .. }) => key.clone(),
+            CompletedBlob::Signed(SignedBlobInfo { key, .. }) => key.clone(),
+        }
+    }
+
+    pub fn hash(&self) -> BlobHash {
+        match self {
+            CompletedBlob::Unsigned(UnsignedBlobInfo { hash, .. }) => *hash,
+            CompletedBlob::Signed(SignedBlobInfo { hash, .. }) => *hash,
+        }
+    }
+}
+
 /// An imported but unsigned blob which indicates that it must be from our local peer.
 ///
 /// As soon as we announce this local blob in the network we sign it but that state does not get

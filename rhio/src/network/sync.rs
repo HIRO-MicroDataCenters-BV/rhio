@@ -11,7 +11,8 @@ use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
-use rhio_blobs::{BlobHash, BucketName, ObjectSize, Paths, S3Store};
+use rand::random;
+use rhio_blobs::{BlobHash, CompletedBlob, S3Store};
 use rhio_core::{nats, NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
@@ -106,7 +107,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         rx: Box<&'a mut (dyn AsyncRead + Send + Unpin)>,
         mut app_tx: Box<&'a mut (dyn Sink<FromSync<Query>, Error = SyncError> + Send + Unpin)>,
     ) -> Result<(), SyncError> {
-        let span = span!(Level::DEBUG, "initiator", query = %query);
+        let session_id: u16 = random();
+        let span = span!(Level::DEBUG, "initiator", %session_id, %query);
 
         let mut sink = into_cbor_sink(tx);
         let mut stream = into_cbor_stream(rx);
@@ -141,19 +143,33 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // We can sync over NATS messages or blob announcements.
         match query {
-            Query::Bucket { ref public_key } => {
+            Query::Bucket {
+                public_key: requested_public_key,
+            } => {
                 assert!(
-                    public_key != &self.public_key,
+                    requested_public_key != self.public_key,
                     "we never initiate sync sessions for our own data"
                 );
 
                 // 3. Send over a list of blob hashes we have already to remote peer.
-                // @TODO: Filter them by public key
                 let blob_hashes: Vec<BlobHash> = self
                     .complete_blobs()
                     .await
                     .iter()
-                    .map(|(hash, _, _, _)| hash.to_owned())
+                    .filter_map(|blob| {
+                        // We're only interested in remote peer's blobs when initiating a sync
+                        // session, so skip the unsigned ones (which are our blobs).
+                        let CompletedBlob::Signed(blob) = blob else {
+                            return None;
+                        };
+
+                        // Filter out all blobs which are not from that peer.
+                        if blob.public_key != requested_public_key {
+                            return None;
+                        }
+
+                        Some(blob.hash)
+                    })
                     .collect();
                 debug!(parent: &span, "we have {} completed blobs", blob_hashes.len());
 
@@ -197,12 +213,12 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 );
             }
             Query::Subject {
-                ref subject,
-                ref public_key,
+                subject: ref requested_subject,
+                public_key: requested_public_key,
                 ..
             } => {
                 assert!(
-                    public_key != &self.public_key,
+                    requested_public_key != self.public_key,
                     "we never initiate sync sessions for our own data"
                 );
 
@@ -211,7 +227,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let stream_name = match &self.config.subscribe {
                     Some(subscriptions) => {
                         subscriptions.nats_subjects.iter().find_map(|subscription| {
-                            if &subscription.subject == subject {
+                            if &subscription.subject == requested_subject {
                                 Some(subscription.stream_name.clone())
                             } else {
                                 None
@@ -225,14 +241,15 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // 3. Download all NATS messages we have from the NATS server for this subject and
                 //    hash them each. We send all hashes over to the other peer so they can
                 //    determine and send us what we don't have.
-                let (consumer_id, nats_stream) =
-                    self.nats_stream(stream_name, subject, query.id()).await?;
+                let (consumer_id, nats_stream) = self
+                    .nats_stream(stream_name, &requested_subject, query.id())
+                    .await?;
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
                         Ok(message) => {
                             // Remove all messages which are not from the public key we are
                             // interested in.
-                            if !nats::is_public_key_eq(&message, public_key) {
+                            if !nats::is_public_key_eq(&message, &requested_public_key) {
                                 return None;
                             }
 
@@ -347,7 +364,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             ));
         };
 
-        let span = span!(Level::DEBUG, "acceptor", query = %query);
+        let session_id: u16 = random();
+        let span = span!(Level::DEBUG, "acceptor", %session_id,  %query);
         debug!(parent: &span, "received sync query {}", query);
 
         // Tell p2panda backend about query.
@@ -367,7 +385,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         // II. SYNC PHASE
         // ~~~~~~~~~~~~~~
 
-        // We can sync over NATS messages or S3 blob announcements.
+        // We can sync over NATS messages or blob announcements.
         match &query {
             Query::Bucket {
                 public_key: requested_public_key,
@@ -420,20 +438,42 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 // 6. Send back delta data to other peer.
                 let mut counter = 0;
-                // @TODO: Filter by public key.
-                for (hash, _, paths, size) in self.complete_blobs().await {
-                    if !remote_blob_hashes.contains(&hash) {
+                for blob in self.complete_blobs().await {
+                    match blob {
+                        CompletedBlob::Unsigned(_) => {
+                            // Remote peer did not ask for our data.
+                            if requested_public_key != &self.public_key {
+                                continue;
+                            }
+                        }
+                        CompletedBlob::Signed(ref blob) => {
+                            // Remote peer did not ask for this peer's data.
+                            if requested_public_key != &blob.public_key {
+                                continue;
+                            }
+                        }
+                    }
+
+                    if !remote_blob_hashes.contains(&blob.hash()) {
                         let blob_announcement = {
-                            // @TODO: Revisit this, we might also want to send data from other
-                            // authors.
-                            let mut signed_msg = NetworkMessage::new_blob_announcement(
-                                hash,
-                                paths.data(),
-                                size,
-                                &self.private_key.public_key(),
-                            );
-                            signed_msg.sign(&self.private_key);
-                            signed_msg
+                            match &blob {
+                                // Sign our own blobs before sending them over.
+                                CompletedBlob::Unsigned(blob) => {
+                                    let mut signed_msg = NetworkMessage::new_blob_announcement(
+                                        blob.hash,
+                                        blob.key.clone(),
+                                        blob.size,
+                                        &self.public_key,
+                                    );
+                                    signed_msg.sign(&self.private_key);
+                                    signed_msg
+                                }
+                                // Just forward already-signed blobs if this what the remote peer
+                                // asked for.
+                                CompletedBlob::Signed(blob) => {
+                                    NetworkMessage::new_signed_blob_announcement(blob.clone())
+                                }
+                            }
                         };
                         counter += 1;
                         sink.send(Message::BlobsData(blob_announcement)).await?;
@@ -622,8 +662,7 @@ impl RhioSyncProtocol {
     }
 
     /// Get a list of blobs we have ourselves in the blob store.
-    async fn complete_blobs(&self) -> Vec<(BlobHash, BucketName, Paths, ObjectSize)> {
-        // @TODO: Filter out by public key.
+    async fn complete_blobs(&self) -> Vec<CompletedBlob> {
         self.blob_store.complete_blobs().await.into_iter().collect()
     }
 

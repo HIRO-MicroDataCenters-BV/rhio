@@ -170,7 +170,14 @@ impl S3Watcher {
                             // of completed items. For all further iterations we're sending events
                             // as soon as a new object was completed.
                             if is_new && !first_run {
-                                // debug!(key = %path.data(), %size, %hash, %bucket_name, "detected finished blob import");
+                                debug!(
+                                    key = %completed_blob.key(),
+                                    size = %completed_blob.size(),
+                                    hash = %completed_blob.hash(),
+                                    bucket_name = %completed_blob.bucket_name(),
+                                    "detected finished blob import"
+                                );
+
                                 if event_tx
                                     .send(Ok(S3Event::BlobImportFinished(completed_blob)))
                                     .await
@@ -185,7 +192,13 @@ impl S3Watcher {
                         // which object has not yet been imported.
                         for object in maybe_to_be_imported {
                             if !inner.completed.contains(&object) {
-                                // debug!(key = %object.key, size = %object.size, bucket_name = %object.bucket_name, "detected new S3 object to be imported");
+                                debug!(
+                                    key = %object.key,
+                                    size = %object.size,
+                                    bucket_name = %object.bucket_name,
+                                    "detected new S3 object to be imported"
+                                );
+
                                 if event_tx
                                     .send(Ok(S3Event::DetectedS3Object(NotImportedObject {
                                         bucket_name: object.bucket_name,
@@ -212,7 +225,14 @@ impl S3Watcher {
                                 .insert(WatchedObject::from(incomplete_blob.clone()));
 
                             if is_new {
-                                // debug!(key = %path.data(), %size, %hash, %bucket_name, "detected incomplete blob download");
+                                debug!(
+                                    key = %incomplete_blob.key,
+                                    size = %incomplete_blob.size,
+                                    hash = %incomplete_blob.hash,
+                                    bucket_name = %incomplete_blob.bucket_name,
+                                    "detected incomplete blob download"
+                                );
+
                                 if event_tx
                                     .send(Ok(S3Event::DetectedIncompleteBlob(incomplete_blob)))
                                     .await
