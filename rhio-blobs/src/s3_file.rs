@@ -7,7 +7,7 @@ use iroh_io::AsyncSliceReader;
 use s3::bucket::Bucket;
 use s3::serde_types::Part;
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{error, trace};
 
 use crate::{ObjectKey, ObjectSize};
 
@@ -180,7 +180,7 @@ impl S3File {
             return Err(anyhow!(response));
         };
 
-        debug!(
+        trace!(
             key = %self.key,
             num_parts = %self.uploaded_parts.len(),
             bytes = %self.buffer.processed_bytes,

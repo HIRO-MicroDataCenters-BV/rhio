@@ -164,7 +164,7 @@ impl S3Watcher {
 
                             // Remove object from "incomplete" list and add it to "completed".
                             inner.incomplete.remove(&watched);
-                            let is_new = inner.completed.insert(watched);
+                            let is_new = inner.completed.insert(watched.clone());
 
                             // During the first iteration we're only establishing the initial state
                             // of completed items. For all further iterations we're sending events
@@ -217,28 +217,30 @@ impl S3Watcher {
                     // 3. List of S3 objects which were started to be downloaded, but did not
                     //    finish yet.
                     {
-                        let list = store.incomplete_blobs().await;
-                        let mut inner = inner.write().await;
-                        for incomplete_blob in list {
-                            let is_new = inner
-                                .incomplete
-                                .insert(WatchedObject::from(incomplete_blob.clone()));
+                        // Only run this when the app starts.
+                        if first_run {
+                            let list = store.incomplete_blobs().await;
+                            let mut inner = inner.write().await;
+                            for incomplete_blob in list {
+                                let watched = WatchedObject::from(incomplete_blob.clone());
+                                let is_new = inner.incomplete.insert(watched);
 
-                            if is_new {
-                                debug!(
-                                    key = %incomplete_blob.key,
-                                    size = %incomplete_blob.size,
-                                    hash = %incomplete_blob.hash,
-                                    bucket_name = %incomplete_blob.bucket_name,
-                                    "detected incomplete blob download"
-                                );
+                                if is_new {
+                                    debug!(
+                                        key = %incomplete_blob.key,
+                                        size = %incomplete_blob.size,
+                                        hash = %incomplete_blob.hash,
+                                        bucket_name = %incomplete_blob.bucket_name,
+                                        "detected incomplete blob download"
+                                    );
 
-                                if event_tx
-                                    .send(Ok(S3Event::DetectedIncompleteBlob(incomplete_blob)))
-                                    .await
-                                    .is_err()
-                                {
-                                    return Err(());
+                                    if event_tx
+                                        .send(Ok(S3Event::DetectedIncompleteBlob(incomplete_blob)))
+                                        .await
+                                        .is_err()
+                                    {
+                                        return Err(());
+                                    }
                                 }
                             }
                         }

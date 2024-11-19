@@ -127,7 +127,13 @@ impl BlobsActor {
                     error!(%err, "failed downloading blob");
                 }
                 DownloadBlobEvent::Done => {
-                    debug!(%blob.hash, %blob.bucket_name, %blob.key, %blob.size, "finished downloading blob");
+                    debug!(
+                        hash = %blob.hash,
+                        bucket_name = %blob.bucket_name,
+                        key = %blob.key,
+                        size = %blob.size,
+                        "finished downloading blob"
+                    );
                 }
             }
         }
