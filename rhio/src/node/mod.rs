@@ -1,4 +1,5 @@
 mod actor;
+mod sanity;
 
 use std::net::SocketAddr;
 
