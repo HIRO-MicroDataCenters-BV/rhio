@@ -107,8 +107,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         rx: Box<&'a mut (dyn AsyncRead + Send + Unpin)>,
         mut app_tx: Box<&'a mut (dyn Sink<FromSync<Query>, Error = SyncError> + Send + Unpin)>,
     ) -> Result<(), SyncError> {
-        let session_id: u16 = random();
-        let span = span!(Level::DEBUG, "initiator", %session_id, %query);
+        let session_id: [u8; 2] = random();
+        let span = span!(Level::DEBUG, "initiator", session_id = hex::encode(session_id), %query);
 
         let mut sink = into_cbor_sink(tx);
         let mut stream = into_cbor_stream(rx);
@@ -364,8 +364,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
             ));
         };
 
-        let session_id: u16 = random();
-        let span = span!(Level::DEBUG, "acceptor", %session_id,  %query);
+        let session_id: [u8; 2] = random();
+        let span = span!(Level::DEBUG, "acceptor", session_id = hex::encode(session_id),  %query);
         debug!(parent: &span, "received sync query {}", query);
 
         // Tell p2panda backend about query.
