@@ -1,6 +1,6 @@
-pub const META_SUFFIX: &str = ".meta";
+pub const META_SUFFIX: &str = ".rhio.json";
 
-pub const OUTBOARD_SUFFIX: &str = ".bao4";
+pub const OUTBOARD_SUFFIX: &str = ".rhio.bao4";
 
 pub const NO_PREFIX: String = String::new(); // Empty string.
 
@@ -10,8 +10,14 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn new(path: String) -> Self {
-        Self { path }
+    pub fn new(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+        }
+    }
+
+    pub fn from_meta(path: &str) -> Self {
+        Self::new(&path[0..path.len() - META_SUFFIX.len()])
     }
 
     pub fn data(&self) -> String {

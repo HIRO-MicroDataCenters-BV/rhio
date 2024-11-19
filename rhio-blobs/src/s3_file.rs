@@ -9,6 +9,8 @@ use s3::serde_types::Part;
 use thiserror::Error;
 use tracing::{debug, error};
 
+use crate::{ObjectKey, ObjectSize};
+
 /// The minimum size of a part in a multipart upload session.
 const MIN_PART_SIZE: usize = IROH_BLOCK_SIZE.bytes() * 1000;
 
@@ -27,9 +29,10 @@ pub enum MultiPartBufferResult {
     PartExtended(PartNumber, Offset),
 }
 
-/// Struct for managing a buffer which is split into many parts which have a configurable minimum
-/// size. Each part has it's own internal buffer, when the minimum size is reached the buffer is
-/// removed and returned.
+/// Manages a buffer which is split into many parts which have a configurable minimum size.
+///
+/// Each part has it's own internal buffer, when the minimum size is reached the buffer is removed
+/// and returned.
 #[derive(Debug)]
 pub struct MultiPartBuffer {
     pub min_part_size: usize,
@@ -84,20 +87,20 @@ impl MultiPartBuffer {
 
 #[derive(Debug)]
 pub struct S3File {
-    size: u64,
+    size: ObjectSize,
     bucket: Bucket,
     buffer: MultiPartBuffer,
-    path: String,
+    key: ObjectKey,
     upload_id: Option<String>,
     uploaded_parts: Vec<Part>,
 }
 
 impl S3File {
-    pub fn new(bucket: Bucket, path: String, size: u64) -> Self {
+    pub fn new(bucket: Bucket, key: ObjectKey, size: ObjectSize) -> Self {
         Self {
             size,
             bucket,
-            path,
+            key,
             buffer: MultiPartBuffer::new(MIN_PART_SIZE),
             upload_id: Default::default(),
             uploaded_parts: Default::default(),
@@ -109,13 +112,12 @@ impl S3File {
     }
 
     /// Write a byte buffer into the file at a particular offset.
-    ///
-    /// TODO: A current limitation of this implementation is that bytes are expected to be written
-    /// _in order_, meaning no gaps are allowed in the buffer. It's possible to remove this
-    /// restriction but it complicates the implementation and increases bug possibilities. This
-    /// behavior would only occur when we download a blob from multiple peers in parallel, and as
-    /// we can make sure this doesn't happen in the iroh blob download API I thought this was the
-    /// pragmatic approach for now.
+    // TODO(sam): A current limitation of this implementation is that bytes are expected to be
+    // written _in order_, meaning no gaps are allowed in the buffer. It's possible to remove this
+    // restriction but it complicates the implementation and increases bug possibilities. This
+    // behavior would only occur when we download a blob from multiple peers in parallel, and as
+    // we can make sure this doesn't happen in the iroh blob download API I thought this was the
+    // pragmatic approach for now.
     pub async fn write_all_at(&mut self, offset: usize, bytes: &[u8]) -> Result<()> {
         if self.buffer.processed_bytes != offset {
             return Err(anyhow!("bytes mut be written to the file in order"));
@@ -139,7 +141,7 @@ impl S3File {
     async fn upload_part(&mut self, part_number: usize, bytes: Vec<u8>) -> Result<()> {
         let (part, upload_id) = upload_to_s3(
             &self.bucket,
-            &self.path,
+            &self.key,
             bytes,
             part_number,
             self.upload_id.as_ref(),
@@ -167,7 +169,7 @@ impl S3File {
         let response = self
             .bucket
             .complete_multipart_upload(
-                &self.path,
+                &self.key,
                 &self.upload_id.take().expect("download id set"),
                 self.uploaded_parts.clone(),
             )
@@ -179,7 +181,7 @@ impl S3File {
         };
 
         debug!(
-            key = %self.path,
+            key = %self.key,
             num_parts = %self.uploaded_parts.len(),
             bytes = %self.buffer.processed_bytes,
             "upload complete",
@@ -192,26 +194,26 @@ impl S3File {
         S3Reader {
             size: self.size,
             bucket: self.bucket.clone(),
-            path: self.path.clone(),
+            key: self.key.clone(),
         }
     }
 }
 
 pub struct S3Reader {
-    size: u64,
+    size: ObjectSize,
     bucket: Bucket,
-    path: String,
+    key: ObjectKey,
 }
 
 impl AsyncSliceReader for S3Reader {
     async fn read_at(&mut self, offset: u64, len: usize) -> std::io::Result<Bytes> {
         let res = self
             .bucket
-            .get_object_range(&self.path, offset, Some(offset + len as u64))
+            .get_object_range(&self.key, offset, Some(offset + len as u64))
             .await
             .map_err(std::io::Error::other)?;
         let mut data = res.into_bytes();
-        // we do not want to rely on the server sending the exact amount of bytes
+        // We do not want to rely on the server sending the exact amount of bytes.
         data.truncate(len);
         Ok(data)
     }
@@ -227,7 +229,7 @@ fn offset_to_part_number(min_part_size: usize, offset: usize) -> usize {
 
 async fn upload_to_s3(
     bucket: &Bucket,
-    path: &str,
+    key: &str,
     bytes: Vec<u8>,
     part_number: usize,
     upload_id: Option<&String>,
@@ -236,7 +238,7 @@ async fn upload_to_s3(
         Some(id) => Ok::<_, anyhow::Error>(id.to_owned()),
         None => {
             let mpu = bucket
-                .initiate_multipart_upload(path, "application/octet-stream")
+                .initiate_multipart_upload(key, "application/octet-stream")
                 .await?;
             Ok(mpu.upload_id.to_owned())
         }
@@ -245,7 +247,7 @@ async fn upload_to_s3(
     let part = bucket
         .put_multipart_chunk(
             bytes,
-            path,
+            key,
             part_number as u32,
             &upload_id,
             "application/octet-stream",

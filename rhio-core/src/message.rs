@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use async_nats::{HeaderMap, Message as NatsMessage, Subject};
 use bytes::Bytes;
 use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
-use rhio_blobs::{BlobHash, ObjectKey, ObjectSize};
+use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, SignedBlobInfo};
 use serde::{Deserialize, Serialize};
 
 use crate::nats::{remove_custom_nats_headers, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
@@ -75,13 +75,24 @@ impl NetworkMessage {
         hash: BlobHash,
         key: ObjectKey,
         size: ObjectSize,
-        // @TODO: Add creation timestamp.
         public_key: &PublicKey,
     ) -> Self {
         Self {
             payload: NetworkPayload::BlobAnnouncement(hash, key, size),
             public_key: public_key.to_owned(),
             signature: None,
+        }
+    }
+
+    pub fn new_signed_blob_announcement(signed_blob: SignedBlobInfo) -> Self {
+        Self {
+            payload: NetworkPayload::BlobAnnouncement(
+                signed_blob.hash,
+                signed_blob.key,
+                signed_blob.size,
+            ),
+            public_key: signed_blob.public_key,
+            signature: Some(signed_blob.signature),
         }
     }
 
@@ -115,7 +126,8 @@ impl NetworkMessage {
                 // Remove existing signature.
                 message.signature = None;
 
-                // Remove potentially existing custom NATS headers for rhio.
+                // Remove potentially existing custom NATS headers for rhio which contain signature
+                // and public key.
                 if let NetworkPayload::NatsMessage(subject, payload, Some(headers)) =
                     &message.payload
                 {
@@ -138,6 +150,7 @@ impl NetworkMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum NetworkPayload {
+    // @TODO: Add creation timestamp.
     #[serde(rename = "blob")]
     BlobAnnouncement(BlobHash, ObjectKey, ObjectSize),
 

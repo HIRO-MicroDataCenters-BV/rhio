@@ -5,7 +5,7 @@ use futures_util::stream::SelectAll;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
-use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize};
+use rhio_blobs::{CompletedBlob, NotImportedObject, SignedBlobInfo};
 use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
@@ -17,11 +17,9 @@ use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::node::sanity::{validate_publication_config, validate_subscription_config};
+use crate::node::sanity;
 use crate::node::Publication;
-use crate::topic::{
-    is_bucket_matching, is_bucket_publishable, is_subject_matching, Query, Subscription,
-};
+use crate::topic::{self, Query, Subscription};
 
 pub enum ToNodeActor {
     Publish {
@@ -171,8 +169,7 @@ impl NodeActor {
     /// initiate sync sessions with us, as publishing peers we're only _accepting_ these sync
     /// sessions.
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
-        // Configuration sanity checks.
-        validate_publication_config(&self.publications, &publication)?;
+        sanity::validate_publication_config(&self.publications, &publication)?;
 
         self.publications.push(publication.clone());
 
@@ -230,8 +227,11 @@ impl NodeActor {
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
-        // Configuration sanity checks.
-        validate_subscription_config(&self.publications, &self.subscriptions, &subscription)?;
+        sanity::validate_subscription_config(
+            &self.publications,
+            &self.subscriptions,
+            &subscription,
+        )?;
 
         self.subscriptions.push(subscription.clone());
 
@@ -353,6 +353,10 @@ impl NodeActor {
             return Ok(());
         }
 
+        let signature = network_message
+            .signature
+            .expect("signatures was already checked at this point and should be given");
+
         match &network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, key, size) => {
                 debug!(%hash, %key, %size, "received blob announcement");
@@ -360,16 +364,21 @@ impl NodeActor {
                 // We're interested in blobs from a _specific_ public key. Filter out everything
                 // which is _not_ the right author.
                 if let Some(Subscription::Bucket { bucket_name, .. }) =
-                    is_bucket_matching(&self.subscriptions, &network_message.public_key)
+                    topic::is_bucket_matching(&self.subscriptions, &network_message.public_key)
                 {
                     self.blobs
-                        .download(*hash, bucket_name.to_owned(), key.to_owned(), *size)
+                        .download(SignedBlobInfo {
+                            hash: *hash,
+                            bucket_name: bucket_name.clone(),
+                            key: key.clone(),
+                            size: *size,
+                            public_key: network_message.public_key,
+                            signature,
+                        })
                         .await?;
                 }
             }
             NetworkPayload::NatsMessage(subject, payload, previous_headers) => {
-                debug!(%subject, ?payload, "received NATS message");
-
                 // We're interested in NATS messages from a _specific_ public key and matching
                 // subject (with wildcard support).
                 //
@@ -377,18 +386,21 @@ impl NodeActor {
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
                 let subject: Subject = subject.parse()?;
-                if !is_subject_matching(&self.subscriptions, &subject, &network_message.public_key)
-                {
+                if !topic::is_subject_matching(
+                    &self.subscriptions,
+                    &subject,
+                    &network_message.public_key,
+                ) {
                     return Ok(());
                 }
+
+                debug!(%subject, ?payload, "received NATS message");
 
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.
                 let headers = nats::add_custom_nats_headers(
                     previous_headers,
-                    network_message
-                        .signature
-                        .expect("signatures was already checked at this point and should be given"),
+                    signature,
                     network_message.public_key,
                 );
 
@@ -403,70 +415,63 @@ impl NodeActor {
 
     /// Handler for incoming events from the S3 watcher service.
     ///
-    /// This service informs us about state changes in the S3 database (regular S3-compatible
-    /// database) or blob store (used for storing data required to do p2p blob sync, this data is
-    /// also stored in S3 database next to the actual synced objects).
+    /// This service informs us about state changes in S3 buckets (regular S3-compatible database)
+    /// or blob store (used for storing data required to do p2p blob sync, this data is also stored
+    /// in S3 buckets next to the actual synced objects).
     async fn on_watcher_event(&self, event: S3Event) -> Result<()> {
         match event {
-            S3Event::DetectedS3Object(bucket_name, key, size) => {
-                self.on_detected_s3_object(bucket_name, key, size).await?;
+            S3Event::DetectedS3Object(object) => {
+                self.on_detected_s3_object(object).await?;
             }
-            S3Event::BlobImportFinished(hash, bucket_name, key, size) => {
-                self.on_import_finished(hash, bucket_name, key, size)
-                    .await?;
+            S3Event::BlobImportFinished(completed_blob) => {
+                self.on_import_finished(completed_blob).await?;
             }
-            S3Event::DetectedIncompleteBlob(hash, bucket_name, key, size) => {
-                self.on_incomplete_blob_detected(hash, bucket_name, key, size)
-                    .await?;
+            S3Event::DetectedIncompleteBlob(signed_blob) => {
+                self.on_incomplete_blob_detected(signed_blob).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Handler when user uploaded a new object directly into the S3 bucket.
-    async fn on_detected_s3_object(
-        &self,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> Result<()> {
-        // Import the object into our blob store (generate a bao-encoding and make it ready for p2p
-        // sync).
-        self.blobs.import_s3_object(bucket_name, key, size).await?;
+    /// Handler when user uploaded a new object directly into a S3 bucket.
+    async fn on_detected_s3_object(&self, object: NotImportedObject) -> Result<()> {
+        // Import the object into our blob store (generate a bao-encoding and make it
+        // ready for p2p sync) and sign it with our private key.
+        self.blobs.import_s3_object(object).await?;
         Ok(())
     }
 
     /// Handler when blob store finished importing new S3 object.
-    async fn on_import_finished(
-        &self,
-        hash: BlobHash,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> Result<()> {
-        // @TODO: Revisit this .. we actually support also publishing other author's blobs!
-        // Make sure we're allowing publishing from this bucket.
-        let Some(Publication::Bucket {
-            bucket_name,
-            public_key,
-        }) = is_bucket_publishable(&self.publications, &bucket_name)
-        else {
+    async fn on_import_finished(&self, blob: CompletedBlob) -> Result<()> {
+        // @TODO: Handle state changes after importing remote blob from here.
+
+        // This method can be called from both importing new local S3 objects or downloading remote
+        // blobs from other peers.
+        //
+        // We're only announcing blobs on the network we've uploaded ourselves locally (these are
+        // unsigned).
+        let CompletedBlob::Unsigned(blob) = blob else {
             return Ok(());
         };
 
-        debug!(%hash, %bucket_name, %key, %size, "broadcast blob announcement");
+        // Sanity: Make sure we're allowing publishing from this bucket. This should not be
+        // necessary when the configuration's are sane, but we're checking it just to be sure.
+        if topic::is_bucket_publishable(&self.publications, &blob.bucket_name).is_none() {
+            bail!("tried to announce blob from an unpublishable S3 bucket");
+        };
+
+        debug!(%blob.hash, %blob.bucket_name, %blob.key, %blob.size, "broadcast blob announcement");
+
+        // Announce the blob on the network and sign it with our key.
+        let mut network_message =
+            NetworkMessage::new_blob_announcement(blob.hash, blob.key, blob.size, &self.public_key);
+        network_message.sign(&self.private_key);
 
         let topic_id = Query::Bucket {
-            // @TODO: Revisit this ..
-            public_key: *public_key,
+            public_key: self.public_key,
         }
         .id();
-
-        // @TODO: Sign message when blob is coming from us, otherwise just forward the signature
-        // and public key.
-        let network_message =
-            NetworkMessage::new_blob_announcement(hash, key, size, &self.public_key);
         self.broadcast(network_message, topic_id).await?;
 
         Ok(())
@@ -474,14 +479,8 @@ impl NodeActor {
 
     /// Handler when incomplete blob was detected, probably the process was exited before the
     /// download hash finished.
-    async fn on_incomplete_blob_detected(
-        &self,
-        hash: BlobHash,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> Result<()> {
-        self.blobs.download(hash, bucket_name, key, size).await?;
+    async fn on_incomplete_blob_detected(&self, blob: SignedBlobInfo) -> Result<()> {
+        self.blobs.download(blob).await?;
         Ok(())
     }
 
@@ -491,7 +490,6 @@ impl NodeActor {
             .broadcast(message.to_bytes(), topic_id)
             .await
             .context("broadcast message")?;
-
         Ok(())
     }
 

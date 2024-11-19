@@ -5,7 +5,9 @@ use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
 use iroh_blobs::store::{MapEntry, Store};
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
 use p2panda_core::Hash;
-use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
+use rhio_blobs::{
+    BlobHash, BucketName, NotImportedObject, ObjectKey, ObjectSize, Paths, S3Store, SignedBlobInfo,
+};
 use s3::creds::Credentials;
 use s3::error::S3Error;
 use s3::{Bucket, BucketConfiguration, Region};
@@ -19,23 +21,12 @@ use crate::topic::Query;
 #[allow(clippy::large_enum_variant)]
 pub enum ToBlobsActor {
     ImportS3Object {
-        bucket_name: String,
-        key: String,
-        size: u64,
+        object: NotImportedObject,
         reply: oneshot::Sender<Result<()>>,
     },
     DownloadBlob {
-        hash: BlobHash,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
+        blob: SignedBlobInfo,
         reply: oneshot::Sender<Result<()>>,
-    },
-    CompleteBlobs {
-        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
-    },
-    IncompleteBlobs {
-        reply: oneshot::Sender<Vec<(BlobHash, BucketName, Paths, ObjectSize)>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -106,31 +97,12 @@ impl BlobsActor {
 
     async fn on_actor_message(&mut self, msg: ToBlobsActor) -> Result<()> {
         match msg {
-            ToBlobsActor::ImportS3Object {
-                bucket_name,
-                key,
-                size,
-                reply,
-            } => {
-                let result = self.store.import_object(&bucket_name, key, size).await;
+            ToBlobsActor::ImportS3Object { object, reply } => {
+                let result = self.store.import_object(object).await;
                 reply.send(result).ok();
             }
-            ToBlobsActor::DownloadBlob {
-                hash,
-                bucket_name,
-                key,
-                size,
-                reply,
-            } => {
-                let result = self.on_download_blob(hash, bucket_name, key, size).await;
-                reply.send(result).ok();
-            }
-            ToBlobsActor::CompleteBlobs { reply } => {
-                let result = self.store.complete_blobs().await;
-                reply.send(result).ok();
-            }
-            ToBlobsActor::IncompleteBlobs { reply } => {
-                let result = self.store.incomplete_blobs().await;
+            ToBlobsActor::DownloadBlob { blob, reply } => {
+                let result = self.on_download_blob(blob).await;
                 reply.send(result).ok();
             }
             ToBlobsActor::Shutdown { .. } => {
@@ -141,19 +113,11 @@ impl BlobsActor {
         Ok(())
     }
 
-    async fn on_download_blob(
-        &mut self,
-        hash: BlobHash,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> Result<()> {
-        self.store
-            .blob_discovered(hash, &bucket_name, key.clone(), size)
-            .await?;
+    async fn on_download_blob(&mut self, blob: SignedBlobInfo) -> Result<()> {
+        self.store.blob_discovered(blob.clone()).await?;
 
         let mut stream = {
-            let p2panda_hash = Hash::from_bytes(*hash.as_bytes());
+            let p2panda_hash = Hash::from_bytes(*blob.hash.as_bytes());
             Box::pin(self.blobs.download_blob(p2panda_hash).await)
         };
 
@@ -163,7 +127,7 @@ impl BlobsActor {
                     error!(%err, "failed downloading blob");
                 }
                 DownloadBlobEvent::Done => {
-                    debug!(%hash, %bucket_name, %key, %size, "finished downloading blob");
+                    debug!(%blob.hash, %blob.bucket_name, %blob.key, %blob.size, "finished downloading blob");
                 }
             }
         }
