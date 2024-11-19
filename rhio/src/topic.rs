@@ -146,14 +146,22 @@ impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Query::Bucket { public_key, .. } => {
-                write!(f, "S3 public_key={}", public_key)
+                write!(f, "S3 public_key=\"{}\"", {
+                    let mut public_key_str = public_key.to_string();
+                    public_key_str.truncate(6);
+                    public_key_str
+                })
             }
             Query::Subject {
                 subject,
                 public_key,
                 ..
             } => {
-                write!(f, "NATS subject={} public_key={}", subject, public_key)
+                write!(f, "NATS subject=\"{}\" public_key=\"{}\"", subject, {
+                    let mut public_key_str = public_key.to_string();
+                    public_key_str.truncate(6);
+                    public_key_str
+                })
             }
             Query::NoSyncBucket { .. } => write!(f, "S3 no-sync"),
             Query::NoSyncSubject { .. } => write!(f, "NATS no-sync"),

@@ -461,7 +461,13 @@ impl NodeActor {
             bail!("tried to announce blob from an unpublishable S3 bucket");
         };
 
-        debug!(%blob.hash, %blob.bucket_name, %blob.key, %blob.size, "broadcast blob announcement");
+        debug!(
+            hash = %blob.hash,
+            bucket_name = %blob.bucket_name,
+            key = %blob.key,
+            size = %blob.size,
+            "broadcast blob announcement"
+        );
 
         // Announce the blob on the network and sign it with our key.
         let mut network_message =

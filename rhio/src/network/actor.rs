@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use p2panda_net::network::{FromNetwork, ToNetwork};
 use p2panda_net::{Network, TopicId};
 use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::{debug, error};
+use tracing::{error, trace};
 
 use crate::topic::Query;
 
@@ -121,7 +121,7 @@ impl PandaActor {
             return Ok(None);
         }
 
-        debug!(
+        trace!(
             topic_id = hex::encode(topic_id),
             %query,
             "subscribe to topic"
