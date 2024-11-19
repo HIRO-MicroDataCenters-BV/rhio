@@ -13,7 +13,7 @@ use s3::error::S3Error;
 use s3::{Bucket, BucketConfiguration, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
-use tracing::{debug, error};
+use tracing::{debug, error, span, Level};
 
 use crate::blobs::watcher::S3Event;
 use crate::topic::Query;
@@ -114,6 +114,14 @@ impl BlobsActor {
     }
 
     async fn on_download_blob(&mut self, blob: SignedBlobInfo) -> Result<()> {
+        let span = span!(Level::DEBUG, "download",
+            hash = %blob.hash,
+            bucket_name = %blob.bucket_name,
+            key = %blob.key,
+            size = %blob.size,
+        );
+        debug!(parent: &span, "start downloading blob");
+
         self.store.blob_discovered(blob.clone()).await?;
 
         let mut stream = {
@@ -124,16 +132,10 @@ impl BlobsActor {
         while let Some(event) = stream.next().await {
             match event {
                 DownloadBlobEvent::Abort(err) => {
-                    error!(%err, "failed downloading blob");
+                    error!(parent: &span, %err, "failed downloading blob");
                 }
                 DownloadBlobEvent::Done => {
-                    debug!(
-                        hash = %blob.hash,
-                        bucket_name = %blob.bucket_name,
-                        key = %blob.key,
-                        size = %blob.size,
-                        "finished downloading blob"
-                    );
+                    debug!(parent: &span, "finished downloading blob");
                 }
             }
         }
