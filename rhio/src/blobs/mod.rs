@@ -10,8 +10,11 @@ use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
-use p2panda_core::Hash;
-use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, Paths, S3Store};
+use p2panda_core::{Hash, PublicKey, Signature};
+use rhio_blobs::{
+    BlobHash, BucketName, NotImportedObject, ObjectKey, ObjectSize, Paths, S3Store, SignedBlobInfo,
+    UnsignedBlobInfo,
+};
 use s3::creds::Credentials;
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
@@ -60,46 +63,14 @@ impl Blobs {
         }
     }
 
-    /// Query the blob store for all complete blobs.
-    pub async fn complete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::CompleteBlobs { reply })
-            .await?;
-        let result = reply_rx.await?;
-        Ok(result)
-    }
-
-    /// Query the blob store for all incomplete blobs.
-    pub async fn incomplete_blobs(&self) -> Result<Vec<(BlobHash, BucketName, Paths, ObjectSize)>> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::IncompleteBlobs { reply })
-            .await?;
-        let result = reply_rx.await?;
-        Ok(result)
-    }
-
     /// Download a blob from the network.
     ///
     /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
     /// bucket.
-    pub async fn download(
-        &self,
-        hash: BlobHash,
-        bucket_name: BucketName,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> Result<()> {
+    pub async fn download(&self, blob: SignedBlobInfo) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::DownloadBlob {
-                hash,
-                bucket_name,
-                key,
-                size,
-                reply,
-            })
+            .send(ToBlobsActor::DownloadBlob { blob, reply })
             .await?;
         let result = reply_rx.await?;
         result?;
@@ -107,20 +78,10 @@ impl Blobs {
     }
 
     /// Import an existing, local S3 object into the blob store, preparing it for p2p sync.
-    pub async fn import_s3_object(
-        &self,
-        bucket_name: String,
-        key: String,
-        size: u64,
-    ) -> Result<()> {
+    pub async fn import_s3_object(&self, object: NotImportedObject) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.blobs_actor_tx
-            .send(ToBlobsActor::ImportS3Object {
-                bucket_name,
-                key,
-                size,
-                reply,
-            })
+            .send(ToBlobsActor::ImportS3Object { object, reply })
             .await?;
         let result = reply_rx.await?;
         Ok(())
@@ -136,7 +97,10 @@ impl Blobs {
     }
 }
 
-/// Initiates and returns a blob store handler for S3 backends based on the rhio config.
+/// Initiates and returns a blob store for S3 buckets based on the rhio config.
+///
+/// This method fails when we couldn't connect to the S3 buckets due to invalid configuration
+/// values, authentication or connection errors.
 pub async fn store_from_config(config: &Config) -> Result<S3Store> {
     let mut buckets: HashMap<String, Bucket> = HashMap::new();
 

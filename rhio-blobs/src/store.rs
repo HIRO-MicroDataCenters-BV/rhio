@@ -18,16 +18,19 @@ use iroh_blobs::{BlobFormat, HashAndFormat, Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
 use s3::Bucket;
 use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{debug, warn};
+use tracing::{trace, warn};
 
 use crate::bao_file::{BaoFileHandle, BaoMeta};
 use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
 use crate::utils::{get_meta, get_outboard, put_meta};
-use crate::{BlobHash, BucketName, ObjectKey, ObjectSize};
+use crate::{
+    BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectSize, SignedBlobInfo,
+    UnsignedBlobInfo,
+};
 
-/// An s3 backed iroh blobs store.
+/// An S3 backed iroh blobs store.
 ///
-/// Blob data and outboard files are stored in an s3 bucket.
+/// Blob data and outboard files are stored in an S3 bucket.
 #[derive(Debug, Clone)]
 pub struct S3Store {
     buckets: Vec<Bucket>,
@@ -45,28 +48,27 @@ impl S3Store {
         Ok(store)
     }
 
+    /// Returns a list of all buckets managed by this store.
     pub fn buckets(&self) -> &Vec<Bucket> {
         self.buckets.as_ref()
     }
 
-    /// Initiate the store from the contents of given S3 buckets.
+    /// Initiate the blob store from the contents of given S3 buckets.
     ///
-    /// This method looks at all `.meta` files present on the configured S3 buckets and establishes
-    /// an index.
+    /// This method looks at all meta files present on the configured S3 buckets and establishes an
+    /// index.
     async fn init(&mut self) -> Result<()> {
         for bucket in &self.buckets {
             let results = bucket.list(NO_PREFIX, None).await?;
             for list in results {
                 for object in list.contents {
                     if object.key.ends_with(META_SUFFIX) {
-                        let paths = Paths::new(
-                            object.key[0..object.key.len() - META_SUFFIX.len()].to_string(),
-                        );
+                        let paths = Paths::from_meta(&object.key);
                         let meta = get_meta(bucket, &paths).await?;
                         let outboard = match get_outboard(bucket, &paths).await {
                             Ok(outboard) => outboard,
                             Err(_) => {
-                                debug!("no outboard file found for blob {}", meta.hash);
+                                trace!("no outboard file found for blob {}", meta.hash);
                                 SparseMemFile::new()
                             }
                         };
@@ -82,19 +84,20 @@ impl S3Store {
         Ok(())
     }
 
-    /// Import a new blob from the S3 store.
+    /// Import a new blob from S3 bucket.
     ///
     /// This method should be called as soon as a new S3 object was discovered in one of the
     /// buckets. We need to import it here to prepare the object for p2p sync.
     ///
     /// Several tasks are needed to do that:
-    /// - Process all blob bytes and create an outboard `.bao4` file (this gives us the hash).
-    /// - Create a `.meta` file based on the provided path, size and calculated hash.
-    /// - Upload both of these to the s3 bucket.
+    /// - Process all blob bytes and create an "outboard" bao4 file (this gives us the hash).
+    /// - Create a "meta" file based on the provided path, size and calculated hash.
+    /// - Upload both of these to the S3 bucket.
     /// - Insert an `Entry` into the index to represent this new blob>
-    pub async fn import_object(&self, bucket_name: &str, path: String, size: u64) -> Result<()> {
-        let bucket = self.bucket(bucket_name);
-        let (bao_file, meta) = BaoFileHandle::create_complete(bucket, path, size).await?;
+    pub async fn import_object(&self, object: NotImportedObject) -> Result<()> {
+        let bucket = self.bucket(&object.bucket_name);
+        let (bao_file, meta) =
+            BaoFileHandle::from_local_object(bucket, object.key, object.size).await?;
         let entry = Entry::new(bao_file, meta);
         self.write_lock().await.entries.insert(entry.hash(), entry);
         Ok(())
@@ -103,60 +106,76 @@ impl S3Store {
     /// Tell the store about a new blob we discovered on the network and would like to download (at
     /// some point).
     ///
-    /// Our store implementation expects that it knows about a blobs' path and size _before_ the
-    /// download of the blob actually occurs. This method is for informing the store of this
-    /// information, however it doesn't trigger the download of the blob.
-    pub async fn blob_discovered(
-        &mut self,
-        hash: BlobHash,
-        bucket_name: &str,
-        key: ObjectKey,
-        size: ObjectSize,
-    ) -> anyhow::Result<Option<Entry>> {
-        let bucket = self.bucket(bucket_name);
-        let paths = Paths::new(key.clone());
+    /// Our store implementation expects that it knows about a blobs' path, size and signature
+    /// _before_ the download of the blob actually occurs. This method is for informing the store
+    /// of this meta data, however it doesn't trigger the download of the blob.
+    ///
+    /// No checks take place on the integrity of the signature, we assume that this has been
+    /// handled before.
+    pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
+        let bucket = self.bucket(&blob.bucket_name);
+        let paths = Paths::new(&blob.key);
         let meta = BaoMeta {
-            hash,
-            path: key,
-            size,
+            hash: blob.hash,
+            key: blob.key,
+            size: blob.size,
             complete: false,
+            public_key: Some(blob.public_key),
+            signature: Some(blob.signature),
         };
         put_meta(&bucket, &paths, &meta).await?;
-        let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), size);
+        let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), blob.size);
         let entry = Entry::new(bao_file, meta);
-        Ok(self.write_lock().await.entries.insert(hash, entry))
+        Ok(self.write_lock().await.entries.insert(blob.hash, entry))
     }
 
     /// Query the store for all complete blobs.
-    pub async fn complete_blobs(&self) -> Vec<(BlobHash, BucketName, Paths, ObjectSize)> {
+    pub async fn complete_blobs(&self) -> Vec<CompletedBlob> {
         let entries = self.read_lock().await.entries.clone();
         entries
             .into_values()
             .filter(|entry| entry.meta.complete)
-            .map(|entry| {
-                (
-                    entry.hash(),
-                    entry.bucket_name,
-                    entry.paths,
-                    entry.meta.size,
-                )
+            .map(|entry| match entry.meta.public_key {
+                Some(public_key) => CompletedBlob::Signed(SignedBlobInfo {
+                    hash: entry.hash(),
+                    bucket_name: entry.bucket_name,
+                    key: entry.meta.key,
+                    size: entry.meta.size,
+                    public_key,
+                    signature: entry
+                        .meta
+                        .signature
+                        .expect("signature needs to exist next to public key"),
+                }),
+                None => CompletedBlob::Unsigned(UnsignedBlobInfo {
+                    hash: entry.hash(),
+                    bucket_name: entry.bucket_name,
+                    key: entry.meta.key,
+                    size: entry.meta.size,
+                }),
             })
             .collect()
     }
 
     /// Query the store for all incomplete blobs.
-    pub async fn incomplete_blobs(&self) -> Vec<(BlobHash, BucketName, Paths, ObjectSize)> {
+    pub async fn incomplete_blobs(&self) -> Vec<IncompleteBlob> {
         let entries = self.read_lock().await.entries.clone();
         entries
             .into_values()
             .filter(|x| !x.meta.complete)
-            .map(|entry| {
-                (
-                    entry.hash(),
-                    entry.bucket_name,
-                    entry.paths,
-                    entry.meta.size,
-                )
+            .map(|entry| IncompleteBlob {
+                hash: entry.hash(),
+                bucket_name: entry.bucket_name,
+                key: entry.meta.key,
+                size: entry.meta.size,
+                public_key: entry
+                    .meta
+                    .public_key
+                    .expect("incomplete blobs from remote peers need to be signed"),
+                signature: entry
+                    .meta
+                    .signature
+                    .expect("incomplete blobs from remote peers need to be signed"),
             })
             .collect()
     }
@@ -252,8 +271,9 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(bao_file: BaoFileHandle, meta: BaoMeta) -> Self {
-        let paths = Paths::new(meta.path.clone());
+        let paths = Paths::new(&meta.key);
         let bucket_name = bao_file.data.bucket_name();
+
         Entry {
             inner: Arc::new(EntryInner {
                 hash: meta.hash,
@@ -408,7 +428,7 @@ impl MapMut for S3Store {
 
     async fn insert_complete(&self, mut entry: Entry) -> std::io::Result<()> {
         entry.meta.complete = true;
-        let paths = Paths::new(entry.meta.path.clone());
+        let paths = Paths::new(&entry.meta.key);
         let bucket = self.bucket(&entry.bucket_name);
         put_meta(&bucket, &paths, &entry.meta)
             .await

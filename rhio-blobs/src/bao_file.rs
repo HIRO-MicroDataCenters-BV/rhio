@@ -5,27 +5,37 @@ use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
 use iroh_blobs::store::bao_tree::io::sync::WriteAt;
 use iroh_blobs::store::bao_tree::BaoTree;
 use iroh_blobs::util::SparseMemFile;
-use iroh_blobs::{Hash, IROH_BLOCK_SIZE};
+use iroh_blobs::{Hash as BlobHash, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
+use p2panda_core::{PublicKey, Signature};
 use s3::Bucket;
 use serde::{Deserialize, Serialize};
 
 use crate::s3_file::S3File;
 use crate::utils::{put_meta, put_outboard};
-use crate::Paths;
+use crate::{ObjectKey, ObjectSize, Paths};
 
+pub const META_CONTENT_TYPE: &str = "application/json";
+
+/// Meta files are JSON files used to store information we need to maintain our store for p2p blob
+/// sync plus authentication data.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BaoMeta {
-    pub hash: Hash,
-    pub size: u64,
+    pub hash: BlobHash,
+    pub size: ObjectSize,
+    // @TODO(adz): We should be able to derive the complete state instead by comparing the "target"
+    // hash with the current one in the store.
     pub complete: bool,
-    #[serde(rename = "key")]
-    pub path: String,
+    pub key: ObjectKey,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_key: Option<PublicKey>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Signature>,
 }
 
 impl BaoMeta {
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("json encoding of meta data")
+        serde_json::to_vec_pretty(self).expect("json encoding of meta data")
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -60,19 +70,17 @@ impl BaoFileHandle {
 }
 
 impl BaoFileHandle {
-    /// Process some existing data, create a BAO file and return the file handle and newly
+    /// Process some existing S3 object, create a BAO file and return the file handle and newly
     /// calculated hash.
     ///
     /// This method is for taking an existing blob and generating it's accompanying outboard file.
     /// It is useful when importing blobs from an s3 bucket directly into the store.
-    pub async fn create_complete(
+    pub async fn from_local_object(
         bucket: Bucket,
-        path: String,
-        size: u64,
-    ) -> anyhow::Result<(Self, BaoMeta)> {
-        let paths = Paths::new(path.clone());
-        let data_file = S3File::new(bucket.clone(), paths.data(), size);
-
+        key: ObjectKey,
+        size: ObjectSize,
+    ) -> Result<(Self, BaoMeta)> {
+        let data_file = S3File::new(bucket.clone(), key.clone(), size);
         let (hash, outboard) = {
             let outboard =
                 PreOrderOutboard::<BytesMut>::create(&mut data_file.reader(), IROH_BLOCK_SIZE)
@@ -83,18 +91,23 @@ impl BaoFileHandle {
         let mut mem_file = SparseMemFile::new();
         mem_file.write_all_at(0, outboard.as_ref())?;
 
+        let paths = Paths::new(&key);
         put_outboard(&bucket, &paths, &outboard).await?;
 
         let meta = BaoMeta {
             hash: hash.into(),
             size,
             complete: true,
-            path,
+            key,
+            // For local objects we don't provide a signature. Blob announcements will be signed
+            // when sent over the wire in the p2p network instead.
+            public_key: None,
+            signature: None,
         };
 
         put_meta(&bucket, &paths, &meta).await?;
 
-        let res = Self {
+        let handle = Self {
             data: data_file,
             data_size: size,
             outboard: mem_file,
@@ -102,7 +115,7 @@ impl BaoFileHandle {
             paths,
         };
 
-        Ok((res, meta))
+        Ok((handle, meta))
     }
 
     pub(super) async fn read_data_at(&self, offset: u64, len: usize) -> std::io::Result<Bytes> {
@@ -121,11 +134,7 @@ impl BaoFileHandle {
         Ok(self.outboard.len() as u64)
     }
 
-    pub(super) async fn write_batch(
-        &mut self,
-        size: u64,
-        batch: &[BaoContentItem],
-    ) -> anyhow::Result<()> {
+    pub(super) async fn write_batch(&mut self, size: u64, batch: &[BaoContentItem]) -> Result<()> {
         let tree = BaoTree::new(size, IROH_BLOCK_SIZE);
         for item in batch {
             match item {
@@ -176,16 +185,22 @@ pub(crate) fn limited_range(offset: u64, len: usize, buf_len: usize) -> std::ops
 #[cfg(test)]
 mod tests {
     use iroh_blobs::Hash;
+    use p2panda_core::PrivateKey;
 
     use super::BaoMeta;
 
     #[test]
     fn meta_encode_decode() {
+        let private_key = PrivateKey::new();
+        let signature = private_key.sign(b"fake signature");
+
         let meta = BaoMeta {
             hash: Hash::from_bytes([0; 32]),
             size: 1048,
             complete: false,
-            path: String::from("path/to/file.txt"),
+            key: String::from("path/to/file.txt"),
+            public_key: Some(private_key.public_key()),
+            signature: Some(signature),
         };
 
         let bytes = meta.to_bytes();

@@ -34,10 +34,10 @@ pub struct Node {
 impl Node {
     /// Configure and spawn a node.
     pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        // 1. Connect to NATS server and consume streams over "subjects" we would like to publish.
+        // 1. Connect to NATS server and consume streams filtered by NATS subjects.
         let nats = Nats::new(config.clone()).await?;
 
-        // 2. Configure rhio network.
+        // 2. Configure rhio peer-to-peer network.
         let network_id_hash = Hash::new(config.node.network_id.as_bytes());
         let network_id = network_id_hash.as_bytes();
         let mut network_config = NetworkConfig {
