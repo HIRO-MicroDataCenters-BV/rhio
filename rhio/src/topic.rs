@@ -40,7 +40,7 @@ pub enum Subscription {
 
 /// Shares data from us with other peers in the network.
 ///
-/// Publications join gossip overlays (need to have a topic id for them as well), but no active no
+/// Publications join gossip overlays (need to have a topic id for them as well), but no active
 /// sync takes place, they _accept_ sync sessions though for any peer who's subscribed to our data.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]

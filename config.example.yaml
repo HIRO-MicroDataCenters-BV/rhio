@@ -79,26 +79,59 @@
 # STREAMS
 # ﾟ･｡+☆+｡
 
+# Share past and future NATS messages or files stored in S3 buckets from us
+# with other nodes in the network.
+#
 # publish:
+#   # We're publishing all files given in our local bucket.
+#   #
 #   s3_buckets:
-#     - "bucket-1"
-#     - "bucket-2"
+#     - "bucket-out-1"
+#     - "bucket-out-2"
+#
+#   # We're publishing any NATS message matching this NATS subject (wildcards
+#   # supported) coming from our local JetStream.
+#   #
 #   nats_subjects:
 #     - subject: "workload.berlin.energy"
 #       stream: "workload"
 #     - subject: "workload.rotterdam.energy"
 #       stream: "workload"
+
+# Download data of interest from other nodes, this includes past and future
+# NATS messages or files stored in S3 buckets.
+#
+# Subscriptions join the network and actively try to initiate sync sessions
+# with nodes who published data of our interest - or with nodes who are
+# subscribed to this data as well and can "forward" it to us.
 #
 # subscribe:
+#   # We're interested in any files from this particular node and would like
+#   # to store them in the our local S3 bucket.
+#   #
+#   # NOTE: It is not possible to publish from and download into the same
+#   # bucket, also re-using the same bucket for multiple subscriptions is not
+#   # allowed. This might lead to undefined behaviour!
+#   #
 #   s3_buckets:
-#     - bucket: "bucket-3"
+#     - bucket: "bucket-in-1"
 #       public_key: "<public-key>"
-#     - bucket: "bucket-4"
+#     - bucket: "bucket-in-2"
 #       public_key: "<public-key>"
+#
+#   # We're interested in any NATS message from this particular node for the
+#   # given NATS subject (wildcards are allowed).
+#   #
+#   # NOTE: NATS messages get always published towards our local NATS server
+#   # without any particular JetStream in mind - as soon as we received them.
+#   # However, we still need to configure a local stream which gives us our
+#   # current state on this subject, this aids effective syncing of past 
+#   # messages with the other node.
+#   #
 #   nats_subjects:
 #     - subject: "workload.*.energy"
+#       public_key: "<public-key>"
 #       stream: "workload"
-#       public_key: "<public-key>"
 #     - subject: "data.thehague.meta"
-#       stream: "data"
 #       public_key: "<public-key>"
+#       stream: "data"
