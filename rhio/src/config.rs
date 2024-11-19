@@ -184,8 +184,7 @@ pub struct NodeConfig {
     pub bind_port: u16,
     #[serde(rename = "nodes")]
     pub known_nodes: Vec<KnownNode>,
-    #[serde(rename = "private_key_path")]
-    pub private_key: PathBuf,
+    pub private_key_path: PathBuf,
     pub network_id: String,
 }
 
@@ -194,7 +193,7 @@ impl Default for NodeConfig {
         Self {
             bind_port: DEFAULT_BIND_PORT,
             known_nodes: vec![],
-            private_key: DEFAULT_PRIVATE_KEY_PATH.into(),
+            private_key_path: DEFAULT_PRIVATE_KEY_PATH.into(),
             network_id: DEFAULT_NETWORK_ID.to_string(),
         }
     }
@@ -355,7 +354,7 @@ subscribe:
                                     .unwrap(),
                             ],
                         }],
-                        private_key: PathBuf::from("/usr/app/rhio/private.key"),
+                        private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
                     },
                     log_level: None,

@@ -106,17 +106,14 @@ nodes:
 
 publish:
   s3_buckets:
-    - "bucket-1"
-    - "bucket-2"
+    - "bucket-out"
   nats_subjects:
     - subject: "foo.*"
       stream: "cluster-stream-1"
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-1"
-      public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
-    - bucket: "bucket-2"
+    - bucket: "bucket-in"
       public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
   nats_subjects:
     - subject: "foo.meta"
@@ -155,17 +152,14 @@ nodes:
 
 publish:
   s3_buckets:
-    - "bucket-1"
-    - "bucket-2"
+    - "bucket-out"
   nats_subjects:
     - subject: "foo.*"
       stream: "cluster-stream-2"
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-1"
-      public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
-    - bucket: "bucket-2"
+    - bucket: "bucket-in"
       public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
   nats_subjects:
     - subject: "foo.*"
@@ -227,7 +221,7 @@ d00f23f44b598d0b789b7ff0f1d99a24dc11eda434ad485f692786b624ac83f4
 ```bash
 docker-compose up -d
 ```
-3. Make sure the "bucket-1" and "bucket-2" buckets exists in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
+3. Make sure the "bucket-in" and "bucket-out" buckets exists in both MinIO databases, you can log in via a web interface at http://localhost:8001 and http://localhost:9001 to check that
 4. Create streams on both NATS servers
 ```bash
 ./nats -s localhost:8009 str add --config cluster-stream-1.json

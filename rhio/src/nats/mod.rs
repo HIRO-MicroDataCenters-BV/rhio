@@ -17,12 +17,6 @@ use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::{ConsumerId, JetStreamEvent, StreamName};
 use crate::JoinErrToStr;
 
-/// Custom rhio header for NATS messages we add to every ingested message.
-///
-/// This prevents the system to "re-ingest" messages via the incoming NATS consumer for gossip
-/// broadcast which might be the same stream for incoming and outgoing messages.
-pub const NATS_FROM_RHIO_HEADER: &str = "X-From-Rhio";
-
 #[derive(Clone, Debug)]
 pub struct Nats {
     nats_actor_tx: mpsc::Sender<ToNatsActor>,

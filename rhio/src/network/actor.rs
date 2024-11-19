@@ -16,7 +16,7 @@ pub enum ToPandaActor {
     },
     Subscribe {
         query: Query,
-        reply: oneshot::Sender<broadcast::Receiver<FromNetwork>>,
+        reply: oneshot::Sender<Option<broadcast::Receiver<FromNetwork>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -111,8 +111,16 @@ impl PandaActor {
         }
     }
 
-    async fn on_subscribe(&mut self, query: Query) -> Result<broadcast::Receiver<FromNetwork>> {
+    async fn on_subscribe(
+        &mut self,
+        query: Query,
+    ) -> Result<Option<broadcast::Receiver<FromNetwork>>> {
         let topic_id = query.id();
+
+        if query.is_no_sync() && self.topic_gossip_tx_map.contains_key(&topic_id) {
+            return Ok(None);
+        }
+
         debug!(
             topic_id = hex::encode(topic_id),
             %query,
@@ -122,7 +130,7 @@ impl PandaActor {
         if let hash_map::Entry::Vacant(entry) = self.topic_gossip_tx_map.entry(topic_id) {
             entry.insert(tx);
         }
-        Ok(rx)
+        Ok(Some(rx))
     }
 
     async fn shutdown(self) -> Result<()> {

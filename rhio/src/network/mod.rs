@@ -44,7 +44,10 @@ impl Panda {
     }
 
     /// Subscribe to a data stream in the network.
-    pub async fn subscribe(&self, query: Query) -> Result<broadcast::Receiver<FromNetwork>> {
+    pub async fn subscribe(
+        &self,
+        query: Query,
+    ) -> Result<Option<broadcast::Receiver<FromNetwork>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
             .send(ToPandaActor::Subscribe { query, reply })
