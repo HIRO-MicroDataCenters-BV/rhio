@@ -242,7 +242,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 //    hash them each. We send all hashes over to the other peer so they can
                 //    determine and send us what we don't have.
                 let (consumer_id, nats_stream) = self
-                    .nats_stream(stream_name, &requested_subject, query.id())
+                    .nats_stream(stream_name, requested_subject, query.id())
                     .await?;
                 let nats_stream = nats_stream.filter_map(|event| async {
                     match event {
