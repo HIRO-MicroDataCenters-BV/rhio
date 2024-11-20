@@ -495,8 +495,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                                 let is_matching = stream
                                     .subjects
                                     .iter()
-                                    .find(|config_subject| config_subject.is_matching(subject))
-                                    .is_some();
+                                    .any(|config_subject| config_subject.is_matching(subject));
                                 if !is_matching {
                                     continue;
                                 }
@@ -686,8 +685,7 @@ impl RhioSyncProtocol {
                     let is_matching = stream
                         .subjects
                         .iter()
-                        .find(|config_subject| config_subject.is_matching(subject))
-                        .is_some();
+                        .any(|config_subject| config_subject.is_matching(subject));
                     if !is_matching {
                         continue;
                     }
