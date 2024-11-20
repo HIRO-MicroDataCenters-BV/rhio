@@ -143,7 +143,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // We can sync over NATS messages or blob announcements.
         match query {
-            Query::Bucket {
+            Query::Files {
                 public_key: requested_public_key,
             } => {
                 assert!(
@@ -212,8 +212,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     counter,
                 );
             }
-            Query::Subject {
-                subject: ref requested_subject,
+            Query::Messages {
+                subjects: ref requested_subjects,
                 public_key: requested_public_key,
                 ..
             } => {
@@ -325,10 +325,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     counter,
                 );
             }
-            Query::NoSyncBucket { .. } => {
+            Query::NoSyncFiles { .. } => {
                 unreachable!("returned already earlier on no-sync option")
             }
-            Query::NoSyncSubject { .. } => {
+            Query::NoSyncMessages { .. } => {
                 unreachable!("returned already earlier on no-sync option")
             }
         }
@@ -387,7 +387,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
         // We can sync over NATS messages or blob announcements.
         match &query {
-            Query::Bucket {
+            Query::Files {
                 public_key: requested_public_key,
             } => {
                 // 5. Await message from other peer on the blobs they _have_, so we can calculate
@@ -485,8 +485,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "send {} blob announcements", counter);
             }
-            Query::Subject {
-                subject,
+            Query::Messages {
+                subjects: requested_subjects,
                 public_key: requested_public_key,
                 ..
             } => {
@@ -632,10 +632,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 debug!(parent: &span, "downloaded {} NATS messages", counter);
             }
-            Query::NoSyncBucket { .. } => {
+            Query::NoSyncFiles { .. } => {
                 unreachable!("we've already returned before no-sync option")
             }
-            Query::NoSyncSubject { .. } => {
+            Query::NoSyncMessages { .. } => {
                 unreachable!("we've already returned before no-sync option")
             }
         }

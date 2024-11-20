@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
             // Assign our own public key to S3 bucket info.
-            node.publish(Publication::Bucket {
+            node.publish(Publication::Files {
                 bucket_name,
                 public_key,
             })
@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         } in publish.nats_subjects
         {
             // Assign our own public key to NATS subject info.
-            node.publish(Publication::Subject {
+            node.publish(Publication::Messages {
                 stream_name,
                 subject,
                 public_key,
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
             public_key,
         } in subscribe.s3_buckets
         {
-            node.subscribe(Subscription::Bucket {
+            node.subscribe(Subscription::Files {
                 bucket_name,
                 public_key,
             })
@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
             public_key,
         } in subscribe.nats_subjects
         {
-            node.subscribe(Subscription::Subject {
+            node.subscribe(Subscription::Messages {
                 stream_name,
                 subject,
                 public_key,

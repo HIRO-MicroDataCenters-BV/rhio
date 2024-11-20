@@ -10,8 +10,8 @@ pub fn validate_publication_config(
     // 2. Published NATS subject need to be unique.
     for existing_publication in existing_publications {
         match &new_publication {
-            Publication::Bucket { bucket_name, .. } => match existing_publication {
-                Publication::Bucket {
+            Publication::Files { bucket_name, .. } => match existing_publication {
+                Publication::Files {
                     bucket_name: existing_bucket_name,
                     ..
                 } => {
@@ -22,13 +22,13 @@ pub fn validate_publication_config(
                         );
                     }
                 }
-                Publication::Subject { .. } => {
+                Publication::Messages { .. } => {
                     continue;
                 }
             },
-            Publication::Subject { subject, .. } => match existing_publication {
-                Publication::Bucket { .. } => continue,
-                Publication::Subject {
+            Publication::Messages { subject, .. } => match existing_publication {
+                Publication::Files { .. } => continue,
+                Publication::Messages {
                     subject: existing_subject,
                     ..
                 } => {
@@ -54,8 +54,8 @@ pub fn validate_subscription_config(
     // 1. Subscribed bucket names can't be used for publishing as well.
     for existing_publication in existing_publications {
         match &new_subscription {
-            Subscription::Bucket { bucket_name, .. } => match existing_publication {
-                Publication::Bucket {
+            Subscription::Files { bucket_name, .. } => match existing_publication {
+                Publication::Files {
                     bucket_name: existing_bucket_name,
                     ..
                 } => {
@@ -66,11 +66,11 @@ pub fn validate_subscription_config(
                         );
                     }
                 }
-                Publication::Subject { .. } => {
+                Publication::Messages { .. } => {
                     continue;
                 }
             },
-            Subscription::Subject { .. } => {
+            Subscription::Messages { .. } => {
                 continue;
             }
         }
@@ -80,8 +80,8 @@ pub fn validate_subscription_config(
     // 3. Subscribed NATS subject + public key tuples need to be unique.
     for existing_subscribtion in existing_subscriptions {
         match &new_subscription {
-            Subscription::Bucket { public_key, .. } => match existing_subscribtion {
-                Subscription::Bucket {
+            Subscription::Files { public_key, .. } => match existing_subscribtion {
+                Subscription::Files {
                     public_key: existing_public_key,
                     ..
                 } => {
@@ -92,17 +92,17 @@ pub fn validate_subscription_config(
                         );
                     }
                 }
-                Subscription::Subject { .. } => {
+                Subscription::Messages { .. } => {
                     continue;
                 }
             },
-            Subscription::Subject {
+            Subscription::Messages {
                 public_key,
                 subject,
                 ..
             } => match existing_subscribtion {
-                Subscription::Bucket { .. } => continue,
-                Subscription::Subject {
+                Subscription::Files { .. } => continue,
+                Subscription::Messages {
                     subject: existing_subject,
                     public_key: existing_public_key,
                     ..

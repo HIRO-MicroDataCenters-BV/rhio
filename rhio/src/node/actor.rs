@@ -178,10 +178,10 @@ impl NodeActor {
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { public_key, .. } => Query::NoSyncBucket {
+            Publication::Files { public_key, .. } => Query::NoSyncFiles {
                 public_key: *public_key,
             },
-            Publication::Subject { public_key, .. } => Query::NoSyncSubject {
+            Publication::Messages { public_key, .. } => Query::NoSyncMessages {
                 public_key: *public_key,
             },
         };
@@ -201,11 +201,11 @@ impl NodeActor {
         // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
         //    the gossip overlay later.
         match publication {
-            Publication::Bucket { .. } => {
+            Publication::Files { .. } => {
                 // Do nothing here. We handle incoming new blob events via the "on_watcher_event"
                 // method.
             }
-            Publication::Subject {
+            Publication::Messages {
                 stream_name,
                 subject,
                 ..
@@ -363,7 +363,7 @@ impl NodeActor {
 
                 // We're interested in blobs from a _specific_ public key. Filter out everything
                 // which is _not_ the right author.
-                if let Some(Subscription::Bucket { bucket_name, .. }) =
+                if let Some(Subscription::Files { bucket_name, .. }) =
                     topic::is_bucket_matching(&self.subscriptions, &network_message.public_key)
                 {
                     self.blobs
@@ -474,7 +474,7 @@ impl NodeActor {
             NetworkMessage::new_blob_announcement(blob.hash, blob.key, blob.size, &self.public_key);
         network_message.sign(&self.private_key);
 
-        let topic_id = Query::Bucket {
+        let topic_id = Query::Files {
             public_key: self.public_key,
         }
         .id();
