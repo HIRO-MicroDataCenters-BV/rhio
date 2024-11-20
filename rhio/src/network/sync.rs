@@ -492,7 +492,12 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         let publications = self.config.message_publications().await;
                         for stream in &publications {
                             for subject in requested_subjects {
-                                if !stream.subjects.contains(subject) {
+                                let is_matching = stream
+                                    .subjects
+                                    .iter()
+                                    .find(|config_subject| config_subject.is_matching(subject))
+                                    .is_some();
+                                if !is_matching {
                                     continue;
                                 }
                                 result.push(stream.clone());
@@ -678,7 +683,12 @@ impl RhioSyncProtocol {
             for stream in &subscription.filtered_streams {
                 for subject in subjects {
                     // Filter by subject.
-                    if !stream.subjects.contains(subject) {
+                    let is_matching = stream
+                        .subjects
+                        .iter()
+                        .find(|config_subject| config_subject.is_matching(subject))
+                        .is_some();
+                    if !is_matching {
                         continue;
                     }
 
