@@ -27,7 +27,7 @@ pub enum ToNodeActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        subscription: Subscription,
+        subscriptions: Vec<Subscription>,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -149,10 +149,10 @@ impl NodeActor {
                 reply.send(result).ok();
             }
             ToNodeActor::Subscribe {
-                subscription,
+                subscriptions,
                 reply,
             } => {
-                let result = self.on_subscribe(subscription).await;
+                let result = self.on_subscribe(subscriptions).await;
                 reply.send(result).ok();
             }
             ToNodeActor::Shutdown { .. } => {
@@ -206,14 +206,13 @@ impl NodeActor {
                 // method.
             }
             Publication::Messages {
-                stream_name,
-                subject,
-                ..
+                filtered_stream, ..
             } => {
                 // Subscribe to the NATS stream to receive new NATS messages from here.
+                let (subjects, stream_name) = filtered_stream;
                 let (_, nats_rx) = self
                     .nats
-                    .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
+                    .subscribe(stream_name, subjects, DeliverPolicy::New, topic_id)
                     .await?;
                 self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
             }
@@ -226,18 +225,35 @@ impl NodeActor {
     ///
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
-    async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
-        sanity::validate_subscription_config(
-            &self.publications,
-            &self.subscriptions,
-            &subscription,
-        )?;
+    ///
+    /// Subscriptions sent to this method should be grouped by the same public key.
+    async fn on_subscribe(&mut self, subscriptions: Vec<Subscription>) -> Result<()> {
+        // Sanity checks.
+        assert!(
+            subscriptions.len() > 0,
+            "set of subscriptions can not be empty"
+        );
+        for subscription in &subscriptions {
+            for other_subscription in &subscriptions {
+                if subscription.public_key() != other_subscription.public_key() {
+                    bail!("set of subscriptions needs to be from same public key");
+                }
+            }
+            sanity::validate_subscription_config(
+                &self.publications,
+                &self.subscriptions,
+                &subscription,
+            )?;
+        }
 
-        self.subscriptions.push(subscription.clone());
+        for subscription in &subscriptions {
+            self.subscriptions.push(subscription.clone());
+        }
 
+        let query = Query::from_subscriptions(&subscriptions);
         let network_rx = self
             .panda
-            .subscribe(subscription.into())
+            .subscribe(query)
             .await?
             .expect("queries for subscriptions should always return channel");
         self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));

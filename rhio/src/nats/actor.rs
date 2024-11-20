@@ -5,7 +5,7 @@ use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
 use async_nats::{Client as NatsClient, HeaderMap};
 use rand::random;
-use rhio_core::Subject;
+use rhio_core::{subjects_to_str, Subject};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tracing::{debug, error};
 
@@ -45,7 +45,9 @@ pub enum ToNatsActor {
         /// Streams can hold different subjects. By using a "subject filter" we're able to
         /// "consume" only the ones we're interested in. This forms "filtered views" on top of
         /// streams.
-        subject: Subject,
+        ///
+        /// Multiple subjects can be applied per JetStream.
+        subjects: Vec<Subject>,
 
         /// Consumer delivery policy.
         ///
@@ -157,13 +159,13 @@ impl NatsActor {
             }
             ToNatsActor::Subscribe {
                 stream_name,
-                subject,
+                subjects,
                 deliver_policy,
                 topic_id,
                 reply,
             } => {
                 let result = self
-                    .on_subscribe(stream_name, subject, deliver_policy, topic_id)
+                    .on_subscribe(stream_name, subjects, deliver_policy, topic_id)
                     .await;
                 reply.send(result).ok();
             }
@@ -206,10 +208,12 @@ impl NatsActor {
     async fn on_subscribe(
         &mut self,
         stream_name: StreamName,
-        filter_subject: Subject,
+        filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
+        let filter_subjects_str = subjects_to_str(filter_subjects.clone());
+
         match deliver_policy {
             DeliverPolicy::All => {
                 // Consumers who are used to download _all_ messages are only used once per sync
@@ -217,13 +221,15 @@ impl NatsActor {
                 // all messages again. This is why we a) give them a random identifier to avoid
                 // re-use b) do not allow to re-subscribe to it.
                 let random_id: u32 = random();
-                let consumer_id =
-                    ConsumerId::new(stream_name.clone(), format!("{filter_subject}-{random_id}"));
+                let consumer_id = ConsumerId::new(
+                    stream_name.clone(),
+                    format!("{filter_subjects_str}-{random_id}"),
+                );
 
                 let mut consumer = Consumer::new(
                     &self.nats_jetstream,
                     stream_name,
-                    filter_subject,
+                    filter_subjects,
                     deliver_policy,
                     topic_id,
                 )
@@ -234,16 +240,16 @@ impl NatsActor {
                 Ok((consumer_id, rx))
             }
             DeliverPolicy::New => {
-                // Make sure we're only creating one consumer per stream name and subject pair when
-                // using NATS consumer for _new_ messages.
-                let consumer_id = ConsumerId::new(stream_name.clone(), filter_subject.to_string());
+                // Make sure we're only creating one consumer per stream name and subjects pair
+                // when using NATS consumer for _new_ messages.
+                let consumer_id = ConsumerId::new(stream_name.clone(), filter_subjects_str);
                 let rx = match self.consumers.get_mut(&consumer_id) {
                     Some(consumer) => consumer.subscribe(),
                     None => {
                         let mut consumer = Consumer::new(
                             &self.nats_jetstream,
                             stream_name,
-                            filter_subject,
+                            filter_subjects,
                             deliver_policy,
                             topic_id,
                         )

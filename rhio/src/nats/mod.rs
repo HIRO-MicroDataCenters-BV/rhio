@@ -69,7 +69,7 @@ impl Nats {
     pub async fn subscribe(
         &self,
         stream_name: StreamName,
-        subject: Subject,
+        subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
@@ -77,7 +77,7 @@ impl Nats {
         self.nats_actor_tx
             .send(ToNatsActor::Subscribe {
                 stream_name,
-                subject,
+                subjects,
                 deliver_policy,
                 topic_id,
                 reply,

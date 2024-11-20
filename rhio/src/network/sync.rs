@@ -666,21 +666,16 @@ impl RhioSyncProtocol {
         self.blob_store.complete_blobs().await.into_iter().collect()
     }
 
-    /// Download all NATS messages we have for that subject and return them as a stream.
+    /// Download all NATS messages we have for these subjects and return them as a stream.
     async fn nats_stream(
         &self,
         stream_name: String,
-        subject: &Subject,
+        subjects: &Vec<Subject>,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
         let (consumer_id, nats_rx) = self
             .nats
-            .subscribe(
-                stream_name,
-                subject.to_owned(),
-                DeliverPolicy::All,
-                topic_id,
-            )
+            .subscribe(stream_name, subjects.to_vec(), DeliverPolicy::All, topic_id)
             .await
             .map_err(|err| {
                 SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))

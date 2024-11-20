@@ -26,17 +26,21 @@ pub fn validate_publication_config(
                     continue;
                 }
             },
-            Publication::Messages { subject, .. } => match existing_publication {
+            Publication::Messages {
+                filtered_stream, ..
+            } => match existing_publication {
                 Publication::Files { .. } => continue,
                 Publication::Messages {
-                    subject: existing_subject,
+                    filtered_stream: existing_filtered_stream,
                     ..
                 } => {
-                    if existing_subject == subject {
-                        bail!(
-                            "publish config contains duplicate NATS subject '{}'",
-                            subject
-                        );
+                    for new_subject in &filtered_stream.0 {
+                        if existing_filtered_stream.0.contains(new_subject) {
+                            bail!(
+                                "publish config contains duplicate NATS subject '{}'",
+                                new_subject
+                            );
+                        }
                     }
                 }
             },
@@ -98,21 +102,27 @@ pub fn validate_subscription_config(
             },
             Subscription::Messages {
                 public_key,
-                subject,
+                filtered_stream,
                 ..
             } => match existing_subscribtion {
                 Subscription::Files { .. } => continue,
                 Subscription::Messages {
-                    subject: existing_subject,
+                    filtered_stream: existing_filtered_stream,
                     public_key: existing_public_key,
                     ..
                 } => {
-                    if public_key == existing_public_key && subject == existing_subject {
-                        bail!(
-                            "public key {} and subject '{}' is used multiple times in subscribe NATS config",
-                            public_key,
-                            subject,
-                        );
+                    if public_key != existing_public_key {
+                        continue;
+                    }
+
+                    for new_subject in &filtered_stream.0 {
+                        if existing_filtered_stream.0.contains(new_subject) {
+                            bail!(
+                                "public key {} and subject '{}' is used multiple times in subscribe NATS config",
+                                public_key,
+                                new_subject,
+                            );
+                        }
                     }
                 }
             },

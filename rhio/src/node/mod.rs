@@ -146,11 +146,11 @@ impl Node {
     }
 
     /// Inform our node that we're interested in certain data from remote peers.
-    pub async fn subscribe(&self, subscription: Subscription) -> Result<()> {
+    pub async fn subscribe(&self, subscriptions: Vec<Subscription>) -> Result<()> {
         let (reply, reply_rx) = oneshot::channel();
         self.node_actor_tx
             .send(ToNodeActor::Subscribe {
-                subscription,
+                subscriptions,
                 reply,
             })
             .await?;

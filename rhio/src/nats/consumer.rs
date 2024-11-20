@@ -9,7 +9,7 @@ use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use rand::random;
-use rhio_core::Subject;
+use rhio_core::{subjects_to_str, Subject};
 use tokio::sync::broadcast;
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
@@ -207,7 +207,7 @@ impl Consumer {
     pub async fn new(
         context: &JetstreamContext,
         stream_name: StreamName,
-        filter_subject: Subject,
+        filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<Self> {
@@ -255,7 +255,10 @@ impl Consumer {
                 deliver_policy,
                 // We filter the given stream based on this subject filter, like this we can have
                 // different "views" on the same stream.
-                filter_subject: filter_subject.to_string(),
+                filter_subjects: filter_subjects
+                    .iter()
+                    .map(|subject| subject.to_string())
+                    .collect(),
                 // This is an ephemeral consumer which will not be persisted on the server / the
                 // progress of the consumer will not be remembered. We do this by _not_ setting
                 // "durable_name".
@@ -289,10 +292,11 @@ impl Consumer {
             DeliverPolicy::New => "new",
             _ => unimplemented!(),
         };
+        let filter_subjects_str = subjects_to_str(filter_subjects);
         trace!(
             parent: &span,
             stream = %stream_name,
-            subject = %filter_subject,
+            subject = %filter_subjects_str,
             deliver_policy = deliver_policy_str,
             num_pending = num_pending,
             "create consumer for NATS"
