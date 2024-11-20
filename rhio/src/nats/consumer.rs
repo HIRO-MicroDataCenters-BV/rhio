@@ -10,7 +10,6 @@ use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use rand::random;
 use rhio_core::{subjects_to_str, Subject};
-use tokio::sync::broadcast;
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
@@ -72,7 +71,7 @@ enum ConsumerStatus {
 /// permament storage: messages are kept forever (for now). Streams consume normal NATS subjects,
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor {
-    subscribers_tx: broadcast::Sender<JetStreamEvent>,
+    subscribers_tx: loole::Sender<JetStreamEvent>,
     messages: Messages,
     num_pending: u64,
     status: ConsumerStatus,
@@ -83,7 +82,7 @@ pub struct ConsumerActor {
 
 impl ConsumerActor {
     pub fn new(
-        subscribers_tx: broadcast::Sender<JetStreamEvent>,
+        subscribers_tx: loole::Sender<JetStreamEvent>,
         messages: Messages,
         num_pending: u64,
         stream_name: StreamName,
@@ -188,7 +187,9 @@ impl Drop for ConsumerActor {
 
 #[derive(Debug, Clone)]
 pub struct Consumer {
-    subscribers_tx: broadcast::Sender<JetStreamEvent>,
+    #[allow(dead_code)]
+    subscribers_tx: loole::Sender<JetStreamEvent>,
+    subscribers_rx: loole::Receiver<JetStreamEvent>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
@@ -284,7 +285,7 @@ impl Consumer {
 
         let messages = consumer.messages().await.context("get message stream")?;
 
-        let (subscribers_tx, _) = broadcast::channel(256);
+        let (subscribers_tx, subscribers_rx) = loole::bounded(256);
 
         let span = span!(Level::TRACE, "consumer", id = %consumer_name);
         let deliver_policy_str = match deliver_policy {
@@ -321,15 +322,14 @@ impl Consumer {
             .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
             .shared();
 
-        let consumer = Self {
+        Ok(Self {
             subscribers_tx,
+            subscribers_rx,
             actor_handle: actor_drop_handle,
-        };
-
-        Ok(consumer)
+        })
     }
 
-    pub fn subscribe(&mut self) -> broadcast::Receiver<JetStreamEvent> {
-        self.subscribers_tx.subscribe()
+    pub fn subscribe(&mut self) -> loole::Receiver<JetStreamEvent> {
+        self.subscribers_rx.clone()
     }
 }

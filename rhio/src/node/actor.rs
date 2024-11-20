@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
+use loole::RecvStream;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
@@ -9,6 +10,7 @@ use rhio_blobs::{CompletedBlob, NotImportedObject, SignedBlobInfo};
 use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
@@ -40,7 +42,7 @@ pub struct NodeActor {
     private_key: PrivateKey,
     public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
-    nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
+    nats_consumer_rx: SelectAll<RecvStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     nats: Nats,
@@ -112,14 +114,23 @@ impl NodeActor {
                         }
                     }
                 },
-                Some(Ok(event)) = self.nats_consumer_rx.next() => {
+                Some(event) = self.nats_consumer_rx.next() => {
                     if let Err(err) = self.on_nats_event(event).await {
                         break Err(err);
                     }
                 },
-                Some(Ok(event)) = self.p2panda_topic_rx.next() => {
-                    if let Err(err) = self.on_network_event(event).await {
-                        break Err(err);
+                Some(event) = self.p2panda_topic_rx.next() => {
+                    match event {
+                        Ok(event) => {
+                            if let Err(err) = self.on_network_event(event).await {
+                                break Err(err);
+                            }
+                        },
+                        // @TODO: This should be handled in p2panda instead with a different mpmc
+                        // channel which doesn't throw lagged errors.
+                        Err(BroadcastStreamRecvError::Lagged(num)) => {
+                            warn!("p2panda channel lagging behind {num} messages");
+                        },
                     }
                 },
                 Some(event) = self.s3_watcher_rx.recv() => {
@@ -216,7 +227,7 @@ impl NodeActor {
                         topic_id,
                     )
                     .await?;
-                self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+                self.nats_consumer_rx.push(nats_rx.into_stream());
             }
         };
 
@@ -390,8 +401,6 @@ impl NodeActor {
                 {
                     return Ok(());
                 }
-
-                debug!(%subject, ?payload, "received NATS message");
 
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.
