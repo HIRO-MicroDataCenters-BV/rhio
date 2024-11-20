@@ -21,6 +21,7 @@ figment = { version = "0.10.19", features = ["env", "yaml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
 iroh-blobs = { version = "0.25.0", features = ["fs-store"], default-features = false }
+loole = "0.4.0"
 p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "c09d820d8a758f8894e2123180f57c1b4bb33263" }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "c09d820d8a758f8894e2123180f57c1b4bb33263" }
 p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "c09d820d8a758f8894e2123180f57c1b4bb33263", default-features = false }

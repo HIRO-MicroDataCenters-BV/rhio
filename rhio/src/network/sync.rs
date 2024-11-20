@@ -15,7 +15,6 @@ use rand::random;
 use rhio_blobs::{BlobHash, CompletedBlob, S3Store};
 use rhio_core::{nats, NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamMap;
 use tracing::{debug, span, warn, Level};
 
@@ -744,22 +743,24 @@ impl RhioSyncProtocol {
                 SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))
             })?;
 
-        let nats_stream = BroadcastStream::new(nats_rx)
+        let nats_stream = nats_rx
+            .into_stream()
             .take_while(|event| {
                 // Take messages from stream until we've reached all currently known messages, do
                 // not wait for upcoming, future messages.
-                future::ready(!matches!(event, Ok(JetStreamEvent::InitCompleted { .. })))
+                future::ready(match event {
+                    JetStreamEvent::Message { .. } => true,
+                    JetStreamEvent::InitCompleted { .. } => false,
+                    JetStreamEvent::Failed { .. } => true,
+                })
             })
             .filter_map(|message| async {
                 match message {
-                    Ok(JetStreamEvent::Message { message, .. }) => Some(Ok(message)),
-                    Ok(JetStreamEvent::Failed { reason, .. }) => Some(Err(SyncError::Critical(
+                    JetStreamEvent::Message { message, .. } => Some(Ok(message)),
+                    JetStreamEvent::Failed { reason, .. } => Some(Err(SyncError::Critical(
                         format!("could not download all past messages from nats server: {reason}"),
                     ))),
-                    Err(err) => Some(Err(SyncError::Critical(format!(
-                        "broadcast stream failed: {err}"
-                    )))),
-                    Ok(JetStreamEvent::InitCompleted { .. }) => {
+                    JetStreamEvent::InitCompleted { .. } => {
                         unreachable!("init complete events got filtered out before")
                     }
                 }

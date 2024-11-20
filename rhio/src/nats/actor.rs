@@ -6,7 +6,7 @@ use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext
 use async_nats::{Client as NatsClient, HeaderMap};
 use rand::random;
 use rhio_core::{subjects_to_str, Subject};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error};
 
 use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName};
@@ -76,7 +76,7 @@ pub enum ToNatsActor {
         /// An initial downloading of all persisted data from the NATS server is required when
         /// starting to subscribe to a subject. The channel will eventually send an event to the
         /// user to signal when the initialization has finished.
-        reply: oneshot::Sender<Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)>>,
+        reply: oneshot::Sender<Result<(ConsumerId, loole::Receiver<JetStreamEvent>)>>,
     },
     Unsubscribe {
         consumer_id: ConsumerId,
@@ -211,7 +211,7 @@ impl NatsActor {
         filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
-    ) -> Result<(ConsumerId, broadcast::Receiver<JetStreamEvent>)> {
+    ) -> Result<(ConsumerId, loole::Receiver<JetStreamEvent>)> {
         let filter_subjects_str = subjects_to_str(filter_subjects.clone());
 
         match deliver_policy {

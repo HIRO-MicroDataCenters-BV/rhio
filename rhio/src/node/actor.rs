@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
 use futures_util::stream::SelectAll;
+use loole::RecvStream;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
@@ -40,7 +41,7 @@ pub struct NodeActor {
     private_key: PrivateKey,
     public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
-    nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
+    nats_consumer_rx: SelectAll<RecvStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     nats: Nats,
@@ -112,7 +113,7 @@ impl NodeActor {
                         }
                     }
                 },
-                Some(Ok(event)) = self.nats_consumer_rx.next() => {
+                Some(event) = self.nats_consumer_rx.next() => {
                     if let Err(err) = self.on_nats_event(event).await {
                         break Err(err);
                     }
@@ -216,7 +217,7 @@ impl NodeActor {
                         topic_id,
                     )
                     .await?;
-                self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
+                self.nats_consumer_rx.push(nats_rx.into_stream());
             }
         };
 
