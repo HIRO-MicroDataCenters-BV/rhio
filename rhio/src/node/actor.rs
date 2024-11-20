@@ -17,9 +17,9 @@ use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::node::sanity;
+use crate::node::config::NodeConfig;
 use crate::node::Publication;
-use crate::topic::{self, Query, Subscription};
+use crate::topic::{Query, Subscription};
 
 pub enum ToNodeActor {
     Publish {
@@ -36,11 +36,10 @@ pub enum ToNodeActor {
 }
 
 pub struct NodeActor {
+    config: NodeConfig,
     private_key: PrivateKey,
     public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
-    subscriptions: Vec<Subscription>,
-    publications: Vec<Publication>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
@@ -52,7 +51,9 @@ pub struct NodeActor {
 }
 
 impl NodeActor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        config: NodeConfig,
         private_key: PrivateKey,
         nats: Nats,
         panda: Panda,
@@ -62,11 +63,10 @@ impl NodeActor {
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     ) -> Self {
         Self {
+            config,
             public_key: private_key.public_key(),
             private_key,
             inbox,
-            subscriptions: Vec::new(),
-            publications: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             s3_watcher_rx,
@@ -169,19 +169,17 @@ impl NodeActor {
     /// initiate sync sessions with us, as publishing peers we're only _accepting_ these sync
     /// sessions.
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
-        sanity::validate_publication_config(&self.publications, &publication)?;
-
-        self.publications.push(publication.clone());
+        self.config.add_publication(&publication).await?;
 
         // 1. Subscribe to p2panda gossip overlay for "live-mode".
         //
         // @TODO(adz): Doing this via this `NoSync` option is a hacky workaround. See sync
         // implementation for more details.
         let topic_query = match &publication {
-            Publication::Bucket { public_key, .. } => Query::NoSyncBucket {
+            Publication::Files { public_key, .. } => Query::NoSyncFiles {
                 public_key: *public_key,
             },
-            Publication::Subject { public_key, .. } => Query::NoSyncSubject {
+            Publication::Messages { public_key, .. } => Query::NoSyncMessages {
                 public_key: *public_key,
             },
         };
@@ -201,19 +199,22 @@ impl NodeActor {
         // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
         //    the gossip overlay later.
         match publication {
-            Publication::Bucket { .. } => {
+            Publication::Files { .. } => {
                 // Do nothing here. We handle incoming new blob events via the "on_watcher_event"
                 // method.
             }
-            Publication::Subject {
-                stream_name,
-                subject,
-                ..
+            Publication::Messages {
+                filtered_stream, ..
             } => {
                 // Subscribe to the NATS stream to receive new NATS messages from here.
                 let (_, nats_rx) = self
                     .nats
-                    .subscribe(stream_name, subject, DeliverPolicy::New, topic_id)
+                    .subscribe(
+                        filtered_stream.stream_name,
+                        filtered_stream.subjects,
+                        DeliverPolicy::New,
+                        topic_id,
+                    )
                     .await?;
                 self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
             }
@@ -227,13 +228,7 @@ impl NodeActor {
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
     async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
-        sanity::validate_subscription_config(
-            &self.publications,
-            &self.subscriptions,
-            &subscription,
-        )?;
-
-        self.subscriptions.push(subscription.clone());
+        self.config.add_subscription(&subscription).await?;
 
         let network_rx = self
             .panda
@@ -363,13 +358,15 @@ impl NodeActor {
 
                 // We're interested in blobs from a _specific_ public key. Filter out everything
                 // which is _not_ the right author.
-                if let Some(Subscription::Bucket { bucket_name, .. }) =
-                    topic::is_bucket_matching(&self.subscriptions, &network_message.public_key)
+                if let Some(bucket_name) = self
+                    .config
+                    .is_files_subscription_matching(&network_message.public_key)
+                    .await
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name: bucket_name.clone(),
+                            bucket_name,
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
@@ -386,11 +383,11 @@ impl NodeActor {
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
                 let subject: Subject = subject.parse()?;
-                if !topic::is_subject_matching(
-                    &self.subscriptions,
-                    &subject,
-                    &network_message.public_key,
-                ) {
+                if !self
+                    .config
+                    .is_subject_subscription_matching(&subject, &network_message.public_key)
+                    .await
+                {
                     return Ok(());
                 }
 
@@ -457,7 +454,7 @@ impl NodeActor {
 
         // Sanity: Make sure we're allowing publishing from this bucket. This should not be
         // necessary when the configuration's are sane, but we're checking it just to be sure.
-        if topic::is_bucket_publishable(&self.publications, &blob.bucket_name).is_none() {
+        if !self.config.is_bucket_publishable(&blob.bucket_name).await {
             bail!("tried to announce blob from an unpublishable S3 bucket");
         };
 
@@ -474,7 +471,7 @@ impl NodeActor {
             NetworkMessage::new_blob_announcement(blob.hash, blob.key, blob.size, &self.public_key);
         network_message.sign(&self.private_key);
 
-        let topic_id = Query::Bucket {
+        let topic_id = Query::Files {
             public_key: self.public_key,
         }
         .id();

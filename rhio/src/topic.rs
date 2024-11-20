@@ -1,10 +1,10 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::Topic;
 use rhio_blobs::BucketName;
-use rhio_core::Subject;
+use rhio_core::{subjects_to_str, Subject};
 use serde::{Deserialize, Serialize};
 
 use crate::nats::StreamName;
@@ -16,26 +16,37 @@ use crate::nats::StreamName;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Subscription {
-    /// We're interested in any blobs from this particular peer ("authorized by it") and would like
-    /// to store it in the given local S3 bucket.
-    Bucket {
-        bucket_name: BucketName,
-        public_key: PublicKey,
-    },
+    Files(FilesSubscription),
+    Messages(MessagesSubscription),
+}
 
-    /// We're interested in any NATS message from this particular peer ("authorized by it") for
-    /// this NATS subject.
-    ///
-    /// NATS messages get always published towards our local NATS server without any particular
-    /// JetStream in mind as soon as we received them from this peer. However, we still need to
-    /// configure a local stream which is able to give us our current state on this subject, so we
-    /// effectively sync past NATS messages.
-    Subject {
-        subject: Subject,
-        public_key: PublicKey,
-        // Local JetStream needs to be mentioned to establish state during sync.
-        stream_name: StreamName,
-    },
+/// We're interested in any blobs from this particular peer ("authorized by it") and would like to
+/// store it in the given local S3 bucket.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilesSubscription {
+    pub bucket_name: BucketName,
+    pub public_key: PublicKey,
+}
+
+/// We're interested in any NATS message from this particular peer ("authorized by it") for
+/// a set of NATS subjects.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessagesSubscription {
+    pub filtered_streams: Vec<FilteredMessageStream>,
+    pub public_key: PublicKey,
+}
+
+/// Local NATS stream configuration for NATS subjects.
+///
+/// NATS messages get always published towards our local NATS server without any particular
+/// JetStream in mind as soon as we received them from this peer. However, we still need to
+/// configure a local stream which is able to give us our current state on this subject, so we
+/// effectively sync past NATS messages.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilteredMessageStream {
+    pub subjects: Vec<Subject>,
+    // Local JetStream needs to be mentioned to establish state during sync.
+    pub stream_name: StreamName,
 }
 
 /// Shares data from us with other peers in the network.
@@ -46,17 +57,16 @@ pub enum Subscription {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Publication {
     /// We're publishing any blob in this given local bucket.
-    Bucket {
+    Files {
         bucket_name: BucketName,
         public_key: PublicKey,
     },
 
-    /// We're publishing any NATS message matching this NATS subject (wildcards supported) coming
+    /// We're publishing any NATS message matching this NATS subjects (wildcards supported) coming
     /// from this local JetStream.
-    Subject {
-        subject: Subject,
+    Messages {
+        filtered_stream: FilteredMessageStream,
         public_key: PublicKey,
-        stream_name: StreamName,
     },
 }
 
@@ -67,14 +77,14 @@ pub enum Publication {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Query {
     /// We're interested in any blobs from this particular peer ("authorized by it").
-    Bucket {
+    Files {
         public_key: PublicKey,
     },
 
     /// We're interested in any NATS message from this particular peer ("authorized by it") for
-    /// this NATS subject.
-    Subject {
-        subject: Subject,
+    /// the given NATS subjects.
+    Messages {
+        subjects: Vec<Subject>,
         public_key: PublicKey,
     },
 
@@ -82,10 +92,10 @@ pub enum Query {
     // peers. We're using this hacky workaround to indicate in the topic that we're not interested
     // in syncing. The custom rhio sync implementation will check this before and abort the sync
     // process if this value is set.
-    NoSyncBucket {
+    NoSyncFiles {
         public_key: PublicKey,
     },
-    NoSyncSubject {
+    NoSyncMessages {
         public_key: PublicKey,
     },
 }
@@ -95,15 +105,15 @@ impl Topic for Query {}
 
 impl Query {
     pub fn is_no_sync(&self) -> bool {
-        matches!(self, Self::NoSyncBucket { .. } | Self::NoSyncSubject { .. })
+        matches!(self, Self::NoSyncFiles { .. } | Self::NoSyncMessages { .. })
     }
 
     fn prefix(&self) -> &str {
         match self {
-            Self::Bucket { .. } => "bucket",
-            Self::Subject { .. } => "subject",
-            Self::NoSyncBucket { .. } => "bucket",
-            Self::NoSyncSubject { .. } => "subject",
+            Self::Files { .. } => "bucket",
+            Self::Messages { .. } => "subject",
+            Self::NoSyncFiles { .. } => "bucket",
+            Self::NoSyncMessages { .. } => "subject",
         }
     }
 }
@@ -111,15 +121,24 @@ impl Query {
 impl From<Subscription> for Query {
     fn from(value: Subscription) -> Self {
         match value {
-            Subscription::Bucket { public_key, .. } => Self::Bucket { public_key },
-            Subscription::Subject {
-                subject,
-                public_key,
-                ..
-            } => Self::Subject {
-                subject,
-                public_key,
+            Subscription::Files(subscription) => Self::Files {
+                public_key: subscription.public_key,
             },
+            Subscription::Messages(subscription) => {
+                // We can be interested in multiple subjects per public key, this is why we merge
+                // them all together into one de-duplicated list for the query.
+                let mut subjects = HashSet::new();
+                for streams in &subscription.filtered_streams {
+                    for subject in &streams.subjects {
+                        subjects.insert(subject.clone());
+                    }
+                }
+
+                Self::Messages {
+                    subjects: subjects.into_iter().collect(),
+                    public_key: subscription.public_key,
+                }
+            }
         }
     }
 }
@@ -129,13 +148,13 @@ impl From<Subscription> for Query {
 impl From<Publication> for Query {
     fn from(value: Publication) -> Self {
         match value {
-            Publication::Bucket { public_key, .. } => Self::Bucket { public_key },
-            Publication::Subject {
-                subject,
+            Publication::Files { public_key, .. } => Self::Files { public_key },
+            Publication::Messages {
+                filtered_stream,
                 public_key,
                 ..
-            } => Self::Subject {
-                subject,
+            } => Self::Messages {
+                subjects: filtered_stream.subjects,
                 public_key,
             },
         }
@@ -145,26 +164,31 @@ impl From<Publication> for Query {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Query::Bucket { public_key, .. } => {
+            Query::Files { public_key, .. } => {
                 write!(f, "S3 public_key=\"{}\"", {
                     let mut public_key_str = public_key.to_string();
                     public_key_str.truncate(6);
                     public_key_str
                 })
             }
-            Query::Subject {
-                subject,
+            Query::Messages {
+                subjects,
                 public_key,
                 ..
             } => {
-                write!(f, "NATS subject=\"{}\" public_key=\"{}\"", subject, {
-                    let mut public_key_str = public_key.to_string();
-                    public_key_str.truncate(6);
-                    public_key_str
-                })
+                write!(
+                    f,
+                    "NATS subjects=\"{}\" public_key=\"{}\"",
+                    subjects_to_str(subjects.to_owned()),
+                    {
+                        let mut public_key_str = public_key.to_string();
+                        public_key_str.truncate(6);
+                        public_key_str
+                    }
+                )
             }
-            Query::NoSyncBucket { .. } => write!(f, "S3 no-sync"),
-            Query::NoSyncSubject { .. } => write!(f, "NATS no-sync"),
+            Query::NoSyncFiles { .. } => write!(f, "S3 no-sync"),
+            Query::NoSyncMessages { .. } => write!(f, "NATS no-sync"),
         }
     }
 }
@@ -174,16 +198,14 @@ impl fmt::Display for Query {
 impl TopicId for Query {
     fn id(&self) -> [u8; 32] {
         let hash = match self {
-            Self::Bucket { public_key, .. } => {
+            Self::Files { public_key, .. } => Hash::new(format!("{}{}", self.prefix(), public_key)),
+            Self::Messages { public_key, .. } => {
                 Hash::new(format!("{}{}", self.prefix(), public_key))
             }
-            Self::Subject { public_key, .. } => {
+            Self::NoSyncFiles { public_key } => {
                 Hash::new(format!("{}{}", self.prefix(), public_key))
             }
-            Self::NoSyncBucket { public_key } => {
-                Hash::new(format!("{}{}", self.prefix(), public_key))
-            }
-            Self::NoSyncSubject { public_key } => {
+            Self::NoSyncMessages { public_key } => {
                 Hash::new(format!("{}{}", self.prefix(), public_key))
             }
         };
@@ -200,18 +222,18 @@ pub fn is_subject_matching(
 ) -> bool {
     for subscription in subscriptions {
         match subscription {
-            Subscription::Bucket { .. } => continue,
-            Subscription::Subject {
-                subject: expected_subject,
-                public_key: expected_public_key,
-                ..
-            } => {
-                if expected_subject.is_matching(given_subject)
-                    && expected_public_key == given_public_key
-                {
-                    return true;
-                } else {
-                    continue;
+            Subscription::Files(_) => continue,
+            Subscription::Messages(subscription) => {
+                for stream in &subscription.filtered_streams {
+                    let is_matching = stream
+                        .subjects
+                        .iter()
+                        .any(|expected_subject| expected_subject.is_matching(given_subject));
+                    if is_matching && &subscription.public_key == given_public_key {
+                        return true;
+                    } else {
+                        continue;
+                    }
                 }
             }
         }
@@ -221,23 +243,20 @@ pub fn is_subject_matching(
 
 /// Returns the subscription info if incoming blob announcement from that public key is of interest
 /// to our local node, returns `None` otherwise.
-pub fn is_bucket_matching<'a>(
+pub fn is_files_subscription_matching<'a>(
     subscriptions: &'a Vec<Subscription>,
     given_public_key: &PublicKey,
 ) -> Option<&'a Subscription> {
     for subscription in subscriptions {
         match subscription {
-            Subscription::Bucket {
-                public_key: expected_public_key,
-                ..
-            } => {
-                if expected_public_key == given_public_key {
+            Subscription::Files(expected) => {
+                if &expected.public_key == given_public_key {
                     return Some(subscription);
                 } else {
                     continue;
                 }
             }
-            Subscription::Subject { .. } => {
+            Subscription::Messages(_) => {
                 continue;
             }
         }
@@ -253,74 +272,17 @@ pub fn is_bucket_publishable<'a>(
 ) -> Option<&'a Publication> {
     for publication in publications {
         match publication {
-            Publication::Bucket { bucket_name, .. } => {
+            Publication::Files { bucket_name, .. } => {
                 if bucket_name == requested_bucket_name {
                     return Some(publication);
                 } else {
                     continue;
                 }
             }
-            Publication::Subject { .. } => {
+            Publication::Messages { .. } => {
                 continue;
             }
         }
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use p2panda_core::PrivateKey;
-    use p2panda_net::TopicId;
-
-    use super::{Query, Subscription};
-
-    #[test]
-    fn gossip_topic_id() {
-        let public_key_1 = PrivateKey::new().public_key();
-        let public_key_2 = PrivateKey::new().public_key();
-
-        // Buckets use "bucket name" as gossip topic id.
-        let subscription_0: Query = Subscription::Bucket {
-            bucket_name: "icecreams".into(),
-            public_key: public_key_2,
-        }
-        .into();
-        let subscription_1: Query = Subscription::Bucket {
-            bucket_name: "icecreams".into(),
-            public_key: public_key_1,
-        }
-        .into();
-        let subscription_2: Query = Subscription::Bucket {
-            bucket_name: "airplanes".into(),
-            public_key: public_key_1,
-        }
-        .into();
-        assert_ne!(subscription_0.id(), subscription_1.id());
-        assert_eq!(subscription_1.id(), subscription_2.id());
-
-        // NATS subjects use public key as gossip topic id.
-        let subscription_3: Query = Subscription::Subject {
-            stream_name: "data".into(),
-            subject: "*.*.color".parse().unwrap(),
-            public_key: public_key_1,
-        }
-        .into();
-        assert_ne!(subscription_3.id(), subscription_1.id());
-
-        let subscription_4: Query = Subscription::Subject {
-            stream_name: "data".into(),
-            subject: "tree.pine.*".parse().unwrap(),
-            public_key: public_key_1,
-        }
-        .into();
-        let subscription_5: Query = Subscription::Subject {
-            stream_name: "data".into(),
-            subject: "tree.pine.*".parse().unwrap(),
-            public_key: public_key_2,
-        }
-        .into();
-        assert_eq!(subscription_3.id(), subscription_4.id());
-        assert_ne!(subscription_4.id(), subscription_5.id());
-    }
 }

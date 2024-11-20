@@ -1,8 +1,14 @@
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
+use p2panda_core::PublicKey;
 use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use rhio::tracing::setup_tracing;
-use rhio::{Node, Publication, Subscription};
-use rhio_core::load_private_key_from_file;
+use rhio::{
+    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
+    Subscription,
+};
+use rhio_core::{load_private_key_from_file, Subject};
 use tracing::info;
 
 #[tokio::main]
@@ -37,22 +43,44 @@ async fn main() -> Result<()> {
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
             // Assign our own public key to S3 bucket info.
-            node.publish(Publication::Bucket {
+            node.publish(Publication::Files {
                 bucket_name,
                 public_key,
             })
             .await?;
         }
 
+        // Multiple subjects can be used on top of a stream and we want to group them over one
+        // public key and stream name pair. This leaves us with the following structure:
+        //
+        // Streams      Public Key       Subjects        Topic Id (for Gossip)
+        // =======      ==========       ========        =====================
+        // 1            I                A               a
+        // 2            I                B               a
+        // 3            II               A               b
+        // 1            II               B               b
+        // 1            II               C               b
+        let mut stream_public_key_map = HashMap::<StreamName, Vec<Subject>>::new();
         for LocalNatsSubject {
             stream_name,
             subject,
         } in publish.nats_subjects
         {
-            // Assign our own public key to NATS subject info.
-            node.publish(Publication::Subject {
-                stream_name,
-                subject,
+            stream_public_key_map
+                .entry(stream_name)
+                .and_modify(|subjects| {
+                    subjects.push(subject.clone());
+                })
+                .or_insert(vec![subject]);
+        }
+
+        for (stream_name, subjects) in stream_public_key_map.into_iter() {
+            node.publish(Publication::Messages {
+                filtered_stream: FilteredMessageStream {
+                    subjects,
+                    stream_name,
+                },
+                // Assign our own public key to NATS subject info.
                 public_key,
             })
             .await?;
@@ -62,28 +90,52 @@ async fn main() -> Result<()> {
     if let Some(subscribe) = config.subscribe {
         for RemoteS3Bucket {
             bucket_name,
-            public_key,
+            public_key: remote_public_key,
         } in subscribe.s3_buckets
         {
-            node.subscribe(Subscription::Bucket {
+            node.subscribe(Subscription::Files(FilesSubscription {
                 bucket_name,
-                public_key,
-            })
+                public_key: remote_public_key,
+            }))
             .await?;
         }
 
+        // Multiple subjects can be used on top of a stream and we want to group them over one
+        // public key and stream name pair.
+        let mut stream_public_key_map = HashMap::<(StreamName, PublicKey), Vec<Subject>>::new();
         for RemoteNatsSubject {
             stream_name,
             subject,
-            public_key,
+            public_key: remote_public_key,
         } in subscribe.nats_subjects
         {
-            node.subscribe(Subscription::Subject {
+            stream_public_key_map
+                .entry((stream_name, remote_public_key))
+                .and_modify(|subjects| {
+                    subjects.push(subject.clone());
+                })
+                .or_insert(vec![subject]);
+        }
+
+        // Finally we want to group these subscriptions by public key.
+        let mut subscription_map = HashMap::<PublicKey, Vec<FilteredMessageStream>>::new();
+        for ((stream_name, remote_public_key), subjects) in stream_public_key_map.into_iter() {
+            let filtered_stream = FilteredMessageStream {
+                subjects,
                 stream_name,
-                subject,
-                public_key,
-            })
-            .await?;
+            };
+            subscription_map
+                .entry(remote_public_key)
+                .and_modify(|filtered_streams| filtered_streams.push(filtered_stream.clone()))
+                .or_insert(vec![filtered_stream]);
+        }
+
+        for (remote_public_key, filtered_streams) in subscription_map.into_iter() {
+            let subscription = Subscription::Messages(MessagesSubscription {
+                filtered_streams,
+                public_key: remote_public_key,
+            });
+            node.subscribe(subscription).await?;
         }
     };
 

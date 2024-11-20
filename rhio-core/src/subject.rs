@@ -13,7 +13,7 @@ type Token = String;
 /// Filterable NATS subject.
 ///
 /// For example: `hello.*.world`
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Subject(Vec<Token>);
 
 impl Subject {
@@ -96,6 +96,15 @@ impl<'de> Deserialize<'de> for Subject {
         let value: String = String::deserialize(deserializer)?;
         Self::from_str(&value).map_err(|err| serde::de::Error::custom(err.to_string()))
     }
+}
+
+pub fn subjects_to_str(mut subjects: Vec<Subject>) -> String {
+    subjects.sort();
+    subjects
+        .iter()
+        .map(|subject| subject.to_string())
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 #[cfg(test)]

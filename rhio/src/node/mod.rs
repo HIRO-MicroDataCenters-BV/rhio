@@ -1,5 +1,5 @@
 mod actor;
-mod sanity;
+pub mod config;
 
 use std::net::SocketAddr;
 
@@ -21,6 +21,7 @@ use crate::nats::Nats;
 use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
+use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
 
@@ -38,6 +39,7 @@ impl Node {
         let nats = Nats::new(config.clone()).await?;
 
         // 2. Configure rhio peer-to-peer network.
+        let node_config = NodeConfig::new();
         let network_id_hash = Hash::new(config.node.network_id.as_bytes());
         let network_id = network_id_hash.as_bytes();
         let mut network_config = NetworkConfig {
@@ -57,7 +59,7 @@ impl Node {
         let blob_store = store_from_config(&config).await?;
 
         let sync_protocol = RhioSyncProtocol::new(
-            config.clone(),
+            node_config.clone(),
             nats.clone(),
             blob_store.clone(),
             private_key.clone(),
@@ -89,6 +91,7 @@ impl Node {
         //    blob store, p2panda network and NATS JetStream consumers.
         let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
         let node_actor = NodeActor::new(
+            node_config,
             private_key,
             nats,
             panda,

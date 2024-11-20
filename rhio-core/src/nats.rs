@@ -24,7 +24,7 @@ pub fn has_nats_signature(headers: &Option<HeaderMap>) -> bool {
 ///
 /// Important: This method does _not_ do any integrity or cryptography checks. We assume that this
 /// method is used in contexts _after_ all validation took already place.
-pub fn is_public_key_eq(message: &NatsMessage, expected_public_key: &PublicKey) -> bool {
+pub fn matching_public_key(message: &NatsMessage, expected_public_key: &PublicKey) -> bool {
     if let Some(headers) = &message.headers {
         let Some(_) = headers.get(NATS_RHIO_SIGNATURE) else {
             return false;
