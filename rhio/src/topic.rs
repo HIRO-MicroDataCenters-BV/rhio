@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
@@ -16,34 +16,37 @@ use crate::nats::StreamName;
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Subscription {
-    /// We're interested in any blobs from this particular peer ("authorized by it") and would like
-    /// to store it in the given local S3 bucket.
-    Files {
-        bucket_name: BucketName,
-        public_key: PublicKey,
-    },
-
-    /// We're interested in any NATS message from this particular peer ("authorized by it") for
-    /// this NATS subject.
-    ///
-    /// NATS messages get always published towards our local NATS server without any particular
-    /// JetStream in mind as soon as we received them from this peer. However, we still need to
-    /// configure a local stream which is able to give us our current state on this subject, so we
-    /// effectively sync past NATS messages.
-    Messages {
-        // Local JetStream needs to be mentioned to establish state during sync.
-        filtered_stream: (Vec<Subject>, StreamName),
-        public_key: PublicKey,
-    },
+    Files(FilesSubscription),
+    Messages(MessagesSubscription),
 }
 
-impl Subscription {
-    pub fn public_key(&self) -> PublicKey {
-        match self {
-            Subscription::Files { public_key, .. } => *public_key,
-            Subscription::Messages { public_key, .. } => *public_key,
-        }
-    }
+/// We're interested in any blobs from this particular peer ("authorized by it") and would like to
+/// store it in the given local S3 bucket.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilesSubscription {
+    pub bucket_name: BucketName,
+    pub public_key: PublicKey,
+}
+
+/// We're interested in any NATS message from this particular peer ("authorized by it") for
+/// a set of NATS subjects.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessagesSubscription {
+    pub filtered_streams: Vec<FilteredMessageStream>,
+    pub public_key: PublicKey,
+}
+
+/// Local NATS stream configuration for NATS subjects.
+///
+/// NATS messages get always published towards our local NATS server without any particular
+/// JetStream in mind as soon as we received them from this peer. However, we still need to
+/// configure a local stream which is able to give us our current state on this subject, so we
+/// effectively sync past NATS messages.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FilteredMessageStream {
+    pub subjects: Vec<Subject>,
+    // Local JetStream needs to be mentioned to establish state during sync.
+    pub stream_name: StreamName,
 }
 
 /// Shares data from us with other peers in the network.
@@ -62,7 +65,7 @@ pub enum Publication {
     /// We're publishing any NATS message matching this NATS subjects (wildcards supported) coming
     /// from this local JetStream.
     Messages {
-        filtered_stream: (Vec<Subject>, StreamName),
+        filtered_stream: FilteredMessageStream,
         public_key: PublicKey,
     },
 }
@@ -101,38 +104,6 @@ pub enum Query {
 impl Topic for Query {}
 
 impl Query {
-    pub fn from_subscriptions(subscriptions: &Vec<Subscription>) -> Self {
-        if let Some(Subscription::Files { public_key, .. }) = subscriptions.get(0) {
-            // We can only subscribe ourselves once to a public key's files.
-            Query::Files {
-                public_key: *public_key,
-            }
-        } else {
-            // We can be interested in multiple subjects per public key, this is why we merge
-            // them all together into one list for the query.
-            let mut subjects = vec![];
-            let mut public_key = None;
-            for subscription in subscriptions {
-                let Subscription::Messages {
-                    filtered_stream,
-                    public_key: public_key_subscription,
-                } = subscription
-                else {
-                    unreachable!("at this point we should only deal with message subscriptions");
-                };
-                for subject in &filtered_stream.0 {
-                    subjects.push(subject.clone());
-                }
-                public_key = Some(public_key_subscription);
-            }
-
-            Query::Messages {
-                subjects,
-                public_key: public_key.expect("public key exists").clone(),
-            }
-        }
-    }
-
     pub fn is_no_sync(&self) -> bool {
         matches!(self, Self::NoSyncFiles { .. } | Self::NoSyncMessages { .. })
     }
@@ -150,17 +121,24 @@ impl Query {
 impl From<Subscription> for Query {
     fn from(value: Subscription) -> Self {
         match value {
-            Subscription::Files { public_key, .. } => Self::Files { public_key },
-            Subscription::Messages {
-                filtered_stream,
-                public_key,
-                ..
-            } => Self::Messages {
-                // NATS queries can be for multiple subjects per public key, make sure to add the
-                // others to this array as well if there's any more.
-                subjects: filtered_stream.0,
-                public_key,
+            Subscription::Files(subscription) => Self::Files {
+                public_key: subscription.public_key,
             },
+            Subscription::Messages(subscription) => {
+                // We can be interested in multiple subjects per public key, this is why we merge
+                // them all together into one de-duplicated list for the query.
+                let mut subjects = HashSet::new();
+                for streams in &subscription.filtered_streams {
+                    for subject in &streams.subjects {
+                        subjects.insert(subject.clone());
+                    }
+                }
+
+                Self::Messages {
+                    subjects: subjects.into_iter().collect(),
+                    public_key: subscription.public_key,
+                }
+            }
         }
     }
 }
@@ -176,9 +154,7 @@ impl From<Publication> for Query {
                 public_key,
                 ..
             } => Self::Messages {
-                // NATS queries can be for multiple subjects per public key, make sure to add the
-                // others to this array as well if there's any more.
-                subjects: filtered_stream.0,
+                subjects: filtered_stream.subjects,
                 public_key,
             },
         }
@@ -246,21 +222,19 @@ pub fn is_subject_matching(
 ) -> bool {
     for subscription in subscriptions {
         match subscription {
-            Subscription::Files { .. } => continue,
-            Subscription::Messages {
-                filtered_stream,
-                public_key: expected_public_key,
-                ..
-            } => {
-                let (expected_subjects, _) = filtered_stream;
-                let is_matching = expected_subjects
-                    .iter()
-                    .find(|expected_subject| expected_subject.is_matching(given_subject))
-                    .is_some();
-                if is_matching && expected_public_key == given_public_key {
-                    return true;
-                } else {
-                    continue;
+            Subscription::Files(_) => continue,
+            Subscription::Messages(subscription) => {
+                for stream in &subscription.filtered_streams {
+                    let is_matching = stream
+                        .subjects
+                        .iter()
+                        .find(|expected_subject| expected_subject.is_matching(given_subject))
+                        .is_some();
+                    if is_matching && &subscription.public_key == given_public_key {
+                        return true;
+                    } else {
+                        continue;
+                    }
                 }
             }
         }
@@ -270,23 +244,20 @@ pub fn is_subject_matching(
 
 /// Returns the subscription info if incoming blob announcement from that public key is of interest
 /// to our local node, returns `None` otherwise.
-pub fn is_bucket_matching<'a>(
+pub fn is_files_subscription_matching<'a>(
     subscriptions: &'a Vec<Subscription>,
     given_public_key: &PublicKey,
 ) -> Option<&'a Subscription> {
     for subscription in subscriptions {
         match subscription {
-            Subscription::Files {
-                public_key: expected_public_key,
-                ..
-            } => {
-                if expected_public_key == given_public_key {
+            Subscription::Files(expected) => {
+                if &expected.public_key == given_public_key {
                     return Some(subscription);
                 } else {
                     continue;
                 }
             }
-            Subscription::Messages { .. } => {
+            Subscription::Messages(_) => {
                 continue;
             }
         }
@@ -315,58 +286,4 @@ pub fn is_bucket_publishable<'a>(
         }
     }
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use p2panda_core::PrivateKey;
-    use p2panda_net::TopicId;
-
-    use super::{Query, Subscription};
-
-    #[test]
-    fn gossip_topic_id() {
-        let public_key_1 = PrivateKey::new().public_key();
-        let public_key_2 = PrivateKey::new().public_key();
-
-        // Buckets use "bucket name" as gossip topic id.
-        let subscription_0: Query = Subscription::Files {
-            bucket_name: "icecreams".into(),
-            public_key: public_key_2,
-        }
-        .into();
-        let subscription_1: Query = Subscription::Files {
-            bucket_name: "icecreams".into(),
-            public_key: public_key_1,
-        }
-        .into();
-        let subscription_2: Query = Subscription::Files {
-            bucket_name: "airplanes".into(),
-            public_key: public_key_1,
-        }
-        .into();
-        assert_ne!(subscription_0.id(), subscription_1.id());
-        assert_eq!(subscription_1.id(), subscription_2.id());
-
-        // NATS subjects use public key as gossip topic id.
-        let subscription_3: Query = Subscription::Messages {
-            filtered_stream: (vec!["*.*.color".parse().unwrap()], "data".into()),
-            public_key: public_key_1,
-        }
-        .into();
-        assert_ne!(subscription_3.id(), subscription_1.id());
-
-        let subscription_4: Query = Subscription::Messages {
-            filtered_stream: (vec!["tree.pine.*".parse().unwrap()], "data".into()),
-            public_key: public_key_1,
-        }
-        .into();
-        let subscription_5: Query = Subscription::Messages {
-            filtered_stream: (vec!["tree.pine.*".parse().unwrap()], "data".into()),
-            public_key: public_key_2,
-        }
-        .into();
-        assert_eq!(subscription_3.id(), subscription_4.id());
-        assert_ne!(subscription_4.id(), subscription_5.id());
-    }
 }

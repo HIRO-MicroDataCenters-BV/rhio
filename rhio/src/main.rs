@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use p2panda_core::PublicKey;
 use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use rhio::tracing::setup_tracing;
-use rhio::{Node, Publication, Subscription};
+use rhio::{
+    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
+    Subscription,
+};
 use rhio_core::{load_private_key_from_file, Subject};
 use tracing::info;
 
@@ -66,14 +69,17 @@ async fn main() -> Result<()> {
             stream_public_key_map
                 .entry(stream_name)
                 .and_modify(|subjects| {
-                    subjects.push(subject);
+                    subjects.push(subject.clone());
                 })
                 .or_insert(vec![subject]);
         }
 
         for (stream_name, subjects) in stream_public_key_map.into_iter() {
             node.publish(Publication::Messages {
-                filtered_stream: (subjects, stream_name),
+                filtered_stream: FilteredMessageStream {
+                    subjects,
+                    stream_name,
+                },
                 // Assign our own public key to NATS subject info.
                 public_key,
             })
@@ -87,10 +93,10 @@ async fn main() -> Result<()> {
             public_key: remote_public_key,
         } in subscribe.s3_buckets
         {
-            node.subscribe(Subscription::Files {
+            node.subscribe(Subscription::Files(FilesSubscription {
                 bucket_name,
                 public_key: remote_public_key,
-            })
+            }))
             .await?;
         }
 
@@ -106,26 +112,30 @@ async fn main() -> Result<()> {
             stream_public_key_map
                 .entry((stream_name, remote_public_key))
                 .and_modify(|subjects| {
-                    subjects.push(subject);
+                    subjects.push(subject.clone());
                 })
                 .or_insert(vec![subject]);
         }
 
-        // Finally we want to group these subscriptions by public key to send them all at once.
-        let mut subscription_map = HashMap::<PublicKey, Vec<Subscription>>::new();
+        // Finally we want to group these subscriptions by public key.
+        let mut subscription_map = HashMap::<PublicKey, Vec<FilteredMessageStream>>::new();
         for ((stream_name, remote_public_key), subjects) in stream_public_key_map.into_iter() {
-            let subscription = Subscription::Messages {
-                filtered_stream: (subjects, stream_name),
-                public_key: remote_public_key,
+            let filtered_stream = FilteredMessageStream {
+                subjects,
+                stream_name,
             };
             subscription_map
                 .entry(remote_public_key)
-                .and_modify(|subscriptions| subscriptions.push(subscription))
-                .or_insert(vec![subscription]);
+                .and_modify(|filtered_streams| filtered_streams.push(filtered_stream.clone()))
+                .or_insert(vec![filtered_stream]);
         }
 
-        for subscriptions in subscription_map.values() {
-            node.subscribe(subscriptions.to_owned()).await?;
+        for (remote_public_key, filtered_streams) in subscription_map.into_iter() {
+            let subscription = Subscription::Messages(MessagesSubscription {
+                filtered_streams,
+                public_key: remote_public_key,
+            });
+            node.subscribe(subscription).await?;
         }
     };
 

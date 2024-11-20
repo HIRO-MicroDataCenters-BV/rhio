@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_nats::jetstream::consumer::DeliverPolicy;
@@ -16,11 +16,13 @@ use rhio_blobs::{BlobHash, CompletedBlob, S3Store};
 use rhio_core::{nats, NetworkMessage, Subject};
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamMap;
 use tracing::{debug, span, warn, Level};
 
-use crate::config::Config;
-use crate::nats::{ConsumerId, JetStreamEvent, Nats};
+use crate::nats::{ConsumerId, JetStreamEvent, Nats, StreamName};
+use crate::node::config::NodeConfig;
 use crate::topic::Query;
+use crate::FilteredMessageStream;
 
 /// Simple sync protocol implementation to allow exchange of past NATS messages or blob
 /// announcements.
@@ -56,7 +58,7 @@ use crate::topic::Query;
 // the acceptor realizes that it doesn't publish the requested data.
 #[derive(Clone, Debug)]
 pub struct RhioSyncProtocol {
-    config: Config,
+    config: NodeConfig,
     nats: Nats,
     blob_store: S3Store,
     private_key: PrivateKey,
@@ -222,68 +224,61 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                     "we never initiate sync sessions for our own data"
                 );
 
-                // NATS streams are configured locally for every peer, so we need to look it up
-                // ourselves to find out what stream configuration we have for this subject.
-                let stream_name = match &self.config.subscribe {
-                    Some(subscriptions) => {
-                        subscriptions.nats_subjects.iter().find_map(|subscription| {
-                            if &subscription.subject == requested_subject {
-                                Some(subscription.stream_name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                    }
-                    None => None,
-                }
-                .expect("query matches subscription config");
+                // We have a list of all NATS subjects we are interested in for that public key.
+                // Each subject can be handled by a different NATS stream (based on our local
+                // configuration) and we need to first find out which ones they are.
+                let streams = self
+                    .streams_for_subjects(requested_subjects, &requested_public_key)
+                    .await;
+                assert!(streams.len() > 0, "query matches config");
 
                 // 3. Download all NATS messages we have from the NATS server for this subject and
                 //    hash them each. We send all hashes over to the other peer so they can
                 //    determine and send us what we don't have.
-                let (consumer_id, nats_stream) = self
-                    .nats_stream(stream_name, requested_subject, query.id())
-                    .await?;
-                let nats_stream = nats_stream.filter_map(|event| async {
+                let (consumer_ids, nats_stream) =
+                    self.muxed_nats_streams(streams, query.id()).await?;
+                let nats_stream = nats_stream.filter_map(|(stream_info, event)| async {
                     match event {
                         Ok(message) => {
                             // Remove all messages which are not from the public key we are
                             // interested in.
-                            if !nats::is_public_key_eq(&message, &requested_public_key) {
+                            if !nats::matching_public_key(&message, &requested_public_key) {
                                 return None;
                             }
 
                             match nats::wrap_and_sign_nats_message(message, &self.private_key) {
-                                Ok(network_message) => Some(Ok(network_message.hash())),
+                                Ok(network_message) => Some((stream_info, Ok(network_message.hash()))),
                                 Err(err) => {
-                                    // Filter out invalid NATS signatures (they should have not
-                                    // arrived here at this point though).
                                     warn!("detected invalid signature of NATS message in stream: {err}");
                                     None
                                 },
                             }
                         }
-                        Err(err) => Some(Err(err)),
+                        Err(err) => Some((stream_info, Err(err))),
                     }
                 });
                 pin_mut!(nats_stream);
 
                 let mut counter = 0;
-                while let Some(nats_hash) = nats_stream.next().await {
+                while let Some((stream_info, nats_hash)) = nats_stream.next().await {
                     match nats_hash {
                         Ok(nats_hash) => {
                             counter += 1;
                             sink.send(Message::NatsHave(nats_hash)).await?;
                         }
                         Err(err) => {
-                            // Do not forget to unsubscribe consumer even on failure.
+                            // Do not forget to unsubscribe consumer on failure.
+                            let consumer_id = stream_info.1;
                             self.unsubscribe_nats_stream(consumer_id).await?;
                             return Err(err);
                         }
                     }
                 }
 
-                self.unsubscribe_nats_stream(consumer_id).await?;
+                // Do not forget to unsubscribe from all consumers on success.
+                for consumer_id in consumer_ids {
+                    self.unsubscribe_nats_stream(consumer_id).await?;
+                }
 
                 // 4. Finalize sending what we have.
                 sink.send(Message::NatsHaveDone).await?;
@@ -419,15 +414,13 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 );
 
                 // We're not only publishing data but also "forward" blobs from other peers.
-                let is_forwarding = match &self.config.subscribe {
-                    Some(subscriptions) => subscriptions
-                        .s3_buckets
-                        .iter()
-                        .find(|config| requested_public_key == &config.public_key),
-                    None => None,
-                }
-                .is_some();
+                let is_forwarding = self
+                    .config
+                    .is_files_subscription_matching(requested_public_key)
+                    .await
+                    .is_some();
 
+                // Can we forward someone elses files or ours?
                 if !is_forwarding && requested_public_key != &self.public_key {
                     // Inform the other peer politely that we need to end here as we can't provide
                     // data from this public key.
@@ -494,45 +487,25 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // requested subject and public key.
                 //
                 // - Are we publishing the requested data ourselves?
-                let stream_name = {
-                    if requested_public_key != &self.public_key {
-                        None
-                    } else {
-                        match &self.config.publish {
-                            Some(publications) => {
-                                publications.nats_subjects.iter().find_map(|publication| {
-                                    if publication.subject.is_matching(subject) {
-                                        Some(publication.stream_name.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
+                let our_streams = {
+                    let mut result = Vec::new();
+                    if requested_public_key == &self.public_key {
+                        let publications = self.config.message_publications().await;
+                        for stream in &publications {
+                            for subject in requested_subjects {
+                                if !stream.subjects.contains(subject) {
+                                    continue;
+                                }
+                                result.push(stream.clone());
                             }
-                            None => None,
                         }
                     }
+                    result
                 };
-
                 // - Can we forward data from someone else?
-                let stream_name = {
-                    match stream_name {
-                        Some(stream_name) => Some(stream_name),
-                        None => match &self.config.subscribe {
-                            Some(subscriptions) => {
-                                subscriptions.nats_subjects.iter().find_map(|subscription| {
-                                    if subscription.subject.is_matching(subject)
-                                        && &subscription.public_key == requested_public_key
-                                    {
-                                        Some(subscription.stream_name.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                            }
-                            None => None,
-                        },
-                    }
-                };
+                let forwarded_streams = self
+                    .streams_for_subjects(requested_subjects, &requested_public_key)
+                    .await;
 
                 // 5. Await message from other peer on the NATS messages they _have_, so we can
                 //    calculate what they're missing and send that delta to them.
@@ -564,16 +537,23 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 // Inform the other peer politely that we need to end here as we can't provide for
                 // this NATS subject or public key.
-                let Some(stream_name) = stream_name else {
+                if our_streams.is_empty() && forwarded_streams.is_empty() {
                     debug!(parent: &span, "can't provide data, politely end sync");
                     sink.send(Message::NatsDone).await?;
                     return Ok(());
                 };
 
                 // 6. Send back delta data to other peer.
-                let (consumer_id, nats_stream) =
-                    self.nats_stream(stream_name, subject, query.id()).await?;
-                let nats_stream = nats_stream.filter_map(|event| async {
+                let (consumer_ids, nats_stream) = {
+                    if !our_streams.is_empty() {
+                        self.muxed_nats_streams(our_streams, query.id()).await?
+                    } else {
+                        self.muxed_nats_streams(forwarded_streams, query.id())
+                            .await?
+                    }
+                };
+
+                let nats_stream = nats_stream.filter_map(|(stream_info, event)| async {
                     match event {
                         Ok(message) => {
                             // Remove all messages which are not from the public key we are
@@ -582,8 +562,8 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             // If no public key is given in the NATS message header, we assume it's
                             // our message and check if that's what the remote peer was interested
                             // in.
-                            if !nats::is_public_key_eq(&message, requested_public_key)
-                                && !nats::is_public_key_eq(&message, &self.public_key)
+                            if !nats::matching_public_key(&message, requested_public_key)
+                                && !nats::matching_public_key(&message, &self.public_key)
                                     && nats::has_nats_signature(&message.headers)
                             {
                                 return None;
@@ -602,30 +582,35 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             if remote_nats_hashes.contains(&network_message.hash()) {
                                 None
                             } else {
-                                Some(Ok(network_message))
+                                Some((stream_info, Ok(network_message)))
                             }
                         }
-                        Err(err) => Some(Err(err)),
+                        Err(err) => Some((stream_info, Err(err))),
                     }
                 });
 
                 pin_mut!(nats_stream);
 
                 let mut counter = 0;
-                while let Some(nats_message) = nats_stream.next().await {
+                while let Some((stream_info, nats_message)) = nats_stream.next().await {
                     match nats_message {
                         Ok(nats_message) => {
                             counter += 1;
                             sink.send(Message::NatsData(nats_message)).await?;
                         }
                         Err(err) => {
+                            // Do not forget to unsubscribe consumer on failure.
+                            let consumer_id = stream_info.1;
                             self.unsubscribe_nats_stream(consumer_id).await?;
                             return Err(err);
                         }
                     }
                 }
 
-                self.unsubscribe_nats_stream(consumer_id).await?;
+                // Do not forget to unsubscribe from all consumers on success.
+                for consumer_id in consumer_ids {
+                    self.unsubscribe_nats_stream(consumer_id).await?;
+                }
 
                 // 7. Finalize sync session.
                 sink.send(Message::NatsDone).await?;
@@ -651,7 +636,12 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 }
 
 impl RhioSyncProtocol {
-    pub fn new(config: Config, nats: Nats, blob_store: S3Store, private_key: PrivateKey) -> Self {
+    pub fn new(
+        config: NodeConfig,
+        nats: Nats,
+        blob_store: S3Store,
+        private_key: PrivateKey,
+    ) -> Self {
         Self {
             config,
             nats,
@@ -666,16 +656,89 @@ impl RhioSyncProtocol {
         self.blob_store.complete_blobs().await.into_iter().collect()
     }
 
+    /// Finds out which subjects for this public key can be hooked into which NATS stream based on
+    /// our configuration.
+    ///
+    /// Returns a list of the NATS streams and the regarding (de-duplicated) subjects we can use on
+    /// top of them or an empty array if there's nothing matching.
+    async fn streams_for_subjects(
+        &self,
+        subjects: &Vec<Subject>,
+        public_key: &PublicKey,
+    ) -> Vec<FilteredMessageStream> {
+        let mut visited_subjects = HashSet::<Subject>::new();
+        let mut stream_map = HashMap::<StreamName, Vec<Subject>>::new();
+
+        let subscriptions = self.config.message_subscriptions().await;
+        for subscription in &subscriptions {
+            // Filter by public key.
+            if &subscription.public_key != public_key {
+                continue;
+            }
+
+            for stream in &subscription.filtered_streams {
+                for subject in subjects {
+                    // Filter by subject.
+                    if !stream.subjects.contains(subject) {
+                        continue;
+                    }
+
+                    // De-Duplicate subjects, we only need one stream for each.
+                    let is_new = visited_subjects.insert(subject.clone());
+                    if !is_new {
+                        continue;
+                    }
+
+                    stream_map
+                        .entry(stream.stream_name.clone())
+                        .and_modify(|subjects| subjects.push(subject.clone()))
+                        .or_insert(vec![subject.clone()]);
+                }
+            }
+        }
+
+        stream_map
+            .into_iter()
+            .map(|(stream_name, subjects)| FilteredMessageStream {
+                subjects,
+                stream_name,
+            })
+            .collect()
+    }
+
     /// Download all NATS messages we have for these subjects and return them as a stream.
+    async fn muxed_nats_streams(
+        &self,
+        stream_configs: Vec<FilteredMessageStream>,
+        topic_id: [u8; 32],
+    ) -> Result<
+        (
+            Vec<ConsumerId>,
+            StreamMap<(StreamName, ConsumerId), BoxStream<Result<NatsMessage, SyncError>>>,
+        ),
+        SyncError,
+    > {
+        let mut consumer_ids = Vec::new();
+        let mut map = StreamMap::new();
+        for config in stream_configs {
+            let (consumer_id, stream) = self
+                .nats_stream(config.stream_name.clone(), config.subjects, topic_id)
+                .await?;
+            consumer_ids.push(consumer_id.clone());
+            map.insert((config.stream_name, consumer_id), stream);
+        }
+        Ok((consumer_ids, map))
+    }
+
     async fn nats_stream(
         &self,
-        stream_name: String,
-        subjects: &Vec<Subject>,
+        stream_name: StreamName,
+        subjects: Vec<Subject>,
         topic_id: [u8; 32],
     ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
         let (consumer_id, nats_rx) = self
             .nats
-            .subscribe(stream_name, subjects.to_vec(), DeliverPolicy::All, topic_id)
+            .subscribe(stream_name, subjects, DeliverPolicy::All, topic_id)
             .await
             .map_err(|err| {
                 SyncError::Critical(format!("can't subscribe to NATS stream: {}", err))

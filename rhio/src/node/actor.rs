@@ -17,9 +17,9 @@ use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
-use crate::node::sanity;
+use crate::node::config::NodeConfig;
 use crate::node::Publication;
-use crate::topic::{self, Query, Subscription};
+use crate::topic::{Query, Subscription};
 
 pub enum ToNodeActor {
     Publish {
@@ -27,7 +27,7 @@ pub enum ToNodeActor {
         reply: oneshot::Sender<Result<()>>,
     },
     Subscribe {
-        subscriptions: Vec<Subscription>,
+        subscription: Subscription,
         reply: oneshot::Sender<Result<()>>,
     },
     Shutdown {
@@ -36,11 +36,10 @@ pub enum ToNodeActor {
 }
 
 pub struct NodeActor {
+    config: NodeConfig,
     private_key: PrivateKey,
     public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
-    subscriptions: Vec<Subscription>,
-    publications: Vec<Publication>,
     nats_consumer_rx: SelectAll<BroadcastStream<JetStreamEvent>>,
     p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
@@ -53,6 +52,7 @@ pub struct NodeActor {
 
 impl NodeActor {
     pub fn new(
+        config: NodeConfig,
         private_key: PrivateKey,
         nats: Nats,
         panda: Panda,
@@ -62,11 +62,10 @@ impl NodeActor {
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     ) -> Self {
         Self {
+            config,
             public_key: private_key.public_key(),
             private_key,
             inbox,
-            subscriptions: Vec::new(),
-            publications: Vec::new(),
             nats_consumer_rx: SelectAll::new(),
             p2panda_topic_rx: SelectAll::new(),
             s3_watcher_rx,
@@ -149,10 +148,10 @@ impl NodeActor {
                 reply.send(result).ok();
             }
             ToNodeActor::Subscribe {
-                subscriptions,
+                subscription,
                 reply,
             } => {
-                let result = self.on_subscribe(subscriptions).await;
+                let result = self.on_subscribe(subscription).await;
                 reply.send(result).ok();
             }
             ToNodeActor::Shutdown { .. } => {
@@ -169,9 +168,7 @@ impl NodeActor {
     /// initiate sync sessions with us, as publishing peers we're only _accepting_ these sync
     /// sessions.
     async fn on_publish(&mut self, publication: Publication) -> Result<()> {
-        sanity::validate_publication_config(&self.publications, &publication)?;
-
-        self.publications.push(publication.clone());
+        self.config.add_publication(&publication).await?;
 
         // 1. Subscribe to p2panda gossip overlay for "live-mode".
         //
@@ -209,10 +206,14 @@ impl NodeActor {
                 filtered_stream, ..
             } => {
                 // Subscribe to the NATS stream to receive new NATS messages from here.
-                let (subjects, stream_name) = filtered_stream;
                 let (_, nats_rx) = self
                     .nats
-                    .subscribe(stream_name, subjects, DeliverPolicy::New, topic_id)
+                    .subscribe(
+                        filtered_stream.stream_name,
+                        filtered_stream.subjects,
+                        DeliverPolicy::New,
+                        topic_id,
+                    )
                     .await?;
                 self.nats_consumer_rx.push(BroadcastStream::new(nats_rx));
             }
@@ -225,35 +226,12 @@ impl NodeActor {
     ///
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
-    ///
-    /// Subscriptions sent to this method should be grouped by the same public key.
-    async fn on_subscribe(&mut self, subscriptions: Vec<Subscription>) -> Result<()> {
-        // Sanity checks.
-        assert!(
-            subscriptions.len() > 0,
-            "set of subscriptions can not be empty"
-        );
-        for subscription in &subscriptions {
-            for other_subscription in &subscriptions {
-                if subscription.public_key() != other_subscription.public_key() {
-                    bail!("set of subscriptions needs to be from same public key");
-                }
-            }
-            sanity::validate_subscription_config(
-                &self.publications,
-                &self.subscriptions,
-                &subscription,
-            )?;
-        }
+    async fn on_subscribe(&mut self, subscription: Subscription) -> Result<()> {
+        self.config.add_subscription(&subscription).await?;
 
-        for subscription in &subscriptions {
-            self.subscriptions.push(subscription.clone());
-        }
-
-        let query = Query::from_subscriptions(&subscriptions);
         let network_rx = self
             .panda
-            .subscribe(query)
+            .subscribe(subscription.into())
             .await?
             .expect("queries for subscriptions should always return channel");
         self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
@@ -379,13 +357,15 @@ impl NodeActor {
 
                 // We're interested in blobs from a _specific_ public key. Filter out everything
                 // which is _not_ the right author.
-                if let Some(Subscription::Files { bucket_name, .. }) =
-                    topic::is_bucket_matching(&self.subscriptions, &network_message.public_key)
+                if let Some(bucket_name) = self
+                    .config
+                    .is_files_subscription_matching(&network_message.public_key)
+                    .await
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name: bucket_name.clone(),
+                            bucket_name,
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
@@ -402,11 +382,11 @@ impl NodeActor {
                 // especially when receiving messages over the gossip overlay as they are not
                 // necessarily for us.
                 let subject: Subject = subject.parse()?;
-                if !topic::is_subject_matching(
-                    &self.subscriptions,
-                    &subject,
-                    &network_message.public_key,
-                ) {
+                if !self
+                    .config
+                    .is_subject_subscription_matching(&subject, &network_message.public_key)
+                    .await
+                {
                     return Ok(());
                 }
 
@@ -473,7 +453,7 @@ impl NodeActor {
 
         // Sanity: Make sure we're allowing publishing from this bucket. This should not be
         // necessary when the configuration's are sane, but we're checking it just to be sure.
-        if topic::is_bucket_publishable(&self.publications, &blob.bucket_name).is_none() {
+        if !self.config.is_bucket_publishable(&blob.bucket_name).await {
             bail!("tried to announce blob from an unpublishable S3 bucket");
         };
 

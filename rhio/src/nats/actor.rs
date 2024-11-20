@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
 use async_nats::{Client as NatsClient, HeaderMap};
@@ -266,9 +266,7 @@ impl NatsActor {
     }
 
     async fn on_unsubscribe(&mut self, consumer_id: ConsumerId) -> Result<()> {
-        self.consumers
-            .remove(&consumer_id)
-            .ok_or(anyhow!("tried to remove unknown consumer"))?;
+        self.consumers.remove(&consumer_id);
         Ok(())
     }
 
