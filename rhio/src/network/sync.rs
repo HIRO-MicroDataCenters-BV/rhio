@@ -283,7 +283,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 sink.send(Message::NatsHaveDone).await?;
 
                 debug!(parent: &span,
-                    "downloaded {} NATS messages",
+                    "loaded {} NATS messages from local stream and sent hashes to remote peer",
                     counter,
                 );
 
@@ -591,7 +591,6 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                         Err(err) => Some((stream_info, Err(err))),
                     }
                 });
-
                 pin_mut!(nats_stream);
 
                 let mut counter = 0;
@@ -618,7 +617,11 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // 7. Finalize sync session.
                 sink.send(Message::NatsDone).await?;
 
-                debug!(parent: &span, "downloaded {} NATS messages", counter);
+                debug!(
+                    parent: &span,
+                    "loaded {} NATS messages from local stream and sent them to remote peer",
+                    counter
+                );
             }
             Query::NoSyncFiles { .. } => {
                 unreachable!("we've already returned before no-sync option")

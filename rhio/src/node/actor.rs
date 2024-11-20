@@ -10,6 +10,7 @@ use rhio_blobs::{CompletedBlob, NotImportedObject, SignedBlobInfo};
 use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
@@ -118,9 +119,18 @@ impl NodeActor {
                         break Err(err);
                     }
                 },
-                Some(Ok(event)) = self.p2panda_topic_rx.next() => {
-                    if let Err(err) = self.on_network_event(event).await {
-                        break Err(err);
+                Some(event) = self.p2panda_topic_rx.next() => {
+                    match event {
+                        Ok(event) => {
+                            if let Err(err) = self.on_network_event(event).await {
+                                break Err(err);
+                            }
+                        },
+                        // @TODO: This should be handled in p2panda instead with a different mpmc
+                        // channel which doesn't throw lagged errors.
+                        Err(BroadcastStreamRecvError::Lagged(num)) => {
+                            warn!("p2panda channel lagging behind {num} messages");
+                        },
                     }
                 },
                 Some(event) = self.s3_watcher_rx.recv() => {
@@ -391,8 +401,6 @@ impl NodeActor {
                 {
                     return Ok(());
                 }
-
-                debug!(%subject, ?payload, "received NATS message");
 
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.

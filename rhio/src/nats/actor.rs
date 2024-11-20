@@ -188,7 +188,7 @@ impl NatsActor {
         headers: Option<HeaderMap>,
         payload: Vec<u8>,
     ) -> Result<()> {
-        debug!(subject = %subject, bytes = payload.len(), "publish NATS message");
+        debug!(%subject, ?payload, bytes = payload.len(), "publish NATS message");
 
         let mut publish = Publish::build().payload(payload.into());
         if let Some(headers) = headers {

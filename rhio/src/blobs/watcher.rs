@@ -7,7 +7,7 @@ use rhio_blobs::{
     S3Store, SignedBlobInfo, UnsignedBlobInfo, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
 };
 use s3::error::S3Error;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio_util::task::LocalPoolHandle;
 use tracing::debug;
 
