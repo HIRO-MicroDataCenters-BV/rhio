@@ -30,11 +30,6 @@ impl NodeConfig {
         }
     }
 
-    pub async fn publications(&self) -> Vec<Publication> {
-        let inner = self.inner.read().await;
-        inner.publications.clone()
-    }
-
     pub async fn message_publications(&self) -> Vec<FilteredMessageStream> {
         let inner = self.inner.read().await;
         inner
@@ -91,7 +86,7 @@ impl NodeConfig {
         public_key: &PublicKey,
     ) -> Option<BucketName> {
         let existing = self.inner.read().await;
-        match is_files_subscription_matching(&existing.subscriptions, &public_key) {
+        match is_files_subscription_matching(&existing.subscriptions, public_key) {
             Some(Subscription::Files(subscription)) => Some(subscription.bucket_name.clone()),
             _ => None,
         }
@@ -213,7 +208,7 @@ impl NodeConfig {
                         for existing_stream in &existing_messages_subscription.filtered_streams {
                             for new_stream in &new_messages_subscription.filtered_streams {
                                 for existing_subject in &existing_stream.subjects {
-                                    if new_stream.subjects.contains(&existing_subject) {
+                                    if new_stream.subjects.contains(existing_subject) {
                                         bail!(
                                         "public key {} and subject '{}' is used multiple times in subscribe NATS config",
                                         existing_messages_subscription.public_key,

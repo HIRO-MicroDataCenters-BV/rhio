@@ -51,6 +51,7 @@ pub struct NodeActor {
 }
 
 impl NodeActor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: NodeConfig,
         private_key: PrivateKey,

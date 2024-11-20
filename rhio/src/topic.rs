@@ -228,8 +228,7 @@ pub fn is_subject_matching(
                     let is_matching = stream
                         .subjects
                         .iter()
-                        .find(|expected_subject| expected_subject.is_matching(given_subject))
-                        .is_some();
+                        .any(|expected_subject| expected_subject.is_matching(given_subject));
                     if is_matching && &subscription.public_key == given_public_key {
                         return true;
                     } else {

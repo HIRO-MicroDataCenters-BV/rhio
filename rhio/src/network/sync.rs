@@ -230,7 +230,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let streams = self
                     .streams_for_subjects(requested_subjects, &requested_public_key)
                     .await;
-                assert!(streams.len() > 0, "query matches config");
+                assert!(!streams.is_empty(), "query matches config");
 
                 // 3. Download all NATS messages we have from the NATS server for this subject and
                 //    hash them each. We send all hashes over to the other peer so they can
@@ -504,7 +504,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 };
                 // - Can we forward data from someone else?
                 let forwarded_streams = self
-                    .streams_for_subjects(requested_subjects, &requested_public_key)
+                    .streams_for_subjects(requested_subjects, requested_public_key)
                     .await;
 
                 // 5. Await message from other peer on the NATS messages they _have_, so we can
