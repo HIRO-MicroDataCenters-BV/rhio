@@ -4,6 +4,7 @@ set -o errexit
 set -o nounset
 
 ROOT="${GITHUB_WORKSPACE}"
+CHART_NAME="rhio"
 
 VERSION_APP_PATH="./VERSION_APP"
 VERSION_CHART_PATH="./VERSION_CHART"
@@ -83,7 +84,7 @@ make_docker_images_with_tags() {
 patch_helm_chart() {
   DOCKER_IMAGE_NAME="$1"
 
-  CHART_PATH="./charts"
+  CHART_PATH="./charts/${CHART_NAME}"
 
   DOCKER_IMAGE_TAG=$(rev "${VERSION_DOCKER_PATH}" | cut -d ',' -f 1 | rev)
   VERSION_CHART=$(cat "${VERSION_CHART_PATH}")
