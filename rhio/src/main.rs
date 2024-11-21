@@ -143,7 +143,7 @@ async fn main() -> Result<()> {
 
     if let Err(err) = tokio::spawn(http_server::run(config.node.http_bind_port)).await? {
         error!("failed to start http server: {err}");
-        return Ok(())
+        return Ok(());
     };
     tokio::signal::ctrl_c().await?;
 
