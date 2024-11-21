@@ -84,6 +84,7 @@ jobs:
         with:
           # @TODO: don't push to docker for now
           # push: true
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
