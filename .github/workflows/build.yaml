@@ -33,21 +33,6 @@ jobs:
           RUST_LOG: debug
         run: cargo test --all-features
 
-  check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: moonrepo/setup-rust@v1
-        with:
-          channel: ${{ env.RUST_TOOLCHAIN }}
-
-      - name: Check project and dependencies
-        run: cargo check
-
   build:
     needs: [test]
     runs-on: ubuntu-latest
