@@ -95,10 +95,11 @@ jobs:
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
-      - name: Create a github release
-        run: gh release create "${{ env.VERSION_APP }}"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # @TODO: uncomment when ready to release
+      # - name: Create a github release
+      #   run: gh release create "${{ env.VERSION_APP }}"
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
 
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master
