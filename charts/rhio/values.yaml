@@ -22,17 +22,20 @@ podSecurityContext: {}
 
 securityContext: {}
 
-service:
+services:
   type: ClusterIP
-  port: 80
+  network:
+    port: 9102
+  health:
+    port: 3000
 
 resources: {}
 
 livenessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3000
 readinessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 3000

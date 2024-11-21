@@ -5,11 +5,13 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.network.type }}
   ports:
-    - port: {{ .Values.service.port }}
-      targetPort: http
+    - port: {{ .Values.services.network.port }}
+      protocol: UDP
+      name: network
+    - port: {{ .Values.services.health.port }}
       protocol: TCP
-      name: http
+      name: health
   selector:
     {{- include "app.selectorLabels" . | nindent 4 }}
