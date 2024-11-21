@@ -131,25 +131,26 @@ jobs:
       - name: Build and push docker image
         uses: docker/build-push-action@v5
         with:
+          # @TODO: don't push to docker for now
           # push: true
           push: false
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
           context: "${{ github.workspace }}"
 
-#       - name: Configure Git
-#         run: |
-#           git config user.name "$GITHUB_ACTOR"
-#           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-# 
-#       - name: Create a github release
-#         run: gh release create "${{ env.VERSION_APP }}"
-#         env:
-#           GH_TOKEN: ${{ github.token }}
-# 
-#       - name: Publish Helm charts
-#         uses: stefanprodan/helm-gh-pages@master
-#         with:
-#           token: ${{ github.token }}
-#           charts_dir: "./server/charts/"
-#           target_dir: "./helm-charts/"
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create a github release
+        run: gh release create "${{ env.VERSION_APP }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish Helm charts
+        uses: stefanprodan/helm-gh-pages@master
+        with:
+          token: ${{ github.token }}
+          charts_dir: "./charts/"
+          target_dir: "./helm-charts/"
