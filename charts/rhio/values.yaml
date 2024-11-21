@@ -24,8 +24,10 @@ securityContext: {}
 
 services:
   type: ClusterIP
+  # the port for the p2p networking endpoint
   network:
     port: 9102
+  # the port for the HTTP health endpoint
   health:
     port: 3000
 

@@ -35,9 +35,11 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
+          # the port for the p2p networking endpoint
           - name: network
             containerPort: {{ .Values.services.network.port }}
             protocol: UDP
+          # the port for the HTTP health endpoint
           - name: health
             containerPort: {{ .Values.services.health.port }}
             protocol: TCP
