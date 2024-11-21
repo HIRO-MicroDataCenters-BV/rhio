@@ -26,6 +26,9 @@ const DEFAULT_BIND_PORT: u16 = 9102;
 /// Default rhio network id.
 const DEFAULT_NETWORK_ID: &str = "rhio-default-network-1";
 
+/// Default rhio HTTP port.
+pub const DEFAULT_HTTP_BIND_PORT: u16 = 3000;
+
 /// Default HTTP API endpoint for MinIO server.
 pub const S3_ENDPOINT: &str = "http://localhost:9000";
 
@@ -67,6 +70,11 @@ struct Cli {
     #[arg(short = 'p', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
+
+    /// HTTP bind port of rhio node.
+    #[arg(short = 'b', long, value_name = "PORT")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    http_bind_port: Option<u16>,
 
     /// Path to file containing hexadecimal-encoded Ed25519 private key.
     #[arg(short = 'k', long, value_name = "PATH")]
@@ -182,6 +190,7 @@ pub struct NatsCredentials {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub bind_port: u16,
+    pub http_bind_port: u16,
     #[serde(rename = "nodes")]
     pub known_nodes: Vec<KnownNode>,
     pub private_key_path: PathBuf,
@@ -192,6 +201,7 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             bind_port: DEFAULT_BIND_PORT,
+            http_bind_port: DEFAULT_HTTP_BIND_PORT,
             known_nodes: vec![],
             private_key_path: DEFAULT_PRIVATE_KEY_PATH.into(),
             network_id: DEFAULT_NETWORK_ID.to_string(),
@@ -264,6 +274,7 @@ mod tests {
                 "config.yaml",
                 r#"
 bind_port: 1112
+http_bind_port: 2223
 private_key_path: "/usr/app/rhio/private.key"
 network_id: "rhio-default-network-1"
 
@@ -342,6 +353,7 @@ subscribe:
                     },
                     node: NodeConfig {
                         bind_port: 1112,
+                        http_bind_port: 2223,
                         known_nodes: vec![KnownNode {
                             public_key:
                                 "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"

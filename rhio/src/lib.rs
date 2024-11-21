@@ -1,4 +1,5 @@
 #[allow(dead_code, unused, unused_imports)]
+pub mod http_server;
 mod blobs;
 pub mod config;
 mod nats;
