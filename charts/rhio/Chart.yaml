@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: v2
 name: rhio
 description: peer-to-peer message stream and blob storage solution
 type: application
