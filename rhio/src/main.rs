@@ -5,11 +5,11 @@ use p2panda_core::PublicKey;
 use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use rhio::tracing::setup_tracing;
 use rhio::{
-    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
-    Subscription,
+    http_server, FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication,
+    StreamName, Subscription,
 };
 use rhio_core::{load_private_key_from_file, Subject};
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -39,6 +39,8 @@ async fn main() -> Result<()> {
     for address in addresses {
         info!("  - {}", address);
     }
+    info!("‣ health endpoint:");
+    info!("  - localhost:{}", config.node.http_bind_port);
 
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
@@ -139,6 +141,10 @@ async fn main() -> Result<()> {
         }
     };
 
+    if let Err(err) = tokio::spawn(http_server::run(config.node.http_bind_port)).await? {
+        error!("failed to start http server: {err}");
+        return Ok(());
+    };
     tokio::signal::ctrl_c().await?;
 
     info!("");
