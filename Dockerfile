@@ -1,4 +1,4 @@
-FROM clux/muslrust:stable AS BUILDER
+FROM rust:latest AS BUILDER
 
 # Add source code
 ADD . ./
