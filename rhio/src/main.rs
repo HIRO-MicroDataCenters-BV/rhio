@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use p2panda_core::PublicKey;
-use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
+use figment::providers::Env;
+use p2panda_core::{PrivateKey, PublicKey};
+use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket, PRIVATE_KEY_ENV};
 use rhio::tracing::setup_tracing;
 use rhio::{
     http_server, FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication,
@@ -16,11 +17,16 @@ async fn main() -> Result<()> {
     let config = load_config()?;
     setup_tracing(config.log_level.clone());
 
-    let private_key =
-        load_private_key_from_file(&config.node.private_key_path).context(format!(
+    // Load the private key from either an environment variable _or_ a file specified in the
+    // config. The environment variable takes priority.
+    let private_key = match Env::var(PRIVATE_KEY_ENV) {
+        Some(private_key_hex) => PrivateKey::try_from(&hex::decode(&private_key_hex)?[..])?,
+        None => load_private_key_from_file(&config.node.private_key_path).context(format!(
             "could not load private key from file {}",
             config.node.private_key_path.display(),
-        ))?;
+        ))?,
+    };
+
     let public_key = private_key.public_key();
 
     let node = Node::spawn(config.clone(), private_key).await?;
