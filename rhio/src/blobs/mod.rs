@@ -1,21 +1,13 @@
 mod actor;
 pub mod watcher;
 
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use async_nats::jetstream::publish;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use iroh_blobs::store::Store;
 use p2panda_blobs::Blobs as BlobsHandler;
-use p2panda_core::{Hash, PublicKey, Signature};
-use rhio_blobs::{
-    BlobHash, BucketName, NotImportedObject, ObjectKey, ObjectSize, Paths, S3Store, SignedBlobInfo,
-    UnsignedBlobInfo,
-};
-use s3::creds::Credentials;
+use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
@@ -23,25 +15,19 @@ use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
-use crate::blobs::watcher::S3Watcher;
-use crate::config::{Config, S3Config};
+use crate::config::Config;
 use crate::topic::Query;
 use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Blobs {
-    config: S3Config,
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
 impl Blobs {
-    pub fn new(
-        config: S3Config,
-        blob_store: S3Store,
-        blobs_handler: BlobsHandler<Query, S3Store>,
-    ) -> Self {
+    pub fn new(blob_store: S3Store, blobs_handler: BlobsHandler<Query, S3Store>) -> Self {
         let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
         let blobs_actor = BlobsActor::new(blob_store.clone(), blobs_handler, blobs_actor_rx);
 
@@ -57,7 +43,6 @@ impl Blobs {
             .shared();
 
         Self {
-            config,
             blobs_actor_tx,
             actor_handle: actor_drop_handle,
         }
@@ -83,7 +68,7 @@ impl Blobs {
         self.blobs_actor_tx
             .send(ToBlobsActor::ImportS3Object { object, reply })
             .await?;
-        let result = reply_rx.await?;
+        reply_rx.await??;
         Ok(())
     }
 

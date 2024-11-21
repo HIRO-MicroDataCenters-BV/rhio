@@ -72,7 +72,7 @@ impl Node {
         // 3. Configure and set up blob store and connection handlers for blob replication.
         let (network, blobs_handler) =
             BlobsHandler::from_builder(builder, blob_store.clone()).await?;
-        let blobs = Blobs::new(config.s3.clone(), blob_store.clone(), blobs_handler);
+        let blobs = Blobs::new(blob_store.clone(), blobs_handler);
 
         // 4. Start a service which watches the S3 buckets for changes.
         let (watcher_tx, watcher_rx) = mpsc::channel(256);

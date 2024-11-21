@@ -1,21 +1,11 @@
-use std::path::PathBuf;
-
 use anyhow::{anyhow, Result};
-use iroh_blobs::store::bao_tree::io::fsm::AsyncSliceReader;
-use iroh_blobs::store::{MapEntry, Store};
-use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent, ImportBlobEvent};
+use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent};
 use p2panda_core::Hash;
-use rhio_blobs::{
-    BlobHash, BucketName, NotImportedObject, ObjectKey, ObjectSize, Paths, S3Store, SignedBlobInfo,
-};
-use s3::creds::Credentials;
-use s3::error::S3Error;
-use s3::{Bucket, BucketConfiguration, Region};
+use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, span, Level};
 
-use crate::blobs::watcher::S3Event;
 use crate::topic::Query;
 
 #[allow(clippy::large_enum_variant)]

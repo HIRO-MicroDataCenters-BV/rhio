@@ -4,11 +4,10 @@ use std::time::Duration;
 
 use rhio_blobs::{
     BlobHash, BucketName, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
-    S3Store, SignedBlobInfo, UnsignedBlobInfo, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
+    S3Store, SignedBlobInfo, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
 };
 use s3::error::S3Error;
 use tokio::sync::{mpsc, RwLock};
-use tokio_util::task::LocalPoolHandle;
 use tracing::debug;
 
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
@@ -79,6 +78,7 @@ impl std::hash::Hash for WatchedObject {
 #[derive(Clone, Debug)]
 enum ImportState {
     NotImported,
+    #[allow(dead_code)]
     Imported(BlobHash),
 }
 
