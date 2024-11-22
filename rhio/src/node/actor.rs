@@ -463,7 +463,8 @@ impl NodeActor {
         // Sanity: Make sure we're allowing publishing from this bucket. This should not be
         // necessary when the configuration's are sane, but we're checking it just to be sure.
         if !self.config.is_bucket_publishable(&blob.bucket_name).await {
-            bail!("tried to announce blob from an unpublishable S3 bucket");
+            warn!("tried to announce blob from an unpublishable S3 bucket");
+            return Ok(());
         };
 
         debug!(
