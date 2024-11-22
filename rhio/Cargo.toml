@@ -32,11 +32,11 @@ rhio-blobs = { path = "../rhio-blobs" }
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.35.1"
 serde = { version = "1.0.209", features = ["derive"] }
-tokio = "1.41.1"
+tokio = { version = "1.41.1", features = ["full"] }
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
-figment = { version = "0.10.19", features = ["env", "toml", "test"] }
+figment = { version = "0.10.19", features = ["env", "yaml", "test"] }

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use p2panda_core::PublicKey;
 use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
-use rhio::http_server::HTTP_HEALTH_ROUTE;
+use rhio::health::{run_http_server, HTTP_HEALTH_ROUTE};
 use rhio::tracing::setup_tracing;
 use rhio::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
     Subscription,
 };
 use rhio_core::{load_private_key_from_file, Subject};
+use tokio::runtime::Builder;
+use tokio::sync::oneshot;
 use tracing::info;
 
 #[tokio::main]
@@ -147,12 +149,35 @@ async fn main() -> Result<()> {
         }
     };
 
-    // @TODO: Disable HTTP server for now as it's blocking the runtime.
-    // tokio::spawn(http_server::run(config.node.http_bind_port))
-    //     .await?
-    //     .context("failed to start http server with health endpoint")?;
+    // Launch HTTP server in separate thread to not block rhio runtime.
+    let (http_error_tx, http_error_rx) = oneshot::channel::<Result<()>>();
+    std::thread::spawn(move || {
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .thread_name("http-server")
+            .build()
+            .expect("http server tokio runtime");
 
-    tokio::signal::ctrl_c().await?;
+        let result = runtime.block_on(async move {
+            run_http_server(config.node.http_bind_port)
+                .await
+                .context("failed to start http server with health endpoint")?;
+            Ok(())
+        });
+
+        http_error_tx.send(result).expect("sending http error");
+    });
+
+    loop {
+        tokio::select! {
+            Ok(Err(err)) = http_error_rx => {
+                bail!(err);
+            },
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+        }
+    }
 
     info!("");
     info!("shutting down");

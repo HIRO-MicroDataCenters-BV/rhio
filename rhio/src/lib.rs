@@ -1,6 +1,6 @@
 mod blobs;
 pub mod config;
-pub mod http_server;
+pub mod health;
 mod nats;
 mod network;
 mod node;
