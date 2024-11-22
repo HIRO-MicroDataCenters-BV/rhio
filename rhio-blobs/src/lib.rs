@@ -92,7 +92,7 @@ impl CompletedBlob {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsignedBlobInfo {
     pub hash: BlobHash,
-    pub bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
 }
@@ -102,7 +102,10 @@ pub struct UnsignedBlobInfo {
 #[derive(Clone, Debug)]
 pub struct SignedBlobInfo {
     pub hash: BlobHash,
-    pub bucket_name: BucketName,
+    // Name of the bucket where we store this S3 object locally.
+    pub local_bucket_name: BucketName,
+    // Name of the bucket where this S3 object originated from.
+    pub remote_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
     pub public_key: PublicKey,

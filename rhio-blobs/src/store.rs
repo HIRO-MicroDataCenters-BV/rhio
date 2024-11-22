@@ -113,14 +113,14 @@ impl S3Store {
     /// No checks take place on the integrity of the signature, we assume that this has been
     /// handled before.
     pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
-        let bucket = self.bucket(&blob.bucket_name);
+        let bucket = self.bucket(&blob.local_bucket_name);
         let paths = Paths::new(&blob.key);
         let meta = BaoMeta {
             hash: blob.hash,
             key: blob.key,
             size: blob.size,
             complete: false,
-            remote_bucket_name: Some(blob.bucket_name),
+            remote_bucket_name: blob.remote_bucket_name,
             public_key: Some(blob.public_key),
             signature: Some(blob.signature),
         };
@@ -139,10 +139,8 @@ impl S3Store {
             .map(|entry| match entry.meta.public_key {
                 Some(public_key) => CompletedBlob::Signed(SignedBlobInfo {
                     hash: entry.hash(),
-                    bucket_name: entry
-                        .meta
-                        .remote_bucket_name
-                        .expect("all signed blobs should have a remote bucket name"),
+                    remote_bucket_name: entry.meta.remote_bucket_name,
+                    local_bucket_name: entry.bucket_name,
                     key: entry.meta.key,
                     size: entry.meta.size,
                     public_key,
@@ -153,7 +151,7 @@ impl S3Store {
                 }),
                 None => CompletedBlob::Unsigned(UnsignedBlobInfo {
                     hash: entry.hash(),
-                    bucket_name: entry.bucket_name,
+                    local_bucket_name: entry.bucket_name,
                     key: entry.meta.key,
                     size: entry.meta.size,
                 }),
@@ -169,7 +167,8 @@ impl S3Store {
             .filter(|x| !x.meta.complete)
             .map(|entry| IncompleteBlob {
                 hash: entry.hash(),
-                bucket_name: entry.bucket_name,
+                local_bucket_name: entry.bucket_name,
+                remote_bucket_name: entry.meta.remote_bucket_name,
                 key: entry.meta.key,
                 size: entry.meta.size,
                 public_key: entry
