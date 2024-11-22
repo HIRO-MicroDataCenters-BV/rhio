@@ -71,7 +71,7 @@ impl Node {
 
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())
-            .sync(sync_protocol);
+            .sync(sync_protocol, true);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
         let blobs_config = BlobsConfig {
