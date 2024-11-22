@@ -45,7 +45,7 @@ rhio has been designed to be integrated into a Kubernetes cluster where _interna
 4. The process can be further configured via ENV vars or command line arguments:
 
 ```
-Peer-to-peer NATS message routing and S3 objects sync
+Peer-to-peer NATS message routing and S3 object sync solution
 
 Usage: rhio [OPTIONS]
 
@@ -91,9 +91,9 @@ rhio does not create or publish any messages by itself and serves merely as a "r
 
 Since NATS streams are also used for persistance with their own wide range of limit configurations, rhio does not create any streams automatically but merely consumes them. This allows rhio operators to have full flexibility over the nature of the stream. This is why for every published subject a "stream name" needs to be mentioned.
 
-### Blobs
+### Files
 
-Large files of any size can be imported into the local MinIO database which will then be automatically announced on the network for other nodes to download them into their regarding MinIO databases. For this to take place in an efficient manner, the blob will be first encoded in the bao format. The resulting hash of this process is used as an unique identifier to announce the blob on the p2p network.
+Large files of any size can be imported into the local S3-compatible bucket (like MinIO) which will then be automatically announced on the network for other nodes to download them into their regarding MinIO buckets. For this to take place in an efficient manner, the S3 object will be first encoded in the bao format. The resulting hash of this process is used as an unique identifier to announce the file on the p2p network.
 
 ## Development
 

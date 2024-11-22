@@ -52,7 +52,7 @@ pub struct Config {
 #[derive(Parser, Serialize, Debug)]
 #[command(
     name = "rhio",
-    about = "Peer-to-peer NATS message routing and S3 objects sync",
+    about = "Peer-to-peer NATS message routing and S3 object sync solution",
     long_about = None,
     version
 )]

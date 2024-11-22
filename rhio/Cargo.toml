@@ -1,7 +1,9 @@
 [package]
 name = "rhio"
+description = "Peer-to-peer NATS message routing and S3 object sync solution"
 version = "0.1.0"
 edition = "2021"
+publish = false
 default-run = "rhio"
 
 [lints]
