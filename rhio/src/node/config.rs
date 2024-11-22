@@ -88,9 +88,7 @@ impl NodeConfig {
     ) -> Option<BucketName> {
         let existing = self.inner.read().await;
         match is_files_subscription_matching(&existing.subscriptions, public_key, bucket_name) {
-            Some(Subscription::Files(subscription)) => {
-                Some(subscription.remote_bucket_name.clone())
-            }
+            Some(Subscription::Files(subscription)) => Some(subscription.local_bucket_name.clone()),
             _ => None,
         }
     }

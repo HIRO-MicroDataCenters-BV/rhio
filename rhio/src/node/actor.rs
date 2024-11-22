@@ -369,16 +369,15 @@ impl NodeActor {
 
                 // We're interested in blobs from a _specific_ public key and bucket. Filter out
                 // everything which is _not_ the right one.
-                if self
+                if let Some(local_bucket_name) = self
                     .config
                     .is_files_subscription_matching(&network_message.public_key, bucket_name)
                     .await
-                    .is_some()
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name: bucket_name.clone(),
+                            bucket_name: local_bucket_name,
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
