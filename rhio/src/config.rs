@@ -23,11 +23,11 @@ const DEFAULT_PRIVATE_KEY_PATH: &str = "private.key";
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
 
+/// Default HTTP port.
+pub const DEFAULT_HTTP_BIND_PORT: u16 = 3000;
+
 /// Default rhio network id.
 const DEFAULT_NETWORK_ID: &str = "rhio-default-network-1";
-
-/// Default rhio HTTP port.
-pub const DEFAULT_HTTP_BIND_PORT: u16 = 3000;
 
 /// Default HTTP API endpoint for MinIO server.
 pub const S3_ENDPOINT: &str = "http://localhost:9000";
@@ -52,7 +52,7 @@ pub struct Config {
 #[derive(Parser, Serialize, Debug)]
 #[command(
     name = "rhio",
-    about = "Peer-to-peer message and blob streaming with MinIO and NATS JetStream support",
+    about = "Peer-to-peer NATS message routing and S3 objects sync",
     long_about = None,
     version
 )]
@@ -71,7 +71,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
-    /// HTTP bind port of rhio node.
+    /// Port for HTTP server exposing the /health endpoint.
     #[arg(short = 'b', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     http_bind_port: Option<u16>,

@@ -17,6 +17,10 @@
 #
 # bind_port: 9102
 
+# Port for HTTP server exposing the /health endpoint. Defaults to 3000.
+#
+# http_bind_port: 3000
+
 # Nodes will only communicate with each other if they know the same network id.
 #
 # network_id: "rhio-default-network-1"
