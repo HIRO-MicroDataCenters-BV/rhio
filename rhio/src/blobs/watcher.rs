@@ -177,7 +177,7 @@ impl S3Watcher {
                                     key = %completed_blob.key(),
                                     size = %completed_blob.size(),
                                     hash = %completed_blob.hash(),
-                                    bucket_name = %completed_blob.bucket_name(),
+                                    local_bucket_name = %completed_blob.local_bucket_name(),
                                     "detected finished blob import"
                                 );
 

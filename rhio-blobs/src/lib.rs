@@ -56,10 +56,14 @@ pub enum CompletedBlob {
 }
 
 impl CompletedBlob {
-    pub fn bucket_name(&self) -> BucketName {
+    pub fn local_bucket_name(&self) -> BucketName {
         match self {
-            CompletedBlob::Unsigned(UnsignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
-            CompletedBlob::Signed(SignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
+            CompletedBlob::Unsigned(UnsignedBlobInfo {
+                local_bucket_name, ..
+            }) => local_bucket_name.clone(),
+            CompletedBlob::Signed(SignedBlobInfo {
+                local_bucket_name, ..
+            }) => local_bucket_name.clone(),
         }
     }
 
