@@ -2,11 +2,12 @@ mod actor;
 pub mod config;
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::Blobs as BlobsHandler;
+use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
 use tokio::sync::{mpsc, oneshot};
@@ -70,8 +71,15 @@ impl Node {
             .sync(sync_protocol);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
+        let blobs_config = BlobsConfig {
+            max_concurrent_dials_per_hash: 1,
+            initial_retry_delay: Duration::from_secs(1),
+            ..Default::default()
+        };
+
         let (network, blobs_handler) =
-            BlobsHandler::from_builder(builder, blob_store.clone()).await?;
+            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config)
+                .await?;
         let blobs = Blobs::new(blob_store.clone(), blobs_handler);
 
         // 4. Start a service which watches the S3 buckets for changes.
