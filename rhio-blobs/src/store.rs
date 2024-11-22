@@ -120,6 +120,7 @@ impl S3Store {
             key: blob.key,
             size: blob.size,
             complete: false,
+            remote_bucket_name: Some(blob.bucket_name),
             public_key: Some(blob.public_key),
             signature: Some(blob.signature),
         };
@@ -138,7 +139,10 @@ impl S3Store {
             .map(|entry| match entry.meta.public_key {
                 Some(public_key) => CompletedBlob::Signed(SignedBlobInfo {
                     hash: entry.hash(),
-                    bucket_name: entry.bucket_name,
+                    bucket_name: entry
+                        .meta
+                        .remote_bucket_name
+                        .expect("all signed blobs should have a remote bucket name"),
                     key: entry.meta.key,
                     size: entry.meta.size,
                     public_key,

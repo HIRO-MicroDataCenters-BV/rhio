@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::s3_file::S3File;
 use crate::utils::{put_meta, put_outboard};
-use crate::{ObjectKey, ObjectSize, Paths};
+use crate::{BucketName, ObjectKey, ObjectSize, Paths};
 
 pub const META_CONTENT_TYPE: &str = "application/json";
 
@@ -27,6 +27,8 @@ pub struct BaoMeta {
     // hash with the current one in the store.
     pub complete: bool,
     pub key: ObjectKey,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_bucket_name: Option<BucketName>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<PublicKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -103,6 +105,7 @@ impl BaoFileHandle {
             // when sent over the wire in the p2p network instead.
             public_key: None,
             signature: None,
+            remote_bucket_name: None
         };
 
         put_meta(&bucket, &paths, &meta).await?;
@@ -199,6 +202,7 @@ mod tests {
             size: 1048,
             complete: false,
             key: String::from("path/to/file.txt"),
+            remote_bucket_name: Some("bucket-1".to_string()),
             public_key: Some(private_key.public_key()),
             signature: Some(signature),
         };
