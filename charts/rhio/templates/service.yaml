@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.network.type }}
+  type: {{ .Values.services.type }}
   ports:
     # the port for the p2p networking endpoint
     - port: {{ .Values.services.network.port }}
