@@ -105,7 +105,7 @@ impl BaoFileHandle {
             // when sent over the wire in the p2p network instead.
             public_key: None,
             signature: None,
-            remote_bucket_name: None
+            remote_bucket_name: None,
         };
 
         put_meta(&bucket, &paths, &meta).await?;
