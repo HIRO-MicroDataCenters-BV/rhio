@@ -113,7 +113,8 @@ publish:
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-in"
+    - remote_bucket: "bucket-out"
+      local_bucket: "bucket-in"
       public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
   nats_subjects:
     - subject: "foo.meta"
@@ -159,7 +160,8 @@ publish:
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-in"
+    - remote_bucket: "bucket-out"
+      local_bucket: "bucket-in"
       public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
   nats_subjects:
     - subject: "foo.*"
