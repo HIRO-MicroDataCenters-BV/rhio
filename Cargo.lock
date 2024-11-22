@@ -3100,7 +3100,7 @@ dependencies = [
 [[package]]
 name = "p2panda-blobs"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3128,7 +3128,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "blake3",
  "ciborium",
@@ -3143,7 +3143,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "anyhow",
  "flume",
@@ -3161,7 +3161,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3187,7 +3187,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "p2panda-core",
  "trait-variant",
@@ -3196,7 +3196,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.1.0"
-source = "git+https://github.com/p2panda/p2panda.git?rev=61385abab3464c179c0ac6737da17a10f5372e0f#61385abab3464c179c0ac6737da17a10f5372e0f"
+source = "git+https://github.com/p2panda/p2panda.git?rev=63558f1aadccb6f717838cf9ef35920e79db8d0e#63558f1aadccb6f717838cf9ef35920e79db8d0e"
 dependencies = [
  "async-trait",
  "futures",
