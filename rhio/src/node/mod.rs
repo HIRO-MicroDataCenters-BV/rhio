@@ -2,12 +2,11 @@ mod actor;
 pub mod config;
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
+use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
 use tokio::sync::{mpsc, oneshot};
@@ -16,7 +15,7 @@ use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
 use crate::blobs::watcher::S3Watcher;
-use crate::blobs::{store_from_config, Blobs};
+use crate::blobs::{blobs_config, store_from_config, Blobs};
 use crate::config::Config;
 use crate::nats::Nats;
 use crate::network::sync::RhioSyncProtocol;
@@ -25,9 +24,6 @@ use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
-
-const CONCURRENT_DIALS_PER_HASH: usize = 1;
-const INITIAL_RETRY_DELAY: u64 = 10;
 
 pub struct Node {
     node_id: PublicKey,
@@ -74,14 +70,8 @@ impl Node {
             .sync(sync_protocol, true);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
-        let blobs_config = BlobsConfig {
-            max_concurrent_dials_per_hash: CONCURRENT_DIALS_PER_HASH,
-            initial_retry_delay: Duration::from_secs(INITIAL_RETRY_DELAY),
-            ..Default::default()
-        };
-
         let (network, blobs_handler) =
-            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config)
+            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
                 .await?;
         let blobs = Blobs::new(blob_store.clone(), blobs_handler);
 

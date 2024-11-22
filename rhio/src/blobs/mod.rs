@@ -2,11 +2,12 @@ mod actor;
 pub mod watcher;
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::Blobs as BlobsHandler;
+use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
@@ -79,6 +80,18 @@ impl Blobs {
             .await?;
         reply_rx.await?;
         Ok(())
+    }
+}
+
+pub fn blobs_config() -> BlobsConfig {
+    BlobsConfig {
+        // Max. number of nodes we connect to for blob download.
+        //
+        // @TODO: This needs to be set to 1 as we're currently not allowed to write bytes
+        // out-of-order. See comment in `s3_file.rs` in `rhio-blobs` for more details.
+        max_concurrent_dials_per_hash: 1,
+        initial_retry_delay: Duration::from_secs(10),
+        ..Default::default()
     }
 }
 
