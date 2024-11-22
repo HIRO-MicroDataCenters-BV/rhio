@@ -31,7 +31,7 @@
 
 # Path to file containing hexadecimal-encoded Ed25519 private key. The key is
 # used to identify the node towards other nodes during network discovery and
-# replication. This key is _not_ used to create and sign data.
+# replication.
 #
 # private_key_path: "private-key.txt"
 
