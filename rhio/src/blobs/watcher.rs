@@ -8,6 +8,7 @@ use rhio_blobs::{
 };
 use s3::error::S3Error;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinHandle;
 use tracing::debug;
 
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
@@ -15,6 +16,7 @@ const POLL_FREQUENCY: Duration = Duration::from_secs(1);
 /// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects
 /// and their import status.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct S3Watcher {
     event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
     inner: Arc<RwLock<Inner>>,
@@ -25,6 +27,7 @@ struct WatchedObject {
     pub size: ObjectSize,
     pub bucket_name: BucketName,
     pub key: ObjectKey,
+    #[allow(dead_code)]
     pub import_state: ImportState,
 }
 
@@ -78,6 +81,7 @@ impl std::hash::Hash for WatchedObject {
 #[derive(Clone, Debug)]
 enum ImportState {
     NotImported,
+    #[allow(dead_code)]
     Imported(BlobHash),
 }
 
@@ -109,7 +113,7 @@ impl S3Watcher {
             inner: inner.clone(),
         };
 
-        tokio::spawn(async move {
+        let _result: JoinHandle<Result<(), _>> = tokio::spawn(async move {
             let mut first_run = true;
 
             loop {
@@ -250,8 +254,6 @@ impl S3Watcher {
 
                 first_run = false;
             }
-
-            Ok(())
         });
 
         watcher

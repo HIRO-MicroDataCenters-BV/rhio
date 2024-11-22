@@ -22,6 +22,7 @@ use crate::JoinErrToStr;
 #[derive(Debug)]
 pub struct Blobs {
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
+    #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
