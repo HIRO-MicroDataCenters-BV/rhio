@@ -84,7 +84,9 @@ jobs:
         with:
           # @TODO: don't push to docker for now
           # push: true
-          platforms: linux/amd64,linux/arm64
+          # @TODO: don't build form arm during development cos it's super slow
+          # platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: false
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
