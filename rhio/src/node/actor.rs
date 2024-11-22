@@ -359,20 +359,21 @@ impl NodeActor {
             .expect("signatures was already checked at this point and should be given");
 
         match &network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size) => {
+            NetworkPayload::BlobAnnouncement(hash, remote_bucket_name, key, size) => {
                 debug!(%hash, %key, %size, "received blob announcement");
 
                 // We're interested in blobs from a _specific_ public key and bucket. Filter out
                 // everything which is _not_ the right one.
                 if let Some(local_bucket_name) = self
                     .config
-                    .is_files_subscription_matching(&network_message.public_key, bucket_name)
+                    .is_files_subscription_matching(&network_message.public_key, remote_bucket_name)
                     .await
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name: local_bucket_name,
+                            local_bucket_name,
+                            remote_bucket_name: remote_bucket_name.clone(),
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
@@ -456,14 +457,18 @@ impl NodeActor {
 
         // Sanity: Make sure we're allowing publishing from this bucket. This should not be
         // necessary when the configuration's are sane, but we're checking it just to be sure.
-        if !self.config.is_bucket_publishable(&blob.bucket_name).await {
+        if !self
+            .config
+            .is_bucket_publishable(&blob.local_bucket_name)
+            .await
+        {
             warn!("tried to announce blob from an unpublishable S3 bucket");
             return Ok(());
         };
 
         debug!(
             hash = %blob.hash,
-            bucket_name = %blob.bucket_name,
+            bucket_name = %blob.local_bucket_name,
             key = %blob.key,
             size = %blob.size,
             "broadcast blob announcement"
@@ -472,7 +477,7 @@ impl NodeActor {
         // Announce the blob on the network and sign it with our key.
         let mut network_message = NetworkMessage::new_blob_announcement(
             blob.hash,
-            blob.bucket_name.clone(),
+            blob.local_bucket_name.clone(),
             blob.key,
             blob.size,
             &self.public_key,
@@ -481,7 +486,7 @@ impl NodeActor {
 
         let topic_id = Query::Files {
             public_key: self.public_key,
-            bucket_name: blob.bucket_name,
+            bucket_name: blob.local_bucket_name,
         }
         .id();
         self.broadcast(network_message, topic_id).await?;

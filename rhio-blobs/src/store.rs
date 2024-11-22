@@ -95,7 +95,7 @@ impl S3Store {
     /// - Upload both of these to the S3 bucket.
     /// - Insert an `Entry` into the index to represent this new blob>
     pub async fn import_object(&self, object: NotImportedObject) -> Result<()> {
-        let bucket = self.bucket(&object.bucket_name);
+        let bucket = self.bucket(&object.local_bucket_name);
         let (bao_file, meta) =
             BaoFileHandle::from_local_object(bucket, object.key, object.size).await?;
         let entry = Entry::new(bao_file, meta);

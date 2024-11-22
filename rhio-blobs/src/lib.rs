@@ -31,7 +31,7 @@ pub type ObjectKey = String;
 /// these new objects with a special "watcher" service, monitoring the S3 buckets.
 #[derive(Clone, Debug)]
 pub struct NotImportedObject {
-    pub bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
 }
