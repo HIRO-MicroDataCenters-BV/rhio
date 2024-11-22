@@ -26,6 +26,9 @@ use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
 
+const CONCURRENT_DIALS_PER_HASH: usize = 1;
+const INITIAL_RETRY_DELAY: u64 = 10;
+
 pub struct Node {
     node_id: PublicKey,
     direct_addresses: Vec<SocketAddr>,
@@ -72,8 +75,8 @@ impl Node {
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
         let blobs_config = BlobsConfig {
-            max_concurrent_dials_per_hash: 1,
-            initial_retry_delay: Duration::from_secs(1),
+            max_concurrent_dials_per_hash: CONCURRENT_DIALS_PER_HASH,
+            initial_retry_delay: Duration::from_secs(INITIAL_RETRY_DELAY),
             ..Default::default()
         };
 
