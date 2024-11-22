@@ -4130,7 +4130,6 @@ dependencies = [
  "figment",
  "futures-util",
  "hex",
- "iroh-blobs",
  "loole",
  "p2panda-blobs",
  "p2panda-core",
