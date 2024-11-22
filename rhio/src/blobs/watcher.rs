@@ -78,7 +78,6 @@ impl std::hash::Hash for WatchedObject {
 #[derive(Clone, Debug)]
 enum ImportState {
     NotImported,
-    #[allow(dead_code)]
     Imported(BlobHash),
 }
 

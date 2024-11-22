@@ -1,6 +1,6 @@
+#[allow(dead_code, unused, unused_imports)]
 mod blobs;
 pub mod config;
-#[allow(dead_code, unused, unused_imports)]
 pub mod http_server;
 mod nats;
 mod network;

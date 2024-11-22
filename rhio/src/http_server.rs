@@ -1,12 +1,8 @@
-use axum::{
-    http::{Response, StatusCode},
-    response::{Html, IntoResponse},
-    routing::get,
-    Router,
-};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::Router;
 use tracing::debug;
-
-use crate::config::DEFAULT_HTTP_BIND_PORT;
 
 pub async fn run(bind_port: u16) -> anyhow::Result<()> {
     // build our application with a route
