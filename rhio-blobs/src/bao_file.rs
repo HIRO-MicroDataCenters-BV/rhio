@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
@@ -42,7 +42,7 @@ impl BaoMeta {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        Ok(serde_json::from_slice(bytes)?)
+        Ok(serde_json::from_slice(bytes).context("parsing meta file")?)
     }
 }
 
