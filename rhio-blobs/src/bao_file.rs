@@ -42,7 +42,7 @@ impl BaoMeta {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        Ok(serde_json::from_slice(bytes).context("parsing meta file")?)
+        serde_json::from_slice(bytes).context("parsing meta file")
     }
 }
 
