@@ -371,7 +371,7 @@ impl NodeActor {
                 // everything which is _not_ the right one.
                 if self
                     .config
-                    .is_files_subscription_matching(&network_message.public_key, &bucket_name)
+                    .is_files_subscription_matching(&network_message.public_key, bucket_name)
                     .await
                     .is_some()
                 {
