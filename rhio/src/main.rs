@@ -10,7 +10,7 @@ use rhio::{
     StreamName, Subscription,
 };
 use rhio_core::{load_private_key_from_file, Subject};
-use tracing::{error, info};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
