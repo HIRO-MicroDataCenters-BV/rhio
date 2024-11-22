@@ -1,4 +1,4 @@
-name: Test and build rhio
+name: Build
 
 on:
   push:
