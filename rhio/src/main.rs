@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use figment::providers::Env;
 use p2panda_core::{PrivateKey, PublicKey};
-use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket, PRIVATE_KEY_ENV};
+use rhio::config::{
+    load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket, PRIVATE_KEY_ENV,
+};
 use rhio::tracing::setup_tracing;
 use rhio::{
     http_server, FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication,
