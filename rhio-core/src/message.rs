@@ -89,7 +89,7 @@ impl NetworkMessage {
         Self {
             payload: NetworkPayload::BlobAnnouncement(
                 signed_blob.hash,
-                signed_blob.bucket_name,
+                signed_blob.remote_bucket_name,
                 signed_blob.key,
                 signed_blob.size,
             ),
