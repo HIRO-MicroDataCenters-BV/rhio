@@ -168,15 +168,9 @@ async fn main() -> Result<()> {
         http_error_tx.send(result).expect("sending http error");
     });
 
-    loop {
-        tokio::select! {
-            Ok(Err(err)) = http_error_rx => {
-                bail!(err);
-            },
-            _ = tokio::signal::ctrl_c() => {
-                break;
-            }
-        }
+    tokio::select! {
+        Ok(Err(err)) = http_error_rx => bail!(err),
+        _ = tokio::signal::ctrl_c() => {},
     }
 
     info!("");
