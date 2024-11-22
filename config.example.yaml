@@ -106,17 +106,19 @@
 # subscribed to this data as well and can "forward" it to us.
 #
 # subscribe:
-#   # We're interested in any files from this particular node and would like
-#   # to store them in the our local S3 bucket.
+#   # We're interested in files from this particular node and their (remote) S3
+#   # bucket and would like to store them in the our local S3 bucket.
 #   #
 #   # NOTE: It is not possible to publish from and download into the same
-#   # bucket, also re-using the same bucket for multiple subscriptions is not
+#   # local bucket, also re-using the same bucket for multiple subscriptions is not
 #   # allowed. This might lead to undefined behaviour!
 #   #
 #   s3_buckets:
-#     - bucket: "bucket-in-1"
+#     - remote_bucket: "bucket-out-1"
+#       local_bucket: "bucket-in-1"
 #       public_key: "<public-key>"
-#     - bucket: "bucket-in-2"
+#     - remote_bucket: "bucket-out-2"
+#       local_bucket: "bucket-in-2"
 #       public_key: "<public-key>"
 #
 #   # We're interested in any NATS message from this particular node for the

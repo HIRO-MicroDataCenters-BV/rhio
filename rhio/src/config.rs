@@ -234,8 +234,10 @@ pub struct SubscribeConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RemoteS3Bucket {
-    #[serde(rename = "bucket")]
-    pub bucket_name: BucketName,
+    #[serde(rename = "remote_bucket")]
+    pub remote_bucket_name: BucketName,
+    #[serde(rename = "local_bucket")]
+    pub local_bucket_name: BucketName,
     pub public_key: PublicKey,
 }
 
@@ -299,8 +301,8 @@ nodes:
 
 publish:
     s3_buckets:
-        - "bucket-1"
-        - "bucket-2"
+        - "bucket-out-1"
+        - "bucket-out-2"
     nats_subjects:
         - subject: "workload.berlin.energy"
           stream: "workload"
@@ -309,9 +311,11 @@ publish:
 
 subscribe:
     s3_buckets:
-      - bucket: "bucket-1"
+      - local_bucket: "bucket-in-1"
+        remote_bucket: "bucket-out-1"
         public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
-      - bucket: "bucket-2"
+      - local_bucket: "bucket-in-2"
+        remote_bucket: "bucket-out-2"
         public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
     nats_subjects:
       - subject: "workload.*.energy"
@@ -371,7 +375,7 @@ subscribe:
                     },
                     log_level: None,
                     publish: Some(PublishConfig {
-                        s3_buckets: vec!["bucket-1".into(), "bucket-2".into()],
+                        s3_buckets: vec!["bucket-out-1".into(), "bucket-out-2".into()],
                         nats_subjects: vec![
                             LocalNatsSubject {
                                 stream_name: "workload".into(),
@@ -386,13 +390,15 @@ subscribe:
                     subscribe: Some(SubscribeConfig {
                         s3_buckets: vec![
                             RemoteS3Bucket {
-                                bucket_name: "bucket-1".to_string(),
+                                remote_bucket_name: "bucket-out-1".to_string(),
+                                local_bucket_name: "bucket-in-1".to_string(),
                                 public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
                             },
                             RemoteS3Bucket {
-                                bucket_name: "bucket-2".to_string(),
+                                remote_bucket_name: "bucket-out-2".to_string(),
+                                local_bucket_name: "bucket-in-2".to_string(),
                                 public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),

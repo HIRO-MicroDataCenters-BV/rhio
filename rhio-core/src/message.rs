@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use async_nats::{HeaderMap, Message as NatsMessage, Subject};
 use bytes::Bytes;
 use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
-use rhio_blobs::{BlobHash, ObjectKey, ObjectSize, SignedBlobInfo};
+use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, SignedBlobInfo};
 use serde::{Deserialize, Serialize};
 
 use crate::nats::{remove_custom_nats_headers, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
@@ -73,12 +73,13 @@ impl NetworkMessage {
 
     pub fn new_blob_announcement(
         hash: BlobHash,
+        bucket_name: BucketName,
         key: ObjectKey,
         size: ObjectSize,
         public_key: &PublicKey,
     ) -> Self {
         Self {
-            payload: NetworkPayload::BlobAnnouncement(hash, key, size),
+            payload: NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size),
             public_key: public_key.to_owned(),
             signature: None,
         }
@@ -88,6 +89,7 @@ impl NetworkMessage {
         Self {
             payload: NetworkPayload::BlobAnnouncement(
                 signed_blob.hash,
+                signed_blob.bucket_name,
                 signed_blob.key,
                 signed_blob.size,
             ),
@@ -150,9 +152,8 @@ impl NetworkMessage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum NetworkPayload {
-    // @TODO: Add creation timestamp.
     #[serde(rename = "blob")]
-    BlobAnnouncement(BlobHash, ObjectKey, ObjectSize),
+    BlobAnnouncement(BlobHash, BucketName, ObjectKey, ObjectSize),
 
     #[serde(rename = "nats")]
     NatsMessage(Subject, Bytes, Option<HeaderMap>),
@@ -175,6 +176,7 @@ mod tests {
         let mut message = NetworkMessage {
             payload: NetworkPayload::BlobAnnouncement(
                 BlobHash::new(b"test"),
+                "bucket-out".into(),
                 "path/to/my.file".into(),
                 5911,
             ),
