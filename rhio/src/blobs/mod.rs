@@ -113,12 +113,12 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
     if let Some(subscribe) = &config.subscribe {
         for remote_bucket in &subscribe.s3_buckets {
             let bucket = Bucket::new(
-                &remote_bucket.bucket_name,
+                &remote_bucket.local_bucket_name,
                 region.clone(),
                 credentials.clone(),
             )?
             .with_path_style();
-            buckets.insert(remote_bucket.bucket_name.clone(), *bucket);
+            buckets.insert(remote_bucket.local_bucket_name.clone(), *bucket);
         }
     }
 

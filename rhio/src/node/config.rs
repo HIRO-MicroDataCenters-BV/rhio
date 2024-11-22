@@ -84,10 +84,13 @@ impl NodeConfig {
     pub async fn is_files_subscription_matching(
         &self,
         public_key: &PublicKey,
+        bucket_name: &BucketName,
     ) -> Option<BucketName> {
         let existing = self.inner.read().await;
-        match is_files_subscription_matching(&existing.subscriptions, public_key) {
-            Some(Subscription::Files(subscription)) => Some(subscription.bucket_name.clone()),
+        match is_files_subscription_matching(&existing.subscriptions, public_key, bucket_name) {
+            Some(Subscription::Files(subscription)) => {
+                Some(subscription.remote_bucket_name.clone())
+            }
             _ => None,
         }
     }
@@ -160,10 +163,10 @@ impl NodeConfig {
                         bucket_name: existing_bucket_name,
                         ..
                     } => {
-                        if existing_bucket_name == &new_files_subscription.bucket_name {
+                        if existing_bucket_name == &new_files_subscription.local_bucket_name {
                             bail!(
-                            "bucket '{}' for subscribe config is already used in publish config",
-                            new_files_subscription.bucket_name.clone()
+                            "local bucket '{}' for subscribe config is already used in publish config",
+                            new_files_subscription.local_bucket_name.clone()
                         );
                         }
                     }

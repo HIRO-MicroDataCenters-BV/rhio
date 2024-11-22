@@ -91,12 +91,14 @@ async fn main() -> Result<()> {
 
     if let Some(subscribe) = config.subscribe {
         for RemoteS3Bucket {
-            bucket_name,
+            local_bucket_name,
+            remote_bucket_name,
             public_key: remote_public_key,
         } in subscribe.s3_buckets
         {
             node.subscribe(Subscription::Files(FilesSubscription {
-                bucket_name,
+                remote_bucket_name,
+                local_bucket_name,
                 public_key: remote_public_key,
             }))
             .await?;

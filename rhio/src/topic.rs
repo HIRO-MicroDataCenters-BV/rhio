@@ -20,11 +20,12 @@ pub enum Subscription {
     Messages(MessagesSubscription),
 }
 
-/// We're interested in any blobs from this particular peer ("authorized by it") and would like to
-/// store it in the given local S3 bucket.
+/// We're interested in blobs from this particular peer ("authorized by it") in their (remote) S3
+/// bucket and would like to store it in the given local S3 bucket.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesSubscription {
-    pub bucket_name: BucketName,
+    pub remote_bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub public_key: PublicKey,
 }
 
@@ -56,7 +57,7 @@ pub struct FilteredMessageStream {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Publication {
-    /// We're publishing any blob in this given local bucket.
+    /// We're publishing any blob from this given local bucket.
     Files {
         bucket_name: BucketName,
         public_key: PublicKey,
@@ -76,8 +77,9 @@ pub enum Publication {
 /// among peers.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Query {
-    /// We're interested in any blobs from this particular peer ("authorized by it").
+    /// We're interested in any blobs from this particular peer ("authorized by it") and bucket.
     Files {
+        bucket_name: BucketName,
         public_key: PublicKey,
     },
 
@@ -122,6 +124,7 @@ impl From<Subscription> for Query {
     fn from(value: Subscription) -> Self {
         match value {
             Subscription::Files(subscription) => Self::Files {
+                bucket_name: subscription.remote_bucket_name,
                 public_key: subscription.public_key,
             },
             Subscription::Messages(subscription) => {
@@ -148,7 +151,13 @@ impl From<Subscription> for Query {
 impl From<Publication> for Query {
     fn from(value: Publication) -> Self {
         match value {
-            Publication::Files { public_key, .. } => Self::Files { public_key },
+            Publication::Files {
+                public_key,
+                bucket_name,
+            } => Self::Files {
+                public_key,
+                bucket_name,
+            },
             Publication::Messages {
                 filtered_stream,
                 public_key,
@@ -164,8 +173,11 @@ impl From<Publication> for Query {
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Query::Files { public_key, .. } => {
-                write!(f, "S3 public_key=\"{}\"", {
+            Query::Files {
+                public_key,
+                bucket_name,
+            } => {
+                write!(f, "S3 public_key=\"{}\", bucket_name=\"{bucket_name}\"", {
                     let mut public_key_str = public_key.to_string();
                     public_key_str.truncate(6);
                     public_key_str
@@ -246,11 +258,14 @@ pub fn is_subject_matching(
 pub fn is_files_subscription_matching<'a>(
     subscriptions: &'a Vec<Subscription>,
     given_public_key: &PublicKey,
+    given_bucket_name: &BucketName,
 ) -> Option<&'a Subscription> {
     for subscription in subscriptions {
         match subscription {
             Subscription::Files(expected) => {
-                if &expected.public_key == given_public_key {
+                if &expected.public_key == given_public_key
+                    && &expected.remote_bucket_name == given_bucket_name
+                {
                     return Some(subscription);
                 } else {
                     continue;

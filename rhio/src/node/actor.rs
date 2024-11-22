@@ -364,20 +364,21 @@ impl NodeActor {
             .expect("signatures was already checked at this point and should be given");
 
         match &network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, key, size) => {
+            NetworkPayload::BlobAnnouncement(hash, bucket_name, key, size) => {
                 debug!(%hash, %key, %size, "received blob announcement");
 
-                // We're interested in blobs from a _specific_ public key. Filter out everything
-                // which is _not_ the right author.
-                if let Some(bucket_name) = self
+                // We're interested in blobs from a _specific_ public key and bucket. Filter out
+                // everything which is _not_ the right one.
+                if self
                     .config
-                    .is_files_subscription_matching(&network_message.public_key)
+                    .is_files_subscription_matching(&network_message.public_key, &bucket_name)
                     .await
+                    .is_some()
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name,
+                            bucket_name: bucket_name.clone(),
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
@@ -450,8 +451,6 @@ impl NodeActor {
 
     /// Handler when blob store finished importing new S3 object.
     async fn on_import_finished(&self, blob: CompletedBlob) -> Result<()> {
-        // @TODO: Handle state changes after importing remote blob from here.
-
         // This method can be called from both importing new local S3 objects or downloading remote
         // blobs from other peers.
         //
@@ -476,12 +475,18 @@ impl NodeActor {
         );
 
         // Announce the blob on the network and sign it with our key.
-        let mut network_message =
-            NetworkMessage::new_blob_announcement(blob.hash, blob.key, blob.size, &self.public_key);
+        let mut network_message = NetworkMessage::new_blob_announcement(
+            blob.hash,
+            blob.bucket_name.clone(),
+            blob.key,
+            blob.size,
+            &self.public_key,
+        );
         network_message.sign(&self.private_key);
 
         let topic_id = Query::Files {
             public_key: self.public_key,
+            bucket_name: blob.bucket_name,
         }
         .id();
         self.broadcast(network_message, topic_id).await?;
