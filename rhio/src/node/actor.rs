@@ -234,7 +234,7 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Application decided to subscribe to NATS messages or blobs from an author.
+    /// Application decided to subscribe to NATS messages or S3 objects from an author's bucket.
     ///
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
@@ -259,7 +259,13 @@ impl NodeActor {
                 message,
                 is_init,
             } => {
-                self.on_nats_message(is_init, topic_id, message).await?;
+                // Sanity check.
+                assert!(
+                    !is_init,
+                    "we should never receive old NATS messages on this channel"
+                );
+
+                self.on_nats_message(topic_id, message).await?;
             }
             JetStreamEvent::Failed {
                 stream_name,
@@ -285,18 +291,7 @@ impl NodeActor {
     /// These consumers have been set up based on our publication configuration, we can be sure
     /// that we _want_ to publish the messages coming via this channel, no further checks are
     /// required.
-    async fn on_nats_message(
-        &mut self,
-        is_init: bool,
-        topic_id: [u8; 32],
-        message: NatsMessage,
-    ) -> Result<()> {
-        // Sanity check.
-        assert!(
-            !is_init,
-            "we should never receive old NATS messages on this channel"
-        );
-
+    async fn on_nats_message(&mut self, topic_id: [u8; 32], message: NatsMessage) -> Result<()> {
         // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
         // right after we've ingested them on the same stream.
         //
