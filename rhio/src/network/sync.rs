@@ -167,7 +167,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                         // Filter out all blobs which are not from that peer and bucket.
                         if blob.public_key != requested_public_key
-                            && blob.bucket_name != requested_bucket_name
+                            && blob.remote_bucket_name != requested_bucket_name
                         {
                             return None;
                         }
@@ -450,7 +450,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             }
 
                             // Remote peer did not ask for this bucket.
-                            if requested_bucket_name != &blob.bucket_name {
+                            if requested_bucket_name != &blob.local_bucket_name {
                                 continue;
                             }
                         }
@@ -461,7 +461,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             }
 
                             // Remote peer did not ask for this bucket.
-                            if requested_bucket_name != &blob.bucket_name {
+                            if requested_bucket_name != &blob.remote_bucket_name {
                                 continue;
                             }
                         }
@@ -474,7 +474,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                                 CompletedBlob::Unsigned(blob) => {
                                     let mut signed_msg = NetworkMessage::new_blob_announcement(
                                         blob.hash,
-                                        blob.bucket_name.clone(),
+                                        blob.local_bucket_name.clone(),
                                         blob.key.clone(),
                                         blob.size,
                                         &self.public_key,

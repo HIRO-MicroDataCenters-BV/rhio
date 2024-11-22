@@ -106,7 +106,8 @@ impl BlobsActor {
     async fn on_download_blob(&mut self, blob: SignedBlobInfo) -> Result<()> {
         let span = span!(Level::DEBUG, "download",
             hash = %blob.hash,
-            bucket_name = %blob.bucket_name,
+            local_bucket_name = %blob.local_bucket_name,
+            remote_bucket_name = %blob.remote_bucket_name,
             key = %blob.key,
             size = %blob.size,
         );

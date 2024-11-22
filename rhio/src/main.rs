@@ -6,8 +6,8 @@ use rhio::config::{load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Buc
 use rhio::http_server::HTTP_HEALTH_ROUTE;
 use rhio::tracing::setup_tracing;
 use rhio::{
-    http_server, FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication,
-    StreamName, Subscription,
+    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
+    Subscription,
 };
 use rhio_core::{load_private_key_from_file, Subject};
 use tracing::info;
@@ -147,9 +147,10 @@ async fn main() -> Result<()> {
         }
     };
 
-    tokio::spawn(http_server::run(config.node.http_bind_port))
-        .await?
-        .context("failed to start http server with health endpoint")?;
+    // @TODO: Disable HTTP server for now as it's blocking the runtime.
+    // tokio::spawn(http_server::run(config.node.http_bind_port))
+    //     .await?
+    //     .context("failed to start http server with health endpoint")?;
 
     tokio::signal::ctrl_c().await?;
 

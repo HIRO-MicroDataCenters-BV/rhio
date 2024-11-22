@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::s3_file::S3File;
 use crate::utils::{put_meta, put_outboard};
-use crate::{ObjectKey, ObjectSize, Paths};
+use crate::{BucketName, ObjectKey, ObjectSize, Paths};
 
 pub const META_CONTENT_TYPE: &str = "application/json";
 
@@ -27,6 +27,9 @@ pub struct BaoMeta {
     // hash with the current one in the store.
     pub complete: bool,
     pub key: ObjectKey,
+    // Name of the S3 bucket where this object originated from. We need to keep this information
+    // around to allow our node to "foward" data during sync.
+    pub remote_bucket_name: BucketName,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_key: Option<PublicKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,7 +42,7 @@ impl BaoMeta {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        Ok(serde_json::from_slice(bytes)?)
+        serde_json::from_slice(bytes).context("parsing meta file")
     }
 }
 
@@ -103,6 +106,8 @@ impl BaoFileHandle {
             // when sent over the wire in the p2p network instead.
             public_key: None,
             signature: None,
+            // From the perspective of an remote node our local bucket name is their remote one!
+            remote_bucket_name: bucket.name(),
         };
 
         put_meta(&bucket, &paths, &meta).await?;
@@ -199,6 +204,7 @@ mod tests {
             size: 1048,
             complete: false,
             key: String::from("path/to/file.txt"),
+            remote_bucket_name: "bucket-1".to_string(),
             public_key: Some(private_key.public_key()),
             signature: Some(signature),
         };

@@ -31,7 +31,7 @@ pub type ObjectKey = String;
 /// these new objects with a special "watcher" service, monitoring the S3 buckets.
 #[derive(Clone, Debug)]
 pub struct NotImportedObject {
-    pub bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
 }
@@ -56,10 +56,14 @@ pub enum CompletedBlob {
 }
 
 impl CompletedBlob {
-    pub fn bucket_name(&self) -> BucketName {
+    pub fn local_bucket_name(&self) -> BucketName {
         match self {
-            CompletedBlob::Unsigned(UnsignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
-            CompletedBlob::Signed(SignedBlobInfo { bucket_name, .. }) => bucket_name.clone(),
+            CompletedBlob::Unsigned(UnsignedBlobInfo {
+                local_bucket_name, ..
+            }) => local_bucket_name.clone(),
+            CompletedBlob::Signed(SignedBlobInfo {
+                local_bucket_name, ..
+            }) => local_bucket_name.clone(),
         }
     }
 
@@ -92,7 +96,7 @@ impl CompletedBlob {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnsignedBlobInfo {
     pub hash: BlobHash,
-    pub bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
 }
@@ -102,7 +106,10 @@ pub struct UnsignedBlobInfo {
 #[derive(Clone, Debug)]
 pub struct SignedBlobInfo {
     pub hash: BlobHash,
-    pub bucket_name: BucketName,
+    // Name of the bucket where we store this S3 object locally.
+    pub local_bucket_name: BucketName,
+    // Name of the bucket where this S3 object originated from.
+    pub remote_bucket_name: BucketName,
     pub key: ObjectKey,
     pub size: ObjectSize,
     pub public_key: PublicKey,
