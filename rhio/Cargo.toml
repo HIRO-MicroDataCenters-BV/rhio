@@ -24,10 +24,10 @@ figment = { version = "0.10.19", features = ["env", "yaml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
 loole = "0.4.0"
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e", default-features = false }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e", features = ["cbor"], default-features = false }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "6b7fa5e228010d879a0542339d62de8806312105" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "6b7fa5e228010d879a0542339d62de8806312105" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "6b7fa5e228010d879a0542339d62de8806312105", default-features = false }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "6b7fa5e228010d879a0542339d62de8806312105", features = ["cbor"], default-features = false }
 rand = "0.8.5"
 rhio-blobs = { path = "../rhio-blobs" }
 rhio-core = { path = "../rhio-core" }
