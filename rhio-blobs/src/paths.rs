@@ -13,9 +13,8 @@ pub struct Paths {
 
 impl Paths {
     pub fn new(path: &str) -> Self {
-        Self {
-            path: path.to_string(),
-        }
+        let path = path.to_string().replace(RHIO_PREFIX, "");
+        Self { path }
     }
 
     pub fn from_meta(path: &str) -> Self {
