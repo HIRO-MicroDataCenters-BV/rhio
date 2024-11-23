@@ -112,10 +112,10 @@ impl S3Store {
     ///
     /// No checks take place on the integrity of the signature, we assume that this has been
     /// handled before.
-    pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
+    pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<()> {
         // If we already "discovered" this blob then we don't need to do anything.
         if self.read_lock().await.entries.contains_key(&blob.hash) {
-            return Ok(None);
+            return Ok(());
         };
 
         let bucket = self.bucket(&blob.local_bucket_name);
@@ -132,7 +132,9 @@ impl S3Store {
         put_meta(&bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), blob.size);
         let entry = Entry::new(bao_file, meta);
-        Ok(self.write_lock().await.entries.insert(blob.hash, entry))
+        self.write_lock().await.entries.insert(blob.hash, entry);
+
+        Ok(())
     }
 
     /// Query the store for all complete blobs.
