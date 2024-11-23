@@ -317,7 +317,7 @@ impl NodeActor {
     ///
     /// These events can come from either gossip broadcast or sync sessions with other peers.
     async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
-        let (bytes, delivered_from) = match event {
+        let (bytes, delivered_from, is_gossip) = match event {
             FromNetwork::GossipMessage {
                 bytes,
                 delivered_from,
@@ -327,7 +327,7 @@ impl NodeActor {
                     bytes = bytes.len(),
                     "received network message"
                 );
-                (bytes, delivered_from)
+                (bytes, delivered_from, true)
             }
             FromNetwork::SyncMessage {
                 header,
@@ -339,7 +339,7 @@ impl NodeActor {
                     bytes = header.len(),
                     "received network message"
                 );
-                (header, delivered_from)
+                (header, delivered_from, false)
             }
         };
 
@@ -360,6 +360,11 @@ impl NodeActor {
 
         match &network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, remote_bucket_name, key, size) => {
+                if is_gossip {
+                    debug!(%hash, %key, %size, "ignoring blob announcement received via gossip");
+                    return Ok(());
+                }
+
                 debug!(%hash, %key, %size, "received blob announcement");
 
                 // We're interested in blobs from a _specific_ public key and bucket. Filter out
