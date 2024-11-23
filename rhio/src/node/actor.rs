@@ -361,7 +361,7 @@ impl NodeActor {
         match &network_message.payload {
             NetworkPayload::BlobAnnouncement(hash, remote_bucket_name, key, size) => {
                 if is_gossip {
-                    debug!(%hash, %key, %size, "ignoring blob announcement received via gossip");
+                    trace!(%hash, %key, %size, "ignoring blob announcement received via gossip");
                     return Ok(());
                 }
 
