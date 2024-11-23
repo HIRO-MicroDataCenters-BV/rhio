@@ -115,7 +115,7 @@ impl S3Store {
     pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
         // If we already "discovered" this blob then we don't need to do anything.
         if self.read_lock().await.entries.contains_key(&blob.hash) {
-            return Ok(None)
+            return Ok(None);
         };
 
         let bucket = self.bucket(&blob.local_bucket_name);
