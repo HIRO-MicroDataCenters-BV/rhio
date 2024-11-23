@@ -1,3 +1,5 @@
+pub const RHIO_PREFIX: &str = ".rhio/";
+
 pub const META_SUFFIX: &str = ".rhio.json";
 
 pub const OUTBOARD_SUFFIX: &str = ".rhio.bao4";
@@ -25,10 +27,10 @@ impl Paths {
     }
 
     pub fn meta(&self) -> String {
-        format!("{}{META_SUFFIX}", self.path)
+        format!("{RHIO_PREFIX}{}{META_SUFFIX}", self.path)
     }
 
     pub fn outboard(&self) -> String {
-        format!("{}{OUTBOARD_SUFFIX}", self.path)
+        format!("{RHIO_PREFIX}{}{OUTBOARD_SUFFIX}", self.path)
     }
 }
