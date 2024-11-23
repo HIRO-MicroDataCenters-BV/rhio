@@ -113,6 +113,11 @@ impl S3Store {
     /// No checks take place on the integrity of the signature, we assume that this has been
     /// handled before.
     pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
+        // If we already "discovered" this blob then we don't need to do anything.
+        if self.read_lock().await.entries.contains_key(&blob.hash) {
+            return Ok(None)
+        };
+
         let bucket = self.bucket(&blob.local_bucket_name);
         let paths = Paths::new(&blob.key);
         let meta = BaoMeta {
