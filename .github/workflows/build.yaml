@@ -52,6 +52,9 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+        # @TODO: don't build form arm during development cos it's super slow
+        # with:
+        #   platforms: linux/amd64, linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -80,14 +83,13 @@ jobs:
           tags: ${{ env.DOCKER_TAGS }}
 
       - name: Build and push docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v5
         with:
           push: true
           # @TODO: don't build form arm during development cos it's super slow
           # platforms: linux/amd64,linux/arm64
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
-          context: "${{ github.workspace }}"
 
       - name: Configure Git
         run: |
