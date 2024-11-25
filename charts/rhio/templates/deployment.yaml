@@ -57,7 +57,7 @@ spec:
             - name: "SECRET_KEY"
               valueFrom:
                 secretKeyRef:
-                  key:  key
+                  key:  secretKey
                   name: {{ .Release.Name }}-key
       volumes:
         - name: configuration

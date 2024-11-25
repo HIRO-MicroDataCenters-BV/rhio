@@ -8,6 +8,7 @@ image:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
+secretKey: ""
 
 serviceAccount:
   create: true
