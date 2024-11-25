@@ -3,13 +3,13 @@
 set -o errexit
 set -o nounset
 
-ROOT="${GITHUB_WORKSPACE}"
+ROOT="${GITHUB_WORKSPACE:?Github workspace is not set.}"
 CHART_NAME="rhio"
 
-VERSION_APP_PATH="./VERSION_APP"
-VERSION_CHART_PATH="./VERSION_CHART"
-VERSION_DOCKER_PATH="./VERSION_DOCKER"
-DOCKER_IMAGES_PATH="./DOCKER_IMAGES"
+VERSION_APP_PATH="${ROOT}/VERSION"
+VERSION_CHART_PATH="${ROOT}/VERSION_CHART"
+VERSION_DOCKER_PATH="${ROOT}/VERSION_DOCKER"
+DOCKER_IMAGES_PATH="${ROOT}/DOCKER_IMAGES"
 
 #                                         App                           Docker                            Chart
 # branch, pr (e.g. "main", "mybranch"):   4.2.0.dev3-mybranch-411fa4aa  4.2.0-dev.3.mybranch.411fa4aa     4.2.0-dev.3.mybranch.411fa4aa
