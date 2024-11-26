@@ -68,7 +68,7 @@
 # ﾟ･｡+☆
 
 # List of known node addresses we want to connect to directly. Addresses have
-# to be IP addresses and must include a port number.
+# to be FQDN's (absolute domain names) or IP addresses with a port number.
 #
 # NOTE: Make sure that nodes mentioned in this list are directly reachable
 # (they need to be hosted with a static IP address).
@@ -76,6 +76,7 @@
 # nodes:
 #   - public_key: "<public-key>"
 #     endpoints:
+#       - "staging.rhio.org"
 #       - "192.168.178.100:9102"
 #       - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9103"
 
