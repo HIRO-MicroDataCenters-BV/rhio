@@ -49,7 +49,7 @@ impl Node {
         };
 
         for node in &config.node.known_nodes {
-            // Resolve FQND strings into IP addresses.
+            // Resolve FQDN strings into IP addresses.
             let mut direct_addresses = Vec::new();
             for addr in &node.direct_addresses {
                 for resolved in tokio::net::lookup_host(addr).await? {
