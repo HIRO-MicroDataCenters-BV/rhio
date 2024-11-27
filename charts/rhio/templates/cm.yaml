@@ -6,4 +6,4 @@ metadata:
     {{- include "app.labels" . | nindent 4 }}
 data:
   config.yaml: |-
-  {{- .Values.settings | toYaml | nindent 4 }}
+  {{- .Values.configuration | .Files.Get | nindent 4 }}
