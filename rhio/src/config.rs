@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -213,7 +212,7 @@ impl Default for NodeConfig {
 pub struct KnownNode {
     pub public_key: PublicKey,
     #[serde(rename = "endpoints")]
-    pub direct_addresses: Vec<SocketAddr>,
+    pub direct_addresses: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -296,6 +295,7 @@ nats:
 nodes:
     - public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
       endpoints:
+        - "some.hostname.org."
         - "192.168.178.100:1112"
         - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
 
@@ -364,6 +364,7 @@ subscribe:
                                     .parse()
                                     .unwrap(),
                             direct_addresses: vec![
+                                "some.hostname.org.".into(),
                                 "192.168.178.100:1112".parse().unwrap(),
                                 "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
                                     .parse()

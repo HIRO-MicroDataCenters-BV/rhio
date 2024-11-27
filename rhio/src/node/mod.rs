@@ -49,11 +49,16 @@ impl Node {
         };
 
         for node in &config.node.known_nodes {
-            network_config.direct_node_addresses.push((
-                node.public_key,
-                node.direct_addresses.clone(),
-                None,
-            ));
+            // Resolve FQDN strings into IP addresses.
+            let mut direct_addresses = Vec::new();
+            for addr in &node.direct_addresses {
+                for resolved in tokio::net::lookup_host(addr).await? {
+                    direct_addresses.push(resolved);
+                }
+            }
+            network_config
+                .direct_node_addresses
+                .push((node.public_key, direct_addresses, None));
         }
 
         let blob_store = store_from_config(&config).await?;
