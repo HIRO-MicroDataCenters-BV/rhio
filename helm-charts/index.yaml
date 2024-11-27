@@ -3,12 +3,12 @@ entries:
   rhio:
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2024-11-27T15:06:15.826130388Z"
+    created: "2024-11-27T16:29:36.912260461Z"
     description: peer-to-peer message stream and blob storage solution
-    digest: 727cb866ceeb2b1a0c57002e3965e9fe171ea2c48f3a2ba30a19088b91b601f4
+    digest: 75d8b33663951915b5349ed7d0871ce63cbdbf9ba8a15c093dae3891466a5568
     name: rhio
     type: application
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.0.tgz
     version: 0.1.0
-generated: "2024-11-27T15:06:15.825556936Z"
+generated: "2024-11-27T16:29:36.91182208Z"
