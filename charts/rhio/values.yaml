@@ -111,7 +111,7 @@ configuration:
     # We're publishing any NATS message matching this NATS subject (wildcards
     # supported) coming from our local JetStream.
     #
-    nats_subjects:
+    nats_subjects: []
     #     - subject: "workload.berlin.energy"
     #       stream: "workload"
     #     - subject: "workload.rotterdam.energy"
