@@ -9,14 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Improved NATS message replication logic and configuration
-    - [#86](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/86)
-    - [#82](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/82)
-    - [#75](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/75)
-- Improved S3 objects replication logic and configuration
-    - [#92](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/92)
-    - [#79](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/79)
-    - [#74](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/74)
+- Improved NATS message replication logic and configuration ([#86](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/86) [#82](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/82), [#75](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/75))
+- Improved S3 objects replication logic and configuration ([#92](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/92), [#79](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/79), [#74](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/74))
 - Direct p2p sync between S3 buckets with bao-encoding ([#73](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/73))
 - Resolve FQDN endpoints in config ([#96](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/96))
 - HTTP `/health` endpoint ([#90](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/90))
