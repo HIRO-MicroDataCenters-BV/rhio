@@ -91,7 +91,7 @@ impl S3Store {
             let mut dangling_entries = Vec::new();
             for (hash, entry) in &self.read_lock().await.entries {
                 if !detected_hashes.contains(hash) {
-                    dangling_entries.push((hash.clone(), entry.clone()));
+                    dangling_entries.push((*hash, entry.clone()));
                 }
             }
 
@@ -100,10 +100,10 @@ impl S3Store {
 
                 // Remove files from S3 bucket.
                 let paths = Paths::from_meta(&entry.meta.key);
-                if let Err(err) = remove_outboard(&bucket, &paths).await {
+                if let Err(err) = remove_outboard(bucket, &paths).await {
                     warn!(key = %entry.meta.key, "failed removing outboard file: {err}");
                 }
-                if let Err(err) = remove_meta(&bucket, &paths).await {
+                if let Err(err) = remove_meta(bucket, &paths).await {
                     warn!(key = %entry.meta.key, "failed removing meta file: {err}");
                 }
 
