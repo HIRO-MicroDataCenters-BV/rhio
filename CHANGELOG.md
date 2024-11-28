@@ -16,11 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP `/health` endpoint ([#90](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/90))
 - Kubernetes Support ([#91](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/91))
 
-## Changed
+### Changed
 
 - De-duplicate topic id's for gossip overlays ([#86](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/86))
+- Removed FFI bindings for Python for now
+- Removed `rhio-client` as it is not required anymore
 
-## Fixed
+### Fixed
 
 - Fix NATS consumers after message sync changes ([#89](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/89))
 - Fix remote bucket logic after S3 sync changes ([#94](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/94))
