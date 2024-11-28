@@ -17,6 +17,9 @@
 #
 # bind_port: 9102
 
+# 
+# http_bind_port: 3000
+#
 # Nodes will only communicate with each other if they know the same network id.
 #
 # network_id: "rhio-default-network-1"

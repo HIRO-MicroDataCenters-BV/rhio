@@ -31,18 +31,29 @@ services:
     port: 9102
   # the port for the HTTP health endpoint
   health:
-    port: 3000
+    port: 8080
 
 resources: {}
 
+
 livenessProbe:
+  failureThreshold: 3
   httpGet:
     path: /health
-    port: 3000
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+
 readinessProbe:
   httpGet:
     path: /health
-    port: 3000
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
 
 configuration:
   # NETWORK
@@ -51,6 +62,10 @@ configuration:
   # When port is taken the node will automatically pick a random, free port.
   #
   bind_port: 9102
+
+  # HTTP port for health checks and metrics.
+  #
+  http_bind_port: 8080
 
   # Nodes will only communicate with each other if they know the same network id.
   #
