@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ use tracing::{trace, warn};
 
 use crate::bao_file::{BaoFileHandle, BaoMeta};
 use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
-use crate::utils::{get_meta, get_outboard, put_meta};
+use crate::utils::{get_meta, get_outboard, put_meta, remove_meta, remove_outboard};
 use crate::{
     BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectSize, SignedBlobInfo,
     UnsignedBlobInfo,
@@ -57,9 +57,13 @@ impl S3Store {
     ///
     /// This method looks at all meta files present on the configured S3 buckets and establishes an
     /// index.
-    async fn init(&mut self) -> Result<()> {
+    pub async fn init(&mut self) -> Result<()> {
         for bucket in &self.buckets {
             let results = bucket.list(NO_PREFIX, None).await?;
+
+            // Insert all detected S3 objects into the in-memory "entries" database whenever
+            // they've been already imported.
+            let mut detected_hashes = HashSet::new();
             for list in results {
                 for object in list.contents {
                     if object.key.ends_with(META_SUFFIX) {
@@ -75,9 +79,36 @@ impl S3Store {
                         let bao_file =
                             BaoFileHandle::new(bucket.clone(), paths, outboard, meta.size);
                         let entry = Entry::new(bao_file, meta);
+                        detected_hashes.insert(entry.hash());
                         self.write_lock().await.entries.insert(entry.hash(), entry);
                     };
                 }
+            }
+
+            // Remove all entries from the in-memory store and meta files from the S3 bucket when
+            // there's no equivalent S3 object in the bucket anymore. This can happen if a user
+            // manually just removes or edits that file.
+            let mut dangling_entries = Vec::new();
+            for (hash, entry) in &self.read_lock().await.entries {
+                if !detected_hashes.contains(hash) {
+                    dangling_entries.push((hash.clone(), entry.clone()));
+                }
+            }
+
+            for (hash, entry) in dangling_entries {
+                trace!(%hash, key = %entry.meta.key, bucket_name = %entry.bucket_name, "detected dangling blob entry");
+
+                // Remove files from S3 bucket.
+                let paths = Paths::from_meta(&entry.meta.key);
+                if let Err(err) = remove_outboard(&bucket, &paths).await {
+                    warn!(key = %entry.meta.key, "failed removing outboard file: {err}");
+                }
+                if let Err(err) = remove_meta(&bucket, &paths).await {
+                    warn!(key = %entry.meta.key, "failed removing meta file: {err}");
+                }
+
+                // Remove entry from in-memory store.
+                self.write_lock().await.entries.remove(&hash);
             }
         }
 
