@@ -8,7 +8,9 @@ use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
+use p2panda_net::{
+    Config as NetworkConfig, NetworkBuilder, ResyncConfiguration, SyncConfiguration,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
@@ -70,9 +72,12 @@ impl Node {
             private_key.clone(),
         );
 
+        let sync_conf =
+            SyncConfiguration::new(sync_protocol).resync(ResyncConfiguration::default());
+
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())
-            .sync(sync_protocol, true);
+            .sync(sync_conf);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
         let (network, blobs_handler) =
