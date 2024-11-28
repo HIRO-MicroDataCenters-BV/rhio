@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Direct p2p sync between S3 buckets with bao-encoding ([#73](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/73))
 - Resolve FQDN endpoints in config ([#96](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/96))
 - HTTP `/health` endpoint ([#90](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/90))
+- Kubernetes Support ([#91](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/91))
 
 ## Changed
 
