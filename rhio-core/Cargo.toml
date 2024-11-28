@@ -13,7 +13,7 @@ async-nats = "0.37.0"
 bytes = "1.7.1"
 ciborium = "0.2.2"
 hex = "0.4.3"
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "6b7fa5e228010d879a0542339d62de8806312105" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "f31b37397c854d9e6cfb450c1b6ca372ddc1f0eb" }
 rhio-blobs = { path = "../rhio-blobs" }
 serde = { version = "1.0.209", features = ["derive"] }
 
