@@ -51,7 +51,7 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: configuration
-              mountPath: /code/config.yaml
+              mountPath: /etc/rhio/config.yaml
               subPath: config.yaml
           env:          
             - name: "SECRET_KEY"
