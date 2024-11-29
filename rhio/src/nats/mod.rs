@@ -36,7 +36,7 @@ impl Nats {
                 ))?;
 
         // Start the main NATS JetStream actor to dynamically maintain "stream consumers".
-        let (nats_actor_tx, nats_actor_rx) = mpsc::channel(64);
+        let (nats_actor_tx, nats_actor_rx) = mpsc::channel(512);
         let nats_actor = NatsActor::new(nats_client, nats_actor_rx);
 
         let actor_handle = tokio::task::spawn(async move {

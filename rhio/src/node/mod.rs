@@ -86,7 +86,7 @@ impl Node {
         let blobs = Blobs::new(blob_store.clone(), blobs_handler);
 
         // 4. Start a service which watches the S3 buckets for changes.
-        let (watcher_tx, watcher_rx) = mpsc::channel(256);
+        let (watcher_tx, watcher_rx) = mpsc::channel(512);
         let watcher = S3Watcher::new(blob_store, watcher_tx);
 
         // 5. Move all networking logic into dedicated "p2panda" actor, dealing with p2p
@@ -100,7 +100,7 @@ impl Node {
 
         // 6. Finally spawn actor which orchestrates the "business logic", with the help of the
         //    blob store, p2panda network and NATS JetStream consumers.
-        let (node_actor_tx, node_actor_rx) = mpsc::channel(256);
+        let (node_actor_tx, node_actor_rx) = mpsc::channel(512);
         let node_actor = NodeActor::new(
             node_config,
             private_key,

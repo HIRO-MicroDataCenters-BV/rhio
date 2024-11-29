@@ -24,7 +24,7 @@ pub struct Panda {
 
 impl Panda {
     pub fn new(network: Network<Query>) -> Self {
-        let (panda_actor_tx, panda_actor_rx) = mpsc::channel(256);
+        let (panda_actor_tx, panda_actor_rx) = mpsc::channel(512);
         let panda_actor = PandaActor::new(network, panda_actor_rx);
 
         let actor_handle = tokio::task::spawn(async move {

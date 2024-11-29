@@ -29,7 +29,7 @@ pub struct Blobs {
 
 impl Blobs {
     pub fn new(blob_store: S3Store, blobs_handler: BlobsHandler<Query, S3Store>) -> Self {
-        let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(256);
+        let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(512);
         let blobs_actor = BlobsActor::new(blob_store.clone(), blobs_handler, blobs_actor_rx);
 
         let pool = LocalPoolHandle::new(1);
