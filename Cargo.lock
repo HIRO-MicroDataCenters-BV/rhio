@@ -4118,7 +4118,7 @@ dependencies = [
 
 [[package]]
 name = "rhio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -4149,7 +4149,7 @@ dependencies = [
 
 [[package]]
 name = "rhio-blobs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4168,7 +4168,7 @@ dependencies = [
 
 [[package]]
 name = "rhio-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-nats",
