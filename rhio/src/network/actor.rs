@@ -3,7 +3,7 @@ use std::collections::{hash_map, HashMap};
 use anyhow::{bail, Result};
 use p2panda_net::network::{FromNetwork, ToNetwork};
 use p2panda_net::{Network, TopicId};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{error, trace};
 
 use crate::topic::Query;
@@ -16,7 +16,7 @@ pub enum ToPandaActor {
     },
     Subscribe {
         query: Query,
-        reply: oneshot::Sender<Option<broadcast::Receiver<FromNetwork>>>,
+        reply: oneshot::Sender<Option<mpsc::Receiver<FromNetwork>>>,
     },
     Shutdown {
         reply: oneshot::Sender<()>,
@@ -111,10 +111,7 @@ impl PandaActor {
         }
     }
 
-    async fn on_subscribe(
-        &mut self,
-        query: Query,
-    ) -> Result<Option<broadcast::Receiver<FromNetwork>>> {
+    async fn on_subscribe(&mut self, query: Query) -> Result<Option<mpsc::Receiver<FromNetwork>>> {
         let topic_id = query.id();
 
         if query.is_no_sync() && self.topic_gossip_tx_map.contains_key(&topic_id) {

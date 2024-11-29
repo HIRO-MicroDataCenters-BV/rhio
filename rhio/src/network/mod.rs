@@ -6,7 +6,7 @@ use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_net::network::FromNetwork;
 use p2panda_net::Network;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
@@ -44,10 +44,7 @@ impl Panda {
     }
 
     /// Subscribe to a data stream in the network.
-    pub async fn subscribe(
-        &self,
-        query: Query,
-    ) -> Result<Option<broadcast::Receiver<FromNetwork>>> {
+    pub async fn subscribe(&self, query: Query) -> Result<Option<mpsc::Receiver<FromNetwork>>> {
         let (reply, reply_rx) = oneshot::channel();
         self.panda_actor_tx
             .send(ToPandaActor::Subscribe { query, reply })

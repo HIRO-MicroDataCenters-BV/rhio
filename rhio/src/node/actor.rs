@@ -10,8 +10,7 @@ use rhio_blobs::{CompletedBlob, NotImportedObject, SignedBlobInfo};
 use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
@@ -43,7 +42,7 @@ pub struct NodeActor {
     public_key: PublicKey,
     inbox: mpsc::Receiver<ToNodeActor>,
     nats_consumer_rx: SelectAll<RecvStream<JetStreamEvent>>,
-    p2panda_topic_rx: SelectAll<BroadcastStream<FromNetwork>>,
+    p2panda_topic_rx: SelectAll<ReceiverStream<FromNetwork>>,
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     nats: Nats,
     panda: Panda,
@@ -120,18 +119,7 @@ impl NodeActor {
                     }
                 },
                 Some(event) = self.p2panda_topic_rx.next() => {
-                    match event {
-                        Ok(event) => {
-                            if let Err(err) = self.on_network_event(event).await {
-                                break Err(err);
-                            }
-                        },
-                        // @TODO: This should be handled in p2panda instead with a different mpmc
-                        // channel which doesn't throw lagged errors.
-                        Err(BroadcastStreamRecvError::Lagged(num)) => {
-                            warn!("p2panda channel lagging behind {num} messages");
-                        },
-                    }
+                    self.on_network_event(event).await?;
                 },
                 Some(event) = self.s3_watcher_rx.recv() => {
                     match event {
@@ -204,7 +192,7 @@ impl NodeActor {
         // Wrap broadcast receiver stream into tokio helper, to make it implement the `Stream`
         // trait which is required by `SelectAll`.
         if let Some(network_rx) = network_rx {
-            self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+            self.p2panda_topic_rx.push(ReceiverStream::new(network_rx));
         }
 
         // 2. Subscribe to an external data source for newly incoming data, so we can forward it to
@@ -246,7 +234,7 @@ impl NodeActor {
             .subscribe(subscription.into())
             .await?
             .expect("queries for subscriptions should always return channel");
-        self.p2panda_topic_rx.push(BroadcastStream::new(network_rx));
+        self.p2panda_topic_rx.push(ReceiverStream::new(network_rx));
 
         Ok(())
     }
