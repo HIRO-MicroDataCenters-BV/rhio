@@ -8,6 +8,7 @@ use rhio_blobs::{
 };
 use s3::error::S3Error;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinHandle;
 use tracing::debug;
 
 const POLL_FREQUENCY: Duration = Duration::from_secs(1);
@@ -15,6 +16,7 @@ const POLL_FREQUENCY: Duration = Duration::from_secs(1);
 /// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects
 /// and their import status.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct S3Watcher {
     event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
     inner: Arc<RwLock<Inner>>,
@@ -23,8 +25,9 @@ pub struct S3Watcher {
 #[derive(Clone, Debug)]
 struct WatchedObject {
     pub size: ObjectSize,
-    pub bucket_name: BucketName,
+    pub local_bucket_name: BucketName,
     pub key: ObjectKey,
+    #[allow(dead_code)]
     pub import_state: ImportState,
 }
 
@@ -33,13 +36,13 @@ impl From<CompletedBlob> for WatchedObject {
         match value {
             CompletedBlob::Unsigned(blob) => Self {
                 size: blob.size,
-                bucket_name: blob.bucket_name,
+                local_bucket_name: blob.local_bucket_name,
                 key: blob.key,
                 import_state: ImportState::Imported(blob.hash),
             },
             CompletedBlob::Signed(blob) => Self {
                 size: blob.size,
-                bucket_name: blob.bucket_name,
+                local_bucket_name: blob.local_bucket_name,
                 key: blob.key,
                 import_state: ImportState::Imported(blob.hash),
             },
@@ -51,7 +54,7 @@ impl From<SignedBlobInfo> for WatchedObject {
     fn from(blob: SignedBlobInfo) -> Self {
         Self {
             size: blob.size,
-            bucket_name: blob.bucket_name,
+            local_bucket_name: blob.local_bucket_name,
             key: blob.key,
             import_state: ImportState::Imported(blob.hash),
         }
@@ -63,13 +66,15 @@ impl Eq for WatchedObject {}
 // Hash and compare size, key and bucket name but not import state.
 impl PartialEq for WatchedObject {
     fn eq(&self, other: &Self) -> bool {
-        self.size == other.size && self.key == other.key && self.bucket_name == other.bucket_name
+        self.size == other.size
+            && self.key == other.key
+            && self.local_bucket_name == other.local_bucket_name
     }
 }
 
 impl std::hash::Hash for WatchedObject {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.bucket_name.hash(state);
+        self.local_bucket_name.hash(state);
         self.key.hash(state);
         self.size.hash(state);
     }
@@ -78,6 +83,7 @@ impl std::hash::Hash for WatchedObject {
 #[derive(Clone, Debug)]
 enum ImportState {
     NotImported,
+    #[allow(dead_code)]
     Imported(BlobHash),
 }
 
@@ -109,7 +115,7 @@ impl S3Watcher {
             inner: inner.clone(),
         };
 
-        tokio::spawn(async move {
+        let _result: JoinHandle<Result<(), _>> = tokio::spawn(async move {
             let mut first_run = true;
 
             loop {
@@ -132,7 +138,7 @@ impl S3Watcher {
 
                                     let watched = WatchedObject {
                                         size: object.size,
-                                        bucket_name: bucket.name(),
+                                        local_bucket_name: bucket.name(),
                                         key: object.key,
                                         import_state: ImportState::NotImported,
                                     };
@@ -173,7 +179,7 @@ impl S3Watcher {
                                     key = %completed_blob.key(),
                                     size = %completed_blob.size(),
                                     hash = %completed_blob.hash(),
-                                    bucket_name = %completed_blob.bucket_name(),
+                                    local_bucket_name = %completed_blob.local_bucket_name(),
                                     "detected finished blob import"
                                 );
 
@@ -194,13 +200,13 @@ impl S3Watcher {
                                 debug!(
                                     key = %object.key,
                                     size = %object.size,
-                                    bucket_name = %object.bucket_name,
+                                    local_bucket_name = %object.local_bucket_name,
                                     "detected new S3 object to be imported"
                                 );
 
                                 if event_tx
                                     .send(Ok(S3Event::DetectedS3Object(NotImportedObject {
-                                        bucket_name: object.bucket_name,
+                                        local_bucket_name: object.local_bucket_name,
                                         key: object.key,
                                         size: object.size,
                                     })))
@@ -229,7 +235,8 @@ impl S3Watcher {
                                         key = %incomplete_blob.key,
                                         size = %incomplete_blob.size,
                                         hash = %incomplete_blob.hash,
-                                        bucket_name = %incomplete_blob.bucket_name,
+                                        local_bucket_name = %incomplete_blob.local_bucket_name,
+                                        remote_bucket_name = %incomplete_blob.remote_bucket_name,
                                         "detected incomplete blob download"
                                     );
 
@@ -250,8 +257,6 @@ impl S3Watcher {
 
                 first_run = false;
             }
-
-            Ok(())
         });
 
         watcher

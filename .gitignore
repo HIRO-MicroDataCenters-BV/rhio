@@ -1,4 +1,5 @@
 target
+target-docker
 ./blobs
 config*.yaml
 !config.example.yaml

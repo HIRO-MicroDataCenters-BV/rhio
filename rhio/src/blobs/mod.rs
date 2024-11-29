@@ -2,11 +2,12 @@ mod actor;
 pub mod watcher;
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::Blobs as BlobsHandler;
+use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use s3::{Bucket, Region};
 use tokio::sync::{mpsc, oneshot};
@@ -22,6 +23,7 @@ use crate::JoinErrToStr;
 #[derive(Debug)]
 pub struct Blobs {
     blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
+    #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
 }
 
@@ -81,6 +83,18 @@ impl Blobs {
     }
 }
 
+pub fn blobs_config() -> BlobsConfig {
+    BlobsConfig {
+        // Max. number of nodes we connect to for blob download.
+        //
+        // @TODO: This needs to be set to 1 as we're currently not allowed to write bytes
+        // out-of-order. See comment in `s3_file.rs` in `rhio-blobs` for more details.
+        max_concurrent_dials_per_hash: 1,
+        initial_retry_delay: Duration::from_secs(10),
+        ..Default::default()
+    }
+}
+
 /// Initiates and returns a blob store for S3 buckets based on the rhio config.
 ///
 /// This method fails when we couldn't connect to the S3 buckets due to invalid configuration
@@ -112,12 +126,12 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
     if let Some(subscribe) = &config.subscribe {
         for remote_bucket in &subscribe.s3_buckets {
             let bucket = Bucket::new(
-                &remote_bucket.bucket_name,
+                &remote_bucket.local_bucket_name,
                 region.clone(),
                 credentials.clone(),
             )?
             .with_path_style();
-            buckets.insert(remote_bucket.bucket_name.clone(), *bucket);
+            buckets.insert(remote_bucket.local_bucket_name.clone(), *bucket);
         }
     }
 

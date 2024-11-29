@@ -1,18 +1,21 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use figment::providers::Env;
 use p2panda_core::{PrivateKey, PublicKey};
 use rhio::config::{
     load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket, PRIVATE_KEY_ENV,
 };
+use rhio::health::{run_http_server, HTTP_HEALTH_ROUTE};
 use rhio::tracing::setup_tracing;
 use rhio::{
-    http_server, FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication,
-    StreamName, Subscription,
+    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
+    Subscription,
 };
 use rhio_core::{load_private_key_from_file, Subject};
-use tracing::{error, info};
+use tokio::runtime::Builder;
+use tokio::sync::oneshot;
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -48,7 +51,10 @@ async fn main() -> Result<()> {
         info!("  - {}", address);
     }
     info!("‣ health endpoint:");
-    info!("  - localhost:{}", config.node.http_bind_port);
+    info!(
+        "  - 0.0.0.0:{}{}",
+        config.node.http_bind_port, HTTP_HEALTH_ROUTE
+    );
 
     if let Some(publish) = config.publish {
         for bucket_name in publish.s3_buckets {
@@ -99,12 +105,14 @@ async fn main() -> Result<()> {
 
     if let Some(subscribe) = config.subscribe {
         for RemoteS3Bucket {
-            bucket_name,
+            local_bucket_name,
+            remote_bucket_name,
             public_key: remote_public_key,
         } in subscribe.s3_buckets
         {
             node.subscribe(Subscription::Files(FilesSubscription {
-                bucket_name,
+                remote_bucket_name,
+                local_bucket_name,
                 public_key: remote_public_key,
             }))
             .await?;
@@ -149,11 +157,29 @@ async fn main() -> Result<()> {
         }
     };
 
-    if let Err(err) = tokio::spawn(http_server::run(config.node.http_bind_port)).await? {
-        error!("failed to start http server: {err}");
-        return Ok(());
-    };
-    tokio::signal::ctrl_c().await?;
+    // Launch HTTP server in separate thread to not block rhio runtime.
+    let (http_error_tx, http_error_rx) = oneshot::channel::<Result<()>>();
+    std::thread::spawn(move || {
+        let runtime = Builder::new_current_thread()
+            .enable_io()
+            .thread_name("http-server")
+            .build()
+            .expect("http server tokio runtime");
+
+        let result = runtime.block_on(async move {
+            run_http_server(config.node.http_bind_port)
+                .await
+                .context("failed to start http server with health endpoint")?;
+            Ok(())
+        });
+
+        http_error_tx.send(result).expect("sending http error");
+    });
+
+    tokio::select! {
+        Ok(Err(err)) = http_error_rx => bail!(err),
+        _ = tokio::signal::ctrl_c() => {},
+    }
 
     info!("");
     info!("shutting down");

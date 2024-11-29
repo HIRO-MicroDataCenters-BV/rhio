@@ -146,6 +146,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         match query {
             Query::Files {
                 public_key: requested_public_key,
+                bucket_name: requested_bucket_name,
             } => {
                 assert!(
                     requested_public_key != self.public_key,
@@ -164,8 +165,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                             return None;
                         };
 
-                        // Filter out all blobs which are not from that peer.
-                        if blob.public_key != requested_public_key {
+                        // Filter out all blobs which are not from that peer and bucket.
+                        if blob.public_key != requested_public_key
+                            && blob.remote_bucket_name != requested_bucket_name
+                        {
                             return None;
                         }
 
@@ -383,6 +386,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
         match &query {
             Query::Files {
                 public_key: requested_public_key,
+                bucket_name: requested_bucket_name,
             } => {
                 // 5. Await message from other peer on the blobs they _have_, so we can calculate
                 //    what they're missing and send that delta to them.
@@ -415,12 +419,19 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // We're not only publishing data but also "forward" blobs from other peers.
                 let is_forwarding = self
                     .config
-                    .is_files_subscription_matching(requested_public_key)
+                    .is_files_subscription_matching(requested_public_key, requested_bucket_name)
                     .await
                     .is_some();
 
-                // Can we forward someone elses files or ours?
-                if !is_forwarding && requested_public_key != &self.public_key {
+                // Or are we publishing ourselves?
+                let is_publishing = self
+                    .config
+                    .is_bucket_publishable(requested_bucket_name)
+                    .await
+                    && requested_public_key == &self.public_key;
+
+                // Can we forward someone elses files or did we publish ours?
+                if !is_forwarding && !is_publishing {
                     // Inform the other peer politely that we need to end here as we can't provide
                     // data from this public key.
                     debug!(parent: &span, "can't provide data, politely end sync");
@@ -432,15 +443,25 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 let mut counter = 0;
                 for blob in self.complete_blobs().await {
                     match blob {
-                        CompletedBlob::Unsigned(_) => {
+                        CompletedBlob::Unsigned(ref blob) => {
                             // Remote peer did not ask for our data.
                             if requested_public_key != &self.public_key {
+                                continue;
+                            }
+
+                            // Remote peer did not ask for this bucket.
+                            if requested_bucket_name != &blob.local_bucket_name {
                                 continue;
                             }
                         }
                         CompletedBlob::Signed(ref blob) => {
                             // Remote peer did not ask for this peer's data.
                             if requested_public_key != &blob.public_key {
+                                continue;
+                            }
+
+                            // Remote peer did not ask for this bucket.
+                            if requested_bucket_name != &blob.remote_bucket_name {
                                 continue;
                             }
                         }
@@ -453,6 +474,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                                 CompletedBlob::Unsigned(blob) => {
                                     let mut signed_msg = NetworkMessage::new_blob_announcement(
                                         blob.hash,
+                                        blob.local_bucket_name.clone(),
                                         blob.key.clone(),
                                         blob.size,
                                         &self.public_key,

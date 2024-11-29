@@ -234,7 +234,7 @@ impl NodeActor {
         Ok(())
     }
 
-    /// Application decided to subscribe to NATS messages or blobs from an author.
+    /// Application decided to subscribe to NATS messages or S3 objects from an author's bucket.
     ///
     /// When subscribing we both subscribe to the gossip overlay and look for peers we can initiate
     /// sync sessions with (to catch up on past data).
@@ -259,7 +259,13 @@ impl NodeActor {
                 message,
                 is_init,
             } => {
-                self.on_nats_message(is_init, topic_id, message).await?;
+                // Sanity check.
+                assert!(
+                    !is_init,
+                    "we should never receive old NATS messages on this channel"
+                );
+
+                self.on_nats_message(topic_id, message).await?;
             }
             JetStreamEvent::Failed {
                 stream_name,
@@ -285,18 +291,7 @@ impl NodeActor {
     /// These consumers have been set up based on our publication configuration, we can be sure
     /// that we _want_ to publish the messages coming via this channel, no further checks are
     /// required.
-    async fn on_nats_message(
-        &mut self,
-        is_init: bool,
-        topic_id: [u8; 32],
-        message: NatsMessage,
-    ) -> Result<()> {
-        // Sanity check.
-        assert!(
-            !is_init,
-            "we should never receive old NATS messages on this channel"
-        );
-
+    async fn on_nats_message(&mut self, topic_id: [u8; 32], message: NatsMessage) -> Result<()> {
         // Ignore messages which contain our custom "rhio" header to prevent broadcasting messages
         // right after we've ingested them on the same stream.
         //
@@ -322,7 +317,7 @@ impl NodeActor {
     ///
     /// These events can come from either gossip broadcast or sync sessions with other peers.
     async fn on_network_event(&mut self, event: FromNetwork) -> Result<()> {
-        let (bytes, delivered_from) = match event {
+        let (bytes, delivered_from, is_gossip) = match event {
             FromNetwork::GossipMessage {
                 bytes,
                 delivered_from,
@@ -332,7 +327,7 @@ impl NodeActor {
                     bytes = bytes.len(),
                     "received network message"
                 );
-                (bytes, delivered_from)
+                (bytes, delivered_from, true)
             }
             FromNetwork::SyncMessage {
                 header,
@@ -344,7 +339,7 @@ impl NodeActor {
                     bytes = header.len(),
                     "received network message"
                 );
-                (header, delivered_from)
+                (header, delivered_from, false)
             }
         };
 
@@ -364,20 +359,26 @@ impl NodeActor {
             .expect("signatures was already checked at this point and should be given");
 
         match &network_message.payload {
-            NetworkPayload::BlobAnnouncement(hash, key, size) => {
+            NetworkPayload::BlobAnnouncement(hash, remote_bucket_name, key, size) => {
+                if is_gossip {
+                    trace!(%hash, %key, %size, "ignoring blob announcement received via gossip");
+                    return Ok(());
+                }
+
                 debug!(%hash, %key, %size, "received blob announcement");
 
-                // We're interested in blobs from a _specific_ public key. Filter out everything
-                // which is _not_ the right author.
-                if let Some(bucket_name) = self
+                // We're interested in blobs from a _specific_ public key and bucket. Filter out
+                // everything which is _not_ the right one.
+                if let Some(local_bucket_name) = self
                     .config
-                    .is_files_subscription_matching(&network_message.public_key)
+                    .is_files_subscription_matching(&network_message.public_key, remote_bucket_name)
                     .await
                 {
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
-                            bucket_name,
+                            local_bucket_name,
+                            remote_bucket_name: remote_bucket_name.clone(),
                             key: key.clone(),
                             size: *size,
                             public_key: network_message.public_key,
@@ -450,8 +451,6 @@ impl NodeActor {
 
     /// Handler when blob store finished importing new S3 object.
     async fn on_import_finished(&self, blob: CompletedBlob) -> Result<()> {
-        // @TODO: Handle state changes after importing remote blob from here.
-
         // This method can be called from both importing new local S3 objects or downloading remote
         // blobs from other peers.
         //
@@ -463,25 +462,36 @@ impl NodeActor {
 
         // Sanity: Make sure we're allowing publishing from this bucket. This should not be
         // necessary when the configuration's are sane, but we're checking it just to be sure.
-        if !self.config.is_bucket_publishable(&blob.bucket_name).await {
-            bail!("tried to announce blob from an unpublishable S3 bucket");
+        if !self
+            .config
+            .is_bucket_publishable(&blob.local_bucket_name)
+            .await
+        {
+            warn!("tried to announce blob from an unpublishable S3 bucket");
+            return Ok(());
         };
 
         debug!(
             hash = %blob.hash,
-            bucket_name = %blob.bucket_name,
+            bucket_name = %blob.local_bucket_name,
             key = %blob.key,
             size = %blob.size,
             "broadcast blob announcement"
         );
 
         // Announce the blob on the network and sign it with our key.
-        let mut network_message =
-            NetworkMessage::new_blob_announcement(blob.hash, blob.key, blob.size, &self.public_key);
+        let mut network_message = NetworkMessage::new_blob_announcement(
+            blob.hash,
+            blob.local_bucket_name.clone(),
+            blob.key,
+            blob.size,
+            &self.public_key,
+        );
         network_message.sign(&self.private_key);
 
         let topic_id = Query::Files {
             public_key: self.public_key,
+            bucket_name: blob.local_bucket_name,
         }
         .id();
         self.broadcast(network_message, topic_id).await?;

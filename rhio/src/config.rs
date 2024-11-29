@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -26,11 +25,11 @@ pub const PRIVATE_KEY_ENV: &str = "PRIVATE_KEY";
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
 
+/// Default HTTP port.
+pub const DEFAULT_HTTP_BIND_PORT: u16 = 3000;
+
 /// Default rhio network id.
 const DEFAULT_NETWORK_ID: &str = "rhio-default-network-1";
-
-/// Default rhio HTTP port.
-pub const DEFAULT_HTTP_BIND_PORT: u16 = 3000;
 
 /// Default HTTP API endpoint for MinIO server.
 pub const S3_ENDPOINT: &str = "http://localhost:9000";
@@ -55,7 +54,7 @@ pub struct Config {
 #[derive(Parser, Serialize, Debug)]
 #[command(
     name = "rhio",
-    about = "Peer-to-peer message and blob streaming with MinIO and NATS JetStream support",
+    about = "Peer-to-peer NATS message routing and S3 object sync solution",
     long_about = None,
     version
 )]
@@ -74,7 +73,7 @@ struct Cli {
     #[serde(skip_serializing_if = "Option::is_none")]
     bind_port: Option<u16>,
 
-    /// HTTP bind port of rhio node.
+    /// Port for HTTP server exposing the /health endpoint.
     #[arg(short = 'b', long, value_name = "PORT")]
     #[serde(skip_serializing_if = "Option::is_none")]
     http_bind_port: Option<u16>,
@@ -216,7 +215,7 @@ impl Default for NodeConfig {
 pub struct KnownNode {
     pub public_key: PublicKey,
     #[serde(rename = "endpoints")]
-    pub direct_addresses: Vec<SocketAddr>,
+    pub direct_addresses: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -237,8 +236,10 @@ pub struct SubscribeConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RemoteS3Bucket {
-    #[serde(rename = "bucket")]
-    pub bucket_name: BucketName,
+    #[serde(rename = "remote_bucket")]
+    pub remote_bucket_name: BucketName,
+    #[serde(rename = "local_bucket")]
+    pub local_bucket_name: BucketName,
     pub public_key: PublicKey,
 }
 
@@ -297,13 +298,14 @@ nats:
 nodes:
     - public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
       endpoints:
+        - "some.hostname.org."
         - "192.168.178.100:1112"
         - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
 
 publish:
     s3_buckets:
-        - "bucket-1"
-        - "bucket-2"
+        - "bucket-out-1"
+        - "bucket-out-2"
     nats_subjects:
         - subject: "workload.berlin.energy"
           stream: "workload"
@@ -312,9 +314,11 @@ publish:
 
 subscribe:
     s3_buckets:
-      - bucket: "bucket-1"
+      - local_bucket: "bucket-in-1"
+        remote_bucket: "bucket-out-1"
         public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
-      - bucket: "bucket-2"
+      - local_bucket: "bucket-in-2"
+        remote_bucket: "bucket-out-2"
         public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
     nats_subjects:
       - subject: "workload.*.energy"
@@ -363,6 +367,7 @@ subscribe:
                                     .parse()
                                     .unwrap(),
                             direct_addresses: vec![
+                                "some.hostname.org.".into(),
                                 "192.168.178.100:1112".parse().unwrap(),
                                 "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:1113"
                                     .parse()
@@ -374,7 +379,7 @@ subscribe:
                     },
                     log_level: None,
                     publish: Some(PublishConfig {
-                        s3_buckets: vec!["bucket-1".into(), "bucket-2".into()],
+                        s3_buckets: vec!["bucket-out-1".into(), "bucket-out-2".into()],
                         nats_subjects: vec![
                             LocalNatsSubject {
                                 stream_name: "workload".into(),
@@ -389,13 +394,15 @@ subscribe:
                     subscribe: Some(SubscribeConfig {
                         s3_buckets: vec![
                             RemoteS3Bucket {
-                                bucket_name: "bucket-1".to_string(),
+                                remote_bucket_name: "bucket-out-1".to_string(),
+                                local_bucket_name: "bucket-in-1".to_string(),
                                 public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),
                             },
                             RemoteS3Bucket {
-                                bucket_name: "bucket-2".to_string(),
+                                remote_bucket_name: "bucket-out-2".to_string(),
+                                local_bucket_name: "bucket-in-2".to_string(),
                                 public_key: "6ee91c497d577b5c21ab53212c194b56779addd8088d8b850ece447c8844fe8a"
                                 .parse()
                                 .unwrap(),

@@ -83,6 +83,7 @@ There's a bunch of files required to follow the steps, make sure you have the fo
 # cluster-1
 
 bind_port: 8022
+http_bind_port: 3000
 network_id: "rhio-default-network-1"
 
 # Public Key: d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076
@@ -113,7 +114,8 @@ publish:
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-in"
+    - remote_bucket: "bucket-out"
+      local_bucket: "bucket-in"
       public_key: "5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee"
   nats_subjects:
     - subject: "foo.meta"
@@ -129,6 +131,7 @@ subscribe:
 # cluster-2
 
 bind_port: 9022
+http_bind_port: 3002
 network_id: "rhio-default-network-1"
 
 # Public Key: 5ee70a7e7abdf7174178434eebd1d45a0c879086d19eebe175eb1d99e9f4feee
@@ -159,7 +162,8 @@ publish:
 
 subscribe:
   s3_buckets:
-    - bucket: "bucket-in"
+    - remote_bucket: "bucket-out"
+      local_bucket: "bucket-in"
       public_key: "d4e8b43fccc2d65c36f47cf999aee94c3480184b3c8fdf7a077aa6f0ee648076"
   nats_subjects:
     - subject: "foo.*"
@@ -229,8 +233,8 @@ docker-compose up -d
 ```
 5. Launch both rhio nodes (in separate terminals), make sure that `private-key-*.txt` and `config-*.yaml` files are in the same directory, or adjust the paths accordingly
 ```bash
-cargo run -- -c config-1.yaml -l TRACE
-cargo run -- -c config-2.yaml -l TRACE
+cargo run -- -c config-1.yaml -l DEBUG
+cargo run -- -c config-2.yaml -l DEBUG
 ```
 6. Subscribe to a subject (example is for first NATS server)
 ```bash

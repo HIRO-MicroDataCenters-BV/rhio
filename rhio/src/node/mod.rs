@@ -2,21 +2,22 @@ mod actor;
 pub mod config;
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
+use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{Config as NetworkConfig, NetworkBuilder};
+use p2panda_net::{
+    Config as NetworkConfig, NetworkBuilder, ResyncConfiguration, SyncConfiguration,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
 use crate::blobs::watcher::S3Watcher;
-use crate::blobs::{store_from_config, Blobs};
+use crate::blobs::{blobs_config, store_from_config, Blobs};
 use crate::config::Config;
 use crate::nats::Nats;
 use crate::network::sync::RhioSyncProtocol;
@@ -25,9 +26,6 @@ use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
-
-const CONCURRENT_DIALS_PER_HASH: usize = 1;
-const INITIAL_RETRY_DELAY: u64 = 10;
 
 pub struct Node {
     node_id: PublicKey,
@@ -53,11 +51,16 @@ impl Node {
         };
 
         for node in &config.node.known_nodes {
-            network_config.direct_node_addresses.push((
-                node.public_key,
-                node.direct_addresses.clone(),
-                None,
-            ));
+            // Resolve FQDN strings into IP addresses.
+            let mut direct_addresses = Vec::new();
+            for addr in &node.direct_addresses {
+                for resolved in tokio::net::lookup_host(addr).await? {
+                    direct_addresses.push(resolved);
+                }
+            }
+            network_config
+                .direct_node_addresses
+                .push((node.public_key, direct_addresses, None));
         }
 
         let blob_store = store_from_config(&config).await?;
@@ -69,19 +72,16 @@ impl Node {
             private_key.clone(),
         );
 
+        let sync_config =
+            SyncConfiguration::new(sync_protocol).resync(ResyncConfiguration::default());
+
         let builder = NetworkBuilder::from_config(network_config)
             .private_key(private_key.clone())
-            .sync(sync_protocol, true);
+            .sync(sync_config);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
-        let blobs_config = BlobsConfig {
-            max_concurrent_dials_per_hash: CONCURRENT_DIALS_PER_HASH,
-            initial_retry_delay: Duration::from_secs(INITIAL_RETRY_DELAY),
-            ..Default::default()
-        };
-
         let (network, blobs_handler) =
-            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config)
+            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
                 .await?;
         let blobs = Blobs::new(blob_store.clone(), blobs_handler);
 

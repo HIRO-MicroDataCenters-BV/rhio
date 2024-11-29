@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Improved NATS message replication logic and configuration ([#86](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/86) [#82](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/82), [#75](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/75))
+- Improved S3 objects replication logic and configuration ([#92](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/92), [#79](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/79), [#74](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/74))
+- Direct p2p sync between S3 buckets with bao-encoding ([#73](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/73))
+- Resolve FQDN endpoints in config ([#96](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/96))
+- HTTP `/health` endpoint ([#90](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/90))
+- Kubernetes Support ([#91](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/91))
+
+### Changed
+
+- De-duplicate topic id's for gossip overlays ([#86](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/86))
+- Removed FFI bindings for Python for now
+- Removed `rhio-client` as it is not required anymore
+
+### Fixed
+
+- Fix NATS consumers after message sync changes ([#89](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/89))
+- Fix remote bucket logic after S3 sync changes ([#94](https://github.com/HIRO-MicroDataCenters-BV/rhio/pull/94))
+
 ## [0.1.0] - 2024-08-30
 
 ### Added

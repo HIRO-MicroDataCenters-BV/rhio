@@ -1,7 +1,9 @@
 [package]
 name = "rhio"
+description = "Peer-to-peer NATS message routing and S3 object sync solution"
 version = "0.1.0"
 edition = "2021"
+publish = false
 default-run = "rhio"
 
 [lints]
@@ -24,24 +26,21 @@ directories = "5.0.1"
 figment = { version = "0.10.19", features = ["env", "yaml"] }
 futures-util = "0.3.30"
 hex = "0.4.3"
-iroh-blobs = { version = "0.25.0", features = [
-    "fs-store",
-], default-features = false }
 loole = "0.4.0"
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e", default-features = false }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "63558f1aadccb6f717838cf9ef35920e79db8d0e", features = ["cbor"], default-features = false }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "f31b37397c854d9e6cfb450c1b6ca372ddc1f0eb" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "f31b37397c854d9e6cfb450c1b6ca372ddc1f0eb" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "f31b37397c854d9e6cfb450c1b6ca372ddc1f0eb", default-features = false }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "f31b37397c854d9e6cfb450c1b6ca372ddc1f0eb", features = ["cbor"], default-features = false }
 rand = "0.8.5"
 rhio-blobs = { path = "../rhio-blobs" }
 rhio-core = { path = "../rhio-core" }
 rust-s3 = "0.35.1"
 serde = { version = "1.0.209", features = ["derive"] }
-tokio = "1.41.1"
+tokio = { version = "1.41.1", features = ["full"] }
 tokio-stream = "0.1.15"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
-figment = { version = "0.10.19", features = ["env", "toml", "test"] }
+figment = { version = "0.10.19", features = ["env", "yaml", "test"] }

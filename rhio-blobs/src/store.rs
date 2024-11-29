@@ -95,7 +95,7 @@ impl S3Store {
     /// - Upload both of these to the S3 bucket.
     /// - Insert an `Entry` into the index to represent this new blob>
     pub async fn import_object(&self, object: NotImportedObject) -> Result<()> {
-        let bucket = self.bucket(&object.bucket_name);
+        let bucket = self.bucket(&object.local_bucket_name);
         let (bao_file, meta) =
             BaoFileHandle::from_local_object(bucket, object.key, object.size).await?;
         let entry = Entry::new(bao_file, meta);
@@ -112,21 +112,29 @@ impl S3Store {
     ///
     /// No checks take place on the integrity of the signature, we assume that this has been
     /// handled before.
-    pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<Option<Entry>> {
-        let bucket = self.bucket(&blob.bucket_name);
+    pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<()> {
+        // If we already "discovered" this blob then we don't need to do anything.
+        if self.read_lock().await.entries.contains_key(&blob.hash) {
+            return Ok(());
+        };
+
+        let bucket = self.bucket(&blob.local_bucket_name);
         let paths = Paths::new(&blob.key);
         let meta = BaoMeta {
             hash: blob.hash,
             key: blob.key,
             size: blob.size,
             complete: false,
+            remote_bucket_name: blob.remote_bucket_name,
             public_key: Some(blob.public_key),
             signature: Some(blob.signature),
         };
         put_meta(&bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), blob.size);
         let entry = Entry::new(bao_file, meta);
-        Ok(self.write_lock().await.entries.insert(blob.hash, entry))
+        self.write_lock().await.entries.insert(blob.hash, entry);
+
+        Ok(())
     }
 
     /// Query the store for all complete blobs.
@@ -138,7 +146,8 @@ impl S3Store {
             .map(|entry| match entry.meta.public_key {
                 Some(public_key) => CompletedBlob::Signed(SignedBlobInfo {
                     hash: entry.hash(),
-                    bucket_name: entry.bucket_name,
+                    remote_bucket_name: entry.meta.remote_bucket_name,
+                    local_bucket_name: entry.bucket_name,
                     key: entry.meta.key,
                     size: entry.meta.size,
                     public_key,
@@ -149,7 +158,7 @@ impl S3Store {
                 }),
                 None => CompletedBlob::Unsigned(UnsignedBlobInfo {
                     hash: entry.hash(),
-                    bucket_name: entry.bucket_name,
+                    local_bucket_name: entry.bucket_name,
                     key: entry.meta.key,
                     size: entry.meta.size,
                 }),
@@ -165,7 +174,8 @@ impl S3Store {
             .filter(|x| !x.meta.complete)
             .map(|entry| IncompleteBlob {
                 hash: entry.hash(),
-                bucket_name: entry.bucket_name,
+                local_bucket_name: entry.bucket_name,
+                remote_bucket_name: entry.meta.remote_bucket_name,
                 key: entry.meta.key,
                 size: entry.meta.size,
                 public_key: entry
