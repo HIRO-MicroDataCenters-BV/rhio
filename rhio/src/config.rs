@@ -19,6 +19,9 @@ const CONFIG_FILE_NAME: &str = "config.yaml";
 /// Default file path to private key file.
 const DEFAULT_PRIVATE_KEY_PATH: &str = "private.key";
 
+/// Private key env arg.
+pub const PRIVATE_KEY_ENV: &str = "PRIVATE_KEY";
+
 /// Default rhio port.
 const DEFAULT_BIND_PORT: u16 = 9102;
 

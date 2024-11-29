@@ -1,0 +1,110 @@
+name: Build
+
+on:
+  push:
+    branches:
+      # @TODO: limit this to `main` branch
+      - '**'
+    tags:
+      - '**'
+    paths-ignore:
+      - 'releases/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: hiro-microdatacenters-bv/rhio
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: moonrepo/setup-rust@v1
+        with:
+          channel: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Run tests
+        # Ensure debug output is also tested
+        env:
+          RUST_LOG: debug
+        run: cargo test --all-features
+
+  build:
+    needs: [test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        # @TODO: don't build form arm during development cos it's super slow
+        # with:
+        #   platforms: linux/amd64, linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Make versions
+        run: |
+          cd "${{ github.workspace }}"
+          chmod +x ./version.sh
+          ./version.sh "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "VERSION_APP=$(cat "./VERSION_APP")" >> $GITHUB_ENV
+          echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
+          echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: ${{ env.DOCKER_TAGS }}
+
+      - name: Build and push docker image
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          # @TODO: don't build form arm during development cos it's super slow
+          # platforms: linux/amd64,linux/arm64
+          tags: ${{ env.DOCKER_IMAGES }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create a github release
+        run: gh release create "${{ env.VERSION_APP }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish Helm charts
+        uses: stefanprodan/helm-gh-pages@master
+        with:
+          token: ${{ github.token }}
+          charts_dir: "./charts"
+          target_dir: "./helm-charts"

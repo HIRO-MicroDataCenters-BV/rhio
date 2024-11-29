@@ -12,6 +12,9 @@ workspace = true
 [lib]
 name = "rhio"
 
+[[bin]]
+name = "rhio"
+
 [dependencies]
 anyhow = "1.0.93"
 async-nats = "0.37.0"
