@@ -31,15 +31,141 @@ services:
     port: 9102
   # the port for the HTTP health endpoint
   health:
-    port: 3000
+    port: 8080
 
 resources: {}
 
+
 livenessProbe:
+  failureThreshold: 3
   httpGet:
     path: /health
-    port: 3000
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+
 readinessProbe:
   httpGet:
     path: /health
-    port: 3000
+    port: 8080
+    scheme: HTTP
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+configuration:
+  # NETWORK
+  # Port for node-node communication and data replication. Defaults to 9102.
+  #
+  # When port is taken the node will automatically pick a random, free port.
+  #
+  bind_port: 9102
+
+  # HTTP port for health checks and metrics.
+  #
+  http_bind_port: 8080
+
+  # Nodes will only communicate with each other if they know the same network id.
+  #
+  network_id: "rhio-default-network-1"
+
+  # Path to file containing hexadecimal-encoded Ed25519 private key. The key is
+  # used to identify the node towards other nodes during network discovery and
+  # replication. This key is _not_ used to create and sign data.
+  #
+  private_key_path: "private-key.txt"
+
+  # NODES
+  # List of known node addresses we want to connect to directly. Addresses have
+  # to be IP addresses and must include a port number.
+  #
+  # NOTE: Make sure that nodes mentioned in this list are directly reachable
+  # (they need to be hosted with a static IP address).
+  #
+  nodes: []
+  #   - public_key: "<public-key>"
+  #     endpoints:
+  #       - "192.168.178.100:9102"
+  #       - "[2a02:8109:9c9a:4200:eb13:7c0a:4201:8128]:9103"
+
+  # S3
+  # Endpoint of the local S3-compatible Database (for example MinIO).
+  #
+  # s3:
+  #   endpoint: "http://localhost:9000"
+  #   region: "eu-central-1"
+  #   credentials:
+  #     access_key: "rhio"
+  #     secret_key: "rhio_password"
+
+  # NATS
+  # Endpoint of the local NATS Server with JetStreams enabled.
+  #
+  # nats:
+  #   endpoint: "localhost:4222"
+  #   credentials:
+  #     username: "rhio"
+  #     password: "rhio_password"
+  #     # Alternative authentication strategies:
+  #     nkey: "..."
+  #     token: "..."
+
+  # STREAMS
+  # Share past and future NATS messages or files stored in S3 buckets from us
+  # with other nodes in the network.
+  #
+  publish:
+    # We're publishing all files given in our local bucket.
+    #
+    s3_buckets: []
+    #     - "bucket-out-1"
+    #     - "bucket-out-2"
+    #
+    # We're publishing any NATS message matching this NATS subject (wildcards
+    # supported) coming from our local JetStream.
+    #
+    nats_subjects: []
+    #     - subject: "workload.berlin.energy"
+    #       stream: "workload"
+    #     - subject: "workload.rotterdam.energy"
+    #       stream: "workload"
+
+  # Download data of interest from other nodes, this includes past and future
+  # NATS messages or files stored in S3 buckets.
+  #
+  # Subscriptions join the network and actively try to initiate sync sessions
+  # with nodes who published data of our interest - or with nodes who are
+  # subscribed to this data as well and can "forward" it to us.
+  #
+  subscribe:
+    # We're interested in any files from this particular node and would like
+    # to store them in the our local S3 bucket.
+    #
+    # NOTE: It is not possible to publish from and download into the same
+    # bucket, also re-using the same bucket for multiple subscriptions is not
+    # allowed. This might lead to undefined behaviour!
+    #
+    s3_buckets: []
+    #     - bucket: "bucket-in-1"
+    #       public_key: "<public-key>"
+    #     - bucket: "bucket-in-2"
+    #       public_key: "<public-key>"
+  
+    # We're interested in any NATS message from this particular node for the
+    # given NATS subject (wildcards are allowed).
+    #
+    # NOTE: NATS messages get always published towards our local NATS server
+    # without any particular JetStream in mind - as soon as we received them.
+    # However, we still need to configure a local stream which gives us our
+    # current state on this subject, this aids effective syncing of past 
+    # messages with the other node.
+    #
+    nats_subjects: []
+    # - subject: "workload.*.energy"
+    #   public_key: "<public-key>"
+    #   stream: "workload"
+    # - subject: "data.thehague.meta"
+    #   public_key: "<public-key>"
+    #   stream: "data"
