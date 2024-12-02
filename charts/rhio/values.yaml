@@ -59,6 +59,8 @@ readinessProbe:
   periodSeconds: 10
   timeoutSeconds: 5
 
+debug: =INFO
+
 configuration:
   # NETWORK
   # Port for node-node communication and data replication. Defaults to 9102.
