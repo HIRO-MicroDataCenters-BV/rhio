@@ -9,6 +9,9 @@ spec:
   ports:
     # the port for the p2p networking endpoint
     - port: {{ .Values.services.network.port }}
+      {{- if .Values.services.network.nodePort }}
+      nodePort: {{ .Values.services.network.nodePort }}
+      {{- end }}
       protocol: UDP
       name: network
     # the port for the HTTP health endpoint

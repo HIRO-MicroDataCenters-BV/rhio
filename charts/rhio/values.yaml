@@ -9,7 +9,6 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 secretKey: ""
-configuration: ""
 
 serviceAccount:
   create: true
@@ -24,11 +23,16 @@ podSecurityContext: {}
 
 securityContext: {}
 
+tolerations: []
+
+# nodeSelector:  
+
 services:
   type: ClusterIP
   # the port for the p2p networking endpoint
   network:
     port: 9102
+    # nodePort: 31001
   # the port for the HTTP health endpoint
   health:
     port: 8080
@@ -127,8 +131,6 @@ configuration:
     # supported) coming from our local JetStream.
     #
     nats_subjects: []
-    #     - subject: "workload.berlin.energy"
-    #       stream: "workload"
     #     - subject: "workload.rotterdam.energy"
     #       stream: "workload"
 
@@ -148,10 +150,12 @@ configuration:
     # allowed. This might lead to undefined behaviour!
     #
     s3_buckets: []
-    #     - bucket: "bucket-in-1"
-    #       public_key: "<public-key>"
-    #     - bucket: "bucket-in-2"
-    #       public_key: "<public-key>"
+    #  - remote_bucket: "bucket-out-1"
+    #    local_bucket: "bucket-in-1"
+    #    public_key: "<public-key>"
+    #  - remote_bucket: "bucket-out-2"
+    #    local_bucket: "bucket-in-2"
+    #    public_key: "<public-key>"
   
     # We're interested in any NATS message from this particular node for the
     # given NATS subject (wildcards are allowed).
