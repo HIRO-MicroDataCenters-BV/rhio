@@ -64,7 +64,7 @@ jobs:
         run: |
           cd "${{ github.workspace }}"
           chmod +x ./version.sh
-          ./version.sh "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          ./version.sh "${{ github.sha }}" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           echo "VERSION_APP=$(cat "./VERSION_APP")" >> $GITHUB_ENV
           echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
           echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
