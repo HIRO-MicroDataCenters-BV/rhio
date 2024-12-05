@@ -38,27 +38,7 @@ impl Node {
         let nats = Nats::new(config.clone()).await?;
 
         // 2. Configure rhio peer-to-peer network.
-        let node_config = NodeConfig::new();
-        let network_id_hash = Hash::new(config.node.network_id.as_bytes());
-        let network_id = network_id_hash.as_bytes();
-        let mut network_config = NetworkConfig {
-            bind_port: config.node.bind_port,
-            network_id: *network_id,
-            ..Default::default()
-        };
-
-        for node in &config.node.known_nodes {
-            // Resolve FQDN strings into IP addresses.
-            let mut direct_addresses = Vec::new();
-            for addr in &node.direct_addresses {
-                for resolved in tokio::net::lookup_host(addr).await? {
-                    direct_addresses.push(resolved);
-                }
-            }
-            network_config
-                .direct_node_addresses
-                .push((node.public_key, direct_addresses, None));
-        }
+        let (node_config, p2p_network_config) = Node::configure_p2p_network(&config).await?;
 
         let blob_store = store_from_config(&config).await?;
 
@@ -72,15 +52,21 @@ impl Node {
         let sync_config =
             SyncConfiguration::new(sync_protocol).resync(ResyncConfiguration::default());
 
-        let builder = NetworkBuilder::from_config(network_config)
+        let builder = NetworkBuilder::from_config(p2p_network_config)
             .private_key(private_key.clone())
             .sync(sync_config);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
-        let (network, blobs_handler) =
-            BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
-                .await?;
-        let blobs = Blobs::new(blob_store.clone(), blobs_handler);
+        let (network, blobs) = if config.s3.is_some() {
+            let (network, blobs_handler) =
+                BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
+                    .await?;
+            let blobs = Blobs::new(blob_store.clone(), blobs_handler);
+            (network, Some(blobs))
+        } else {
+            let network = builder.build().await?;
+            (network, None)
+        };
 
         // 4. Start a service which watches the S3 buckets for changes.
         let (watcher_tx, watcher_rx) = mpsc::channel(512);
@@ -126,6 +112,32 @@ impl Node {
         };
 
         Ok(node)
+    }
+
+    async fn configure_p2p_network(
+        config: &Config,
+    ) -> Result<(NodeConfig, NetworkConfig), anyhow::Error> {
+        let node_config = NodeConfig::new();
+        let network_id_hash = Hash::new(config.node.network_id.as_bytes());
+        let network_id = network_id_hash.as_bytes();
+        let mut network_config = NetworkConfig {
+            bind_port: config.node.bind_port,
+            network_id: *network_id,
+            ..Default::default()
+        };
+        for node in &config.node.known_nodes {
+            // Resolve FQDN strings into IP addresses.
+            let mut direct_addresses = Vec::new();
+            for addr in &node.direct_addresses {
+                for resolved in tokio::net::lookup_host(addr).await? {
+                    direct_addresses.push(resolved);
+                }
+            }
+            network_config
+                .direct_node_addresses
+                .push((node.public_key, direct_addresses, None));
+        }
+        Ok((node_config, network_config))
     }
 
     /// Returns the public key of this node which is used as it's ID.

@@ -46,7 +46,7 @@ pub struct NodeActor {
     s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     nats: Nats,
     panda: Panda,
-    blobs: Blobs,
+    blobs: Option<Blobs>,
     #[allow(dead_code)]
     watcher: S3Watcher,
 }
@@ -58,7 +58,7 @@ impl NodeActor {
         private_key: PrivateKey,
         nats: Nats,
         panda: Panda,
-        blobs: Blobs,
+        blobs: Option<Blobs>,
         watcher: S3Watcher,
         inbox: mpsc::Receiver<ToNodeActor>,
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
@@ -353,6 +353,11 @@ impl NodeActor {
                     return Ok(());
                 }
 
+                if self.blobs.is_none() {
+                    trace!(%hash, %key, %size, "ignoring blob announcement since blobs are not configured");
+                    return Ok(());
+                }
+
                 debug!(%hash, %key, %size, "received blob announcement");
 
                 // We're interested in blobs from a _specific_ public key and bucket. Filter out
@@ -363,6 +368,8 @@ impl NodeActor {
                     .await
                 {
                     self.blobs
+                        .as_ref()
+                        .unwrap()
                         .download(SignedBlobInfo {
                             hash: *hash,
                             local_bucket_name,
@@ -433,7 +440,9 @@ impl NodeActor {
     async fn on_detected_s3_object(&self, object: NotImportedObject) -> Result<()> {
         // Import the object into our blob store (generate a bao-encoding and make it
         // ready for p2p sync) and sign it with our private key.
-        self.blobs.import_s3_object(object).await?;
+        if let Some(blobs) = self.blobs.as_ref() {
+            blobs.import_s3_object(object).await?;
+        }
         Ok(())
     }
 
@@ -490,7 +499,9 @@ impl NodeActor {
     /// Handler when incomplete blob was detected, probably the process was exited before the
     /// download hash finished.
     async fn on_incomplete_blob_detected(&self, blob: SignedBlobInfo) -> Result<()> {
-        self.blobs.download(blob).await?;
+        if let Some(blobs) = self.blobs.as_ref() {
+            blobs.download(blob).await?;
+        }
         Ok(())
     }
 
@@ -506,7 +517,9 @@ impl NodeActor {
     async fn shutdown(&self) -> Result<()> {
         self.nats.shutdown().await?;
         self.panda.shutdown().await?;
-        self.blobs.shutdown().await?;
+        if let Some(blobs) = self.blobs.as_ref() {
+            blobs.shutdown().await?;
+        }
         Ok(())
     }
 }
