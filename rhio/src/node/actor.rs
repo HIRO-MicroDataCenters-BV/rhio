@@ -19,8 +19,8 @@ use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::node::config::NodeConfig;
-use crate::node::Publication;
 use crate::topic::{Query, Subscription};
+use crate::Publication;
 
 pub enum ToNodeActor {
     Publish {

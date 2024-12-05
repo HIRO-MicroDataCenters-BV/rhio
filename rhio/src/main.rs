@@ -9,8 +9,7 @@ use rhio::config::{
 use rhio::health::{run_http_server, HTTP_HEALTH_ROUTE};
 use rhio::tracing::setup_tracing;
 use rhio::{
-    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
-    Subscription,
+    FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName, Subscription
 };
 use rhio_core::{load_private_key_from_file, Subject};
 use tokio::runtime::Builder;

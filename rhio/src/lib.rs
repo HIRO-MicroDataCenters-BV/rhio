@@ -8,10 +8,11 @@ mod topic;
 pub mod tracing;
 
 pub use nats::StreamName;
-pub use node::Node;
 pub use topic::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Publication, Subscription,
 };
+
+pub use node::rhio::Node;
 
 pub(crate) type JoinErrToStr =
     Box<dyn Fn(tokio::task::JoinError) -> String + Send + Sync + 'static>;
