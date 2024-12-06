@@ -38,10 +38,6 @@ spec:
             - /usr/local/bin/rhio
             - -c
             - /etc/rhio/config.yaml
-          {{- if .Values.debug }}  
-            - -l
-            - {{ .Values.debug }}
-          {{- end}}
           ports:
           # the port for the p2p networking endpoint
           - name: network
