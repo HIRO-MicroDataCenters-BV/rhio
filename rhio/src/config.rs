@@ -42,7 +42,7 @@ pub const NATS_ENDPOINT: &str = "localhost:4222";
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Config {
-    pub s3: S3Config,
+    pub s3: Option<S3Config>,
     pub nats: NatsConfig,
     #[serde(flatten)]
     pub node: NodeConfig,
@@ -272,6 +272,59 @@ mod tests {
     };
 
     #[test]
+    fn parse_minimal_config() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "config.yaml",
+                r#"
+                bind_port: 1112
+                http_bind_port: 2223
+                private_key_path: "/usr/app/rhio/private.key"
+                network_id: "rhio-default-network-1"
+
+                nats:
+                    endpoint: "http://nats.svc.kubernetes.local"
+                    credentials:
+                        username: "username_test"
+                        password: "password_test"
+            "#,
+            )?;
+            let config: Config = Figment::from(Serialized::defaults(Config::default()))
+                .merge(Yaml::file("config.yaml"))
+                .extract()
+                .unwrap();
+
+            assert_eq!(
+                config,
+                Config {
+                    nats: NatsConfig {
+                        endpoint: "http://nats.svc.kubernetes.local".into(),
+                        credentials: Some(NatsCredentials {
+                            nkey: None,
+                            username: Some("username_test".into()),
+                            password: Some("password_test".into()),
+                            token: None
+                        }),
+                    },
+                    node: NodeConfig {
+                        bind_port: 1112,
+                        http_bind_port: 2223,
+                        known_nodes: vec![],
+                        private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
+                        network_id: "rhio-default-network-1".into(),
+                    },
+                    s3: None,
+                    log_level: None,
+                    publish: None,
+                    subscribe: None
+                }
+            );
+
+            Ok(())
+        })
+    }
+
+    #[test]
     fn parse_yaml_file() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
@@ -338,7 +391,7 @@ subscribe:
             assert_eq!(
                 config,
                 Config {
-                    s3: S3Config {
+                    s3: Some(S3Config {
                         credentials: Some(Credentials {
                             access_key: Some("access_key_test".into()),
                             secret_key: Some("secret_key_test".into()),
@@ -348,7 +401,7 @@ subscribe:
                         }),
                         endpoint: "http://minio.svc.kubernetes.local".into(),
                         region: "eu-central-1".into(),
-                    },
+                    }),
                     nats: NatsConfig {
                         endpoint: "http://nats.svc.kubernetes.local".into(),
                         credentials: Some(NatsCredentials {
