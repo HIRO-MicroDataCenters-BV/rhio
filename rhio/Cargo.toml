@@ -20,6 +20,7 @@ anyhow = "1.0.93"
 async-nats = "0.37.0"
 async-trait = "0.1.83"
 axum = "0.7.9"
+axum-prometheus = "0.7.0"
 ciborium = "0.2.2"
 clap = { version = "4.5.8", features = ["derive"] }
 directories = "5.0.1"
