@@ -1,12 +1,18 @@
+use crate::{
+    metrics::{
+        BLOBS_DOWNLOAD_TOTAL, LABEL_BLOB_MSG_TYPE_DONE, LABEL_BLOB_MSG_TYPE_ERROR,
+        LABEL_LOCAL_BUCKET, LABEL_MSG_TYPE, LABEL_REMOTE_BUCKET,
+    },
+    topic::Query,
+};
 use anyhow::{anyhow, Result};
+use axum_prometheus::metrics;
 use p2panda_blobs::{Blobs as BlobsHandler, DownloadBlobEvent};
 use p2panda_core::Hash;
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, span, Level};
-
-use crate::topic::Query;
 
 #[allow(clippy::large_enum_variant)]
 pub enum ToBlobsActor {
@@ -124,9 +130,25 @@ impl BlobsActor {
             match event {
                 DownloadBlobEvent::Abort(err) => {
                     error!(parent: &span, %err, "failed downloading blob");
+
+                    metrics::counter!(
+                        BLOBS_DOWNLOAD_TOTAL,
+                        LABEL_MSG_TYPE => LABEL_BLOB_MSG_TYPE_ERROR,
+                        LABEL_LOCAL_BUCKET => blob.local_bucket_name.to_owned(),
+                        LABEL_REMOTE_BUCKET => blob.remote_bucket_name.to_owned()
+                    )
+                    .increment(1);
                 }
                 DownloadBlobEvent::Done => {
                     debug!(parent: &span, "finished downloading blob");
+
+                    metrics::counter!(
+                        BLOBS_DOWNLOAD_TOTAL,
+                        LABEL_MSG_TYPE => LABEL_BLOB_MSG_TYPE_DONE,
+                        LABEL_LOCAL_BUCKET => blob.local_bucket_name.to_owned(),
+                        LABEL_REMOTE_BUCKET => blob.remote_bucket_name.to_owned()
+                    )
+                    .increment(1);
                 }
             }
         }

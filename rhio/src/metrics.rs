@@ -1,0 +1,14 @@
+pub const MESSAGE_RECEIVE_TOTAL: &'static str = "message_receive_total";
+pub const LABEL_SUBJECT: &'static str = "subject";
+pub const LABEL_REMOTE_BUCKET: &'static str = "remote_bucket";
+pub const LABEL_LOCAL_BUCKET: &'static str = "local_bucket";
+pub const LABEL_SOURCE: &'static str = "source";
+pub const LABEL_SOURCE_NATS: &'static str = "nats";
+pub const LABEL_SOURCE_BLOBS: &'static str = "blob";
+pub const LABEL_SOURCE_NETWORK: &'static str = "network";
+pub const LABEL_MSG_TYPE: &'static str = "msg_type";
+pub const LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE: &'static str = "nats_message";
+pub const LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT: &'static str = "blob_announcement";
+pub const BLOBS_DOWNLOAD_TOTAL: &str = "blobs_download_total";
+pub const LABEL_BLOB_MSG_TYPE_DONE: &'static str = "done";
+pub const LABEL_BLOB_MSG_TYPE_ERROR: &'static str = "error";

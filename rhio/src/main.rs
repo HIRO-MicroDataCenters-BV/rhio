@@ -6,7 +6,7 @@ use p2panda_core::{PrivateKey, PublicKey};
 use rhio::config::{
     load_config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket, PRIVATE_KEY_ENV,
 };
-use rhio::health::{run_http_server, HTTP_HEALTH_ROUTE};
+use rhio::health::{run_http_server, HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use rhio::tracing::setup_tracing;
 use rhio::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Node, Publication, StreamName,
@@ -55,6 +55,11 @@ async fn main() -> Result<()> {
     info!(
         "  - 0.0.0.0:{}{}",
         config.node.http_bind_port, HTTP_HEALTH_ROUTE
+    );
+    info!("‣ metrics endpoint:");
+    info!(
+        "  - 0.0.0.0:{}{}",
+        config.node.http_bind_port, HTTP_METRICS_ROUTE
     );
 
     if let Some(publish) = config.publish {
