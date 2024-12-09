@@ -43,4 +43,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-figment.workspace = true
+figment = { workspace = true, features = ["test"] }
