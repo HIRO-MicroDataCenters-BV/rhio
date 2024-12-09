@@ -48,6 +48,11 @@ impl S3Store {
         Ok(store)
     }
 
+    /// Create an empty store
+    pub async fn empty() -> Result<Self> {
+        S3Store::new(Vec::new()).await
+    }
+
     /// Returns a list of all buckets managed by this store.
     pub fn buckets(&self) -> &Vec<Bucket> {
         self.buckets.as_ref()

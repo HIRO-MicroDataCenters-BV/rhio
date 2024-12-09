@@ -100,45 +100,47 @@ pub fn blobs_config() -> BlobsConfig {
 /// This method fails when we couldn't connect to the S3 buckets due to invalid configuration
 /// values, authentication or connection errors.
 pub async fn store_from_config(config: &Config) -> Result<S3Store> {
-    let mut buckets: HashMap<String, Bucket> = HashMap::new();
+    if let Some(s3_config) = config.s3.as_ref() {
+        let mut buckets: HashMap<String, Bucket> = HashMap::new();
 
-    let credentials = config
-        .s3
-        .credentials
-        .as_ref()
-        .ok_or(anyhow!("s3 credentials are not set"))
-        .context("reading s3 credentials from config")?;
-    let region: Region = Region::Custom {
-        region: config.s3.region.clone(),
-        endpoint: config.s3.endpoint.clone(),
-    };
+        let credentials = s3_config
+            .credentials
+            .as_ref()
+            .ok_or(anyhow!("s3 credentials are not set"))
+            .context("reading s3 credentials from config")?;
+        let region: Region = Region::Custom {
+            region: s3_config.region.clone(),
+            endpoint: s3_config.endpoint.clone(),
+        };
 
-    // Merge all buckets mentioned in the regarding publish and subscribe config sections and
-    // de-duplicate them. On this level we want them to be all handled by the same interface.
-    if let Some(publish) = &config.publish {
-        for bucket_name in &publish.s3_buckets {
-            let bucket =
-                Bucket::new(bucket_name, region.clone(), credentials.clone())?.with_path_style();
-            buckets.insert(bucket_name.clone(), *bucket);
+        // Merge all buckets mentioned in the regarding publish and subscribe config sections and
+        // de-duplicate them. On this level we want them to be all handled by the same interface.
+        if let Some(publish) = &config.publish {
+            for bucket_name in &publish.s3_buckets {
+                let bucket = Bucket::new(bucket_name, region.clone(), credentials.clone())?
+                    .with_path_style();
+                buckets.insert(bucket_name.clone(), *bucket);
+            }
         }
-    }
 
-    if let Some(subscribe) = &config.subscribe {
-        for remote_bucket in &subscribe.s3_buckets {
-            let bucket = Bucket::new(
-                &remote_bucket.local_bucket_name,
-                region.clone(),
-                credentials.clone(),
-            )?
-            .with_path_style();
-            buckets.insert(remote_bucket.local_bucket_name.clone(), *bucket);
+        if let Some(subscribe) = &config.subscribe {
+            for remote_bucket in &subscribe.s3_buckets {
+                let bucket = Bucket::new(
+                    &remote_bucket.local_bucket_name,
+                    region.clone(),
+                    credentials.clone(),
+                )?
+                .with_path_style();
+                buckets.insert(remote_bucket.local_bucket_name.clone(), *bucket);
+            }
         }
+
+        let buckets: Vec<Bucket> = buckets.values().cloned().collect();
+        let store = S3Store::new(buckets)
+            .await
+            .context("could not initialize s3 interface")?;
+        Ok(store)
+    } else {
+        S3Store::empty().await
     }
-
-    let buckets: Vec<Bucket> = buckets.values().cloned().collect();
-    let store = S3Store::new(buckets)
-        .await
-        .context("could not initialize s3 interface")?;
-
-    Ok(store)
 }
