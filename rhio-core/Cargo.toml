@@ -8,14 +8,14 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.93"
-async-nats = "0.37.0"
-bytes = "1.7.1"
-ciborium = "0.2.2"
-hex = "0.4.3"
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-rhio-blobs = { path = "../rhio-blobs" }
-serde = { version = "1.0.209", features = ["derive"] }
+anyhow.workspace = true
+async-nats.workspace = true
+bytes.workspace = true
+ciborium.workspace = true
+hex.workspace = true
+p2panda-core.workspace = true
+rhio-blobs.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
-tempfile = "3.10.1"
+tempfile.workspace = true
