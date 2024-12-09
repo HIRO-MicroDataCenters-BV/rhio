@@ -39,7 +39,6 @@ services:
 
 resources: {}
 
-
 livenessProbe:
   failureThreshold: 3
   httpGet:
@@ -58,8 +57,6 @@ readinessProbe:
   initialDelaySeconds: 5
   periodSeconds: 10
   timeoutSeconds: 5
-
-debug: =INFO
 
 configuration:
   # NETWORK
@@ -175,3 +172,13 @@ configuration:
     # - subject: "data.thehague.meta"
     #   public_key: "<public-key>"
     #   stream: "data"
+
+  # Set log verbosity.
+  #
+  # Possible log levels are: ERROR, WARN, INFO, DEBUG, TRACE. They are scoped to "rhio" by
+  # default.
+  #
+  # If you want to adjust the scope for deeper inspection use a filter value, for example
+  # "=TRACE" for logging _everything_ or "rhio=INFO,async_nats=DEBUG" etc.
+
+  log_level: =INFO
