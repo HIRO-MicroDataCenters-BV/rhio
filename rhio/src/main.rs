@@ -42,6 +42,7 @@ async fn main() -> Result<()> {
         .iter()
         .map(|addr| addr.to_string())
         .collect();
+    info!("‣ version: {}", env!("CARGO_PKG_VERSION").to_string());
     info!("‣ network id:");
     info!("  - {}", config.node.network_id);
     info!("‣ node public key:");
