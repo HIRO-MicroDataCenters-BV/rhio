@@ -8,16 +8,16 @@ publish = false
 workspace = true
 
 [dependencies]
-anyhow = "1.0.93"
-bytes = "1.8.0"
-futures-lite = "2.5.0"
-iroh-blobs = "0.25.0"
-iroh-io = { version = "0.6.1", features = ["x-http"] }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-rust-s3 = { version = "0.35.1", features = ["tokio"] }
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.132"
-thiserror = "2.0.3"
-tokio = "1.41.1"
-tracing = "0.1.40"
-url = "2.5.3"
+anyhow.workspace = true
+bytes.workspace = true
+futures-lite.workspace = true
+iroh-blobs.workspace = true
+iroh-io.workspace = true
+p2panda-core.workspace = true
+rust-s3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
