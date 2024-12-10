@@ -16,32 +16,32 @@ name = "rhio"
 name = "rhio"
 
 [dependencies]
-anyhow = "1.0.93"
-async-nats = "0.37.0"
-async-trait = "0.1.83"
-axum = "0.7.9"
-axum-prometheus = "0.7.0"
-ciborium = "0.2.2"
-clap = { version = "4.5.8", features = ["derive"] }
-directories = "5.0.1"
-figment = { version = "0.10.19", features = ["env", "yaml"] }
-futures-util = "0.3.30"
-hex = "0.4.3"
-loole = "0.4.0"
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", default-features = false }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", features = ["cbor"], default-features = false }
-rand = "0.8.5"
-rhio-blobs = { path = "../rhio-blobs" }
-rhio-core = { path = "../rhio-core" }
-rust-s3 = "0.35.1"
-serde = { version = "1.0.209", features = ["derive"] }
-tokio = { version = "1.41.1", features = ["full"] }
-tokio-stream = "0.1.15"
-tokio-util = "0.7.11"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+anyhow.workspace = true
+async-nats.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+axum-prometheus.workspace = true
+ciborium.workspace = true
+clap.workspace = true
+directories.workspace = true
+figment.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+loole.workspace = true
+p2panda-blobs.workspace = true
+p2panda-core.workspace = true
+p2panda-net.workspace = true
+p2panda-sync.workspace = true
+rand.workspace = true
+rhio-blobs.workspace = true
+rhio-core.workspace = true
+rust-s3.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
-figment = { version = "0.10.19", features = ["env", "yaml", "test"] }
+figment = { workspace = true, features = ["test"] }
