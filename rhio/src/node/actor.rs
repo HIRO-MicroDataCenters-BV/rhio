@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
+use axum_prometheus::metrics;
 use futures_util::stream::SelectAll;
 use loole::RecvStream;
 use p2panda_core::{PrivateKey, PublicKey};
@@ -16,6 +17,11 @@ use tracing::{debug, error, trace, warn};
 
 use crate::blobs::watcher::{S3Event, S3Watcher};
 use crate::blobs::Blobs;
+use crate::metrics::{
+    LABEL_MSG_TYPE, LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT, LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
+    LABEL_REMOTE_BUCKET, LABEL_SOURCE, LABEL_SOURCE_NATS, LABEL_SOURCE_NETWORK, LABEL_SUBJECT,
+    MESSAGE_RECEIVE_TOTAL,
+};
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::node::config::NodeConfig;
@@ -291,6 +297,12 @@ impl NodeActor {
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
 
+        metrics::counter!(
+            MESSAGE_RECEIVE_TOTAL,
+            LABEL_SOURCE => LABEL_SOURCE_NATS,
+            LABEL_SUBJECT => message.subject.as_ref().to_owned()
+        )
+        .increment(1);
         // Sign message as it definitely comes from us at this point (it doesn't have any signature
         // or public key yet).
         let mut network_message = NetworkMessage::new_nats(message, &self.public_key);
@@ -362,6 +374,14 @@ impl NodeActor {
                     .is_files_subscription_matching(&network_message.public_key, remote_bucket_name)
                     .await
                 {
+                    metrics::counter!(
+                        MESSAGE_RECEIVE_TOTAL,
+                        LABEL_SOURCE => LABEL_SOURCE_NETWORK,
+                        LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT,
+                        LABEL_REMOTE_BUCKET => remote_bucket_name.to_owned()
+                    )
+                    .increment(1);
+
                     self.blobs
                         .download(SignedBlobInfo {
                             hash: *hash,
@@ -391,6 +411,13 @@ impl NodeActor {
                     return Ok(());
                 }
 
+                metrics::counter!(
+                    MESSAGE_RECEIVE_TOTAL,
+                    LABEL_SOURCE => LABEL_SOURCE_NETWORK,
+                    LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
+                    LABEL_REMOTE_BUCKET => subject.to_string()
+                )
+                .increment(1);
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.
                 let headers = nats::add_custom_nats_headers(
