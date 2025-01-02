@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   rhio:
   - apiVersion: v2
+    appVersion: 0.1.3-dev.20.aarch64-support.001f0c0c
+    created: "2025-01-02T13:46:18.196590155Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 452f58092b7347a4df682173d10a3ed7ee31cf098ed594bfaaa14d3d4cc19949
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.20.aarch64-support.001f0c0c.tgz
+    version: 0.1.3-dev.20.aarch64-support.001f0c0c
+  - apiVersion: v2
     appVersion: 0.1.3-dev.19.aarch64-support.66fb274f
     created: "2025-01-02T13:44:35.044092033Z"
     description: peer-to-peer message stream and blob storage solution
@@ -41,4 +51,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.14.aarch64-support.f8b65a09.tgz
     version: 0.1.3-dev.14.aarch64-support.f8b65a09
-generated: "2025-01-02T13:44:35.043173929Z"
+generated: "2025-01-02T13:46:18.1959843Z"
