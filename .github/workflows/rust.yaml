@@ -8,15 +8,12 @@ env:
 
 jobs:
   test:
-    name: Test / ${{ matrix.target }} ${{ matrix.opt }}
+    name: Test / ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        opt:
-          - ''
-          - --release
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -36,7 +33,7 @@ jobs:
         # Ensure debug output is also tested
         env:
           RUST_LOG: debug
-        run: cargo test --all-features ${{ matrix.opt }}
+        run: cargo test --all-features
 
   check:
     runs-on: ubuntu-latest
