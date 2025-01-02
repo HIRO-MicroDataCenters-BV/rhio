@@ -33,9 +33,9 @@ jobs:
         isPR:
           - ${{github.event_name == 'pull_request'}}          
         exclude:
-          - { isPR: true }
-        include:
-          - { target: x86_64-unknown-linux-gnu }
+          - isPR: true
+            os: macos-latest
+            target: aarch64-apple-darwin
 
     steps:
       - name: Checkout repository
@@ -113,9 +113,8 @@ jobs:
         isPR:
           - ${{github.event_name == 'pull_request'}}          
         exclude:
-          - { isPR: true }
-        include:
-          - { platform: "linux/amd64" }
+          - isPR: true
+            platform: "linux/arm64"
 
     defaults:
       run:
