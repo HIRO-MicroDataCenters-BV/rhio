@@ -14,6 +14,8 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: hiro-microdatacenters-bv/rhio
+  HELM_CHART_TARGET_DIR: ${{ github.ref == 'refs/heads/main' && './helm-charts' || './dev' }}
+  BRANCH_NAME: ${GITHUB_REF##*/}
 
 jobs:
   test:
@@ -89,7 +91,7 @@ jobs:
         with:
           token: ${{ github.token }}
           charts_dir: "./charts" 
-          target_dir: "./helm-charts" # todo dev / release
+          target_dir: ${{ env.HELM_CHART_TARGET_DIR }}
 
   build-docker:
     name: Docker Build / ${{ matrix.platform }}
@@ -102,12 +104,12 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
-        # isPR:
-        #   - ${{github.event_name == 'pull_request'}}          
-        # exclude:
-        #   - { isPR: true }
-        # include:
-        #   - { platform: "linux/amd64" }
+        isPR:
+          - ${{github.event_name == 'pull_request'}}          
+        exclude:
+          - { isPR: true }
+        include:
+          - { platform: "linux/amd64" }
 
     defaults:
       run:
@@ -161,3 +163,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ env.BRANCH_NAME }}
+          cache-to: type=gha,mode=max,scope=${{ env.BRANCH_NAME }}
+          github-token: ${{ github.token }}
