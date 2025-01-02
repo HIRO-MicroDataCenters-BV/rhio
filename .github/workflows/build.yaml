@@ -3,7 +3,6 @@ name: Build
 on:
   push:
     branches:
-      # @TODO: limit this to `main` branch
       - '**'
     tags:
       - '**'
@@ -13,11 +12,31 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: hiro-microdatacenters-bv/rhio
+  IMAGE_NAME: ${{ github.ref == 'refs/heads/main' && 'hiro-microdatacenters-bv/rhio' || 'hiro-microdatacenters-bv/rhio-dev' }} 
+  HELM_CHART_TARGET_DIR: ${{ github.ref == 'refs/heads/main' && './helm-charts' || './dev' }}
+  BRANCH_NAME: ${GITHUB_REF##*/}
 
 jobs:
+
   test:
-    runs-on: ubuntu-latest
+    name: Test / ${{ matrix.config.target }} on ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          - config:
+              os: macos-latest
+              target: aarch64-apple-darwin
+            isMain: false
 
     steps:
       - name: Checkout repository
@@ -34,15 +53,18 @@ jobs:
           RUST_LOG: debug
         run: cargo test --all-features
 
-  build:
-    needs: [test]
+  build-helm-chart:
+    name: Build Helm Chart
     runs-on: ubuntu-latest
+    needs: [test]
+
     defaults:
       run:
         working-directory: ./
     permissions:
       contents: write
       packages: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,11 +73,67 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v3
 
+      - name: Make versions
+        run: |
+          cd "${{ github.workspace }}"
+          chmod +x ./version.sh
+          ./version.sh "${{ github.sha }}" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "VERSION_APP=$(cat "./VERSION")" >> $GITHUB_ENV
+          echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
+          echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create a github release
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: gh release create "${{ env.VERSION_APP }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish Helm charts
+        uses: stefanprodan/helm-gh-pages@master
+        with:
+          token: ${{ github.token }}
+          charts_dir: "./charts" 
+          target_dir: ${{ env.HELM_CHART_TARGET_DIR }}
+
+  build-docker:
+    name: Docker Build / ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          # ARM build is very slow, we build only for main branch
+          - platform: "linux/arm64"
+            isMain: false
+
+    defaults:
+      run:
+        working-directory: ./
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        # @TODO: don't build form arm during development cos it's super slow
-        # with:
-        #   platforms: linux/amd64, linux/arm64
+        with:
+          platforms: ${{ matrix.platform }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -87,24 +165,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          # @TODO: don't build form arm during development cos it's super slow
-          # platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-
-      - name: Create a github release
-        run: gh release create "${{ env.VERSION_APP }}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Publish Helm charts
-        uses: stefanprodan/helm-gh-pages@master
-        with:
-          token: ${{ github.token }}
-          charts_dir: "./charts"
-          target_dir: "./helm-charts"
+          cache-from: type=gha,scope=${{ env.BRANCH_NAME }}
+          cache-to: type=gha,mode=max,scope=${{ env.BRANCH_NAME }}
+          github-token: ${{ github.token }}
