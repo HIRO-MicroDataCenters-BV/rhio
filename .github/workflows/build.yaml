@@ -3,7 +3,6 @@ name: Build
 on:
   push:
     branches:
-      # @TODO: limit this to `main` branch
       - '**'
     tags:
       - '**'
@@ -13,29 +12,31 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: hiro-microdatacenters-bv/rhio
+  IMAGE_NAME: ${{ github.ref == 'refs/heads/main' && 'hiro-microdatacenters-bv/rhio' || 'hiro-microdatacenters-bv/rhio-dev' }} 
   HELM_CHART_TARGET_DIR: ${{ github.ref == 'refs/heads/main' && './helm-charts' || './dev' }}
   BRANCH_NAME: ${GITHUB_REF##*/}
 
 jobs:
+
   test:
-    name: Test / ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
+    name: Test / ${{ matrix.config.target }} on ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        include:
+        config:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
           - os: macos-latest
             target: aarch64-apple-darwin
-        isPR:
-          - ${{github.event_name == 'pull_request'}}          
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
         exclude:
-          - isPR: true
-            os: macos-latest
-            target: aarch64-apple-darwin
+          - config:
+              os: macos-latest
+              target: aarch64-apple-darwin
+            isMain: false
 
     steps:
       - name: Checkout repository
@@ -110,11 +111,12 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
-        isPR:
-          - ${{github.event_name == 'pull_request'}}          
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
         exclude:
-          - isPR: true
-            platform: "linux/arm64"
+          # ARM build is very slow, we build only for main branch
+          - platform: "linux/arm64"
+            isMain: false
 
     defaults:
       run:
@@ -130,7 +132,6 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        # @TODO: don't build form arm during development cos it's super slow
         with:
           platforms: ${{ matrix.platform }}
 
@@ -164,7 +165,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           push: true
-          # @TODO: don't build form arm during development cos it's super slow
           platforms: ${{ matrix.platform }}
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
