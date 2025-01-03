@@ -3,7 +3,6 @@ name: Build
 on:
   push:
     branches:
-      # @TODO: limit this to `main` branch
       - '**'
     tags:
       - '**'
@@ -13,11 +12,31 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: hiro-microdatacenters-bv/rhio
+  IMAGE_NAME: ${{ github.ref == 'refs/heads/main' && 'hiro-microdatacenters-bv/rhio' || 'hiro-microdatacenters-bv/rhio-dev' }} 
+  HELM_CHART_TARGET_DIR: ${{ github.ref == 'refs/heads/main' && './helm-charts' || './dev' }}
+  BRANCH_NAME: ${GITHUB_REF##*/}
 
 jobs:
+
   test:
-    runs-on: ubuntu-latest
+    name: Test / ${{ matrix.config.target }} on ${{ matrix.config.os }}
+    runs-on: ${{ matrix.config.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          - config:
+              os: macos-latest
+              target: aarch64-apple-darwin
+            isMain: false
 
     steps:
       - name: Checkout repository
@@ -34,15 +53,18 @@ jobs:
           RUST_LOG: debug
         run: cargo test --all-features
 
-  build:
-    needs: [test]
+  build-helm-chart:
+    name: Build Helm Chart
     runs-on: ubuntu-latest
+    needs: [test]
+
     defaults:
       run:
         working-directory: ./
     permissions:
       contents: write
       packages: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,11 +73,73 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v3
 
+      - name: Make versions
+        run: |
+          cd "${{ github.workspace }}"
+          chmod +x ./version.sh
+          ./version.sh "${{ github.sha }}" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "VERSION_APP=$(cat "./VERSION")" >> $GITHUB_ENV
+          echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
+          echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Create a github release
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: gh release create "${{ env.VERSION_APP }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish Helm charts
+        uses: stefanprodan/helm-gh-pages@master
+        with:
+          token: ${{ github.token }}
+          charts_dir: "./charts" 
+          target_dir: ${{ env.HELM_CHART_TARGET_DIR }}
+
+  build-docker:
+    name: Docker Build / ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+        isMain:
+          - ${{ github.ref == 'refs/heads/main' }}
+
+        exclude:
+          # ARM build is very slow, we build only for main branch
+          - platform: "linux/arm64"
+            isMain: false
+
+    defaults:
+      run:
+        working-directory: ./
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        # @TODO: don't build form arm during development cos it's super slow
-        # with:
-        #   platforms: linux/amd64, linux/arm64
+        with:
+          platforms: ${{ matrix.platform }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -84,27 +168,87 @@ jobs:
           tags: ${{ env.DOCKER_TAGS }}
 
       - name: Build and push docker image
-        uses: docker/build-push-action@v5
+        id: build
+        uses: docker/build-push-action@v6
         with:
           push: true
-          # @TODO: don't build form arm during development cos it's super slow
-          # platforms: linux/amd64,linux/arm64
-          tags: ${{ env.DOCKER_IMAGES }}
+          platforms: ${{ matrix.platform }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.DOCKER_TAGS }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=build-${{ env.PLATFORM_PAIR }}
+          github-token: ${{ github.token }}
 
-      - name: Configure Git
+      - name: Export Digest
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          digest="${{ steps.build.outputs.digest }}"
+          [ "$digest" ] || exit 1
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${digest#sha256:}"
 
-      - name: Create a github release
-        run: gh release create "${{ env.VERSION_APP }}"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Publish Helm charts
-        uses: stefanprodan/helm-gh-pages@master
+      - name: Upload Digest
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ github.token }}
-          charts_dir: "./charts"
-          target_dir: "./helm-charts"
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-manifests:
+    name: Docker Build / Merge Manifests
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write
+
+    needs:
+      - build-docker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Make versions
+        run: |
+          cd "${{ github.workspace }}"
+          chmod +x ./version.sh
+          ./version.sh "${{ github.sha }}" "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "VERSION_APP=$(cat "./VERSION")" >> $GITHUB_ENV
+          echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
+          echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: ${{ env.DOCKER_TAGS }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)          
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}                    
