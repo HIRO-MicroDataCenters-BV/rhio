@@ -113,10 +113,11 @@ jobs:
           - linux/arm64
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
-        exclude:
-          # ARM build is very slow, we build only for main branch
-          - platform: "linux/arm64"
-            isMain: false
+        # TODO uncomment after testing
+        # exclude:
+        #   # ARM build is very slow, we build only for main branch
+        #   - platform: "linux/arm64"
+        #     isMain: false
 
     defaults:
       run:
@@ -126,6 +127,11 @@ jobs:
       packages: write
 
     steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -168,6 +174,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ${{ env.DOCKER_IMAGES }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ env.BRANCH_NAME }}
-          cache-to: type=gha,mode=max,scope=${{ env.BRANCH_NAME }}
+          outputs: type=image,name=${{ env.DOCKER_IMAGES }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=build-${{ env.PLATFORM_PAIR }}
           github-token: ${{ github.token }}
