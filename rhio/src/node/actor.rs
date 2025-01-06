@@ -14,7 +14,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, trace, warn};
 
-use crate::blobs::watcher::{S3Event, S3Watcher};
+use crate::blobs::watcher::S3Event;
 use crate::blobs::Blobs;
 use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
@@ -47,8 +47,6 @@ pub struct NodeActor {
     nats: Nats,
     panda: Panda,
     blobs: Option<Blobs>,
-    #[allow(dead_code)]
-    watcher: S3Watcher,
 }
 
 impl NodeActor {
@@ -59,7 +57,6 @@ impl NodeActor {
         nats: Nats,
         panda: Panda,
         blobs: Option<Blobs>,
-        watcher: S3Watcher,
         inbox: mpsc::Receiver<ToNodeActor>,
         s3_watcher_rx: mpsc::Receiver<Result<S3Event, S3Error>>,
     ) -> Self {
@@ -74,7 +71,6 @@ impl NodeActor {
             nats,
             panda,
             blobs,
-            watcher,
         }
     }
 

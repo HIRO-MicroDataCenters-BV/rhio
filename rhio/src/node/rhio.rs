@@ -13,7 +13,6 @@ use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
-use crate::blobs::watcher::S3Watcher;
 use crate::blobs::{blobs_config, store_from_config, Blobs};
 use crate::config::Config;
 use crate::nats::Nats;
@@ -57,20 +56,20 @@ impl Node {
             .sync(sync_config);
 
         // 3. Configure and set up blob store and connection handlers for blob replication.
-        let (network, blobs) = if config.s3.is_some() {
+        let (network, blobs, watcher_rx) = if config.s3.is_some() {
             let (network, blobs_handler) =
                 BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
                     .await?;
-            let blobs = Blobs::new(blob_store.clone(), blobs_handler);
-            (network, Some(blobs))
+            // 3.1. Start a service which watches the S3 buckets for changes.
+            let (watcher_tx, watcher_rx) = mpsc::channel(512);
+
+            let blobs = Blobs::new(blob_store.clone(), blobs_handler, watcher_tx);
+            (network, Some(blobs), watcher_rx)
         } else {
             let network = builder.build().await?;
-            (network, None)
+            let (_dummy_watcher_tx, dummy_watcher_rx) = mpsc::channel(512);
+            (network, None, dummy_watcher_rx)
         };
-
-        // 4. Start a service which watches the S3 buckets for changes.
-        let (watcher_tx, watcher_rx) = mpsc::channel(512);
-        let watcher = S3Watcher::new(blob_store, watcher_tx);
 
         // 5. Move all networking logic into dedicated "p2panda" actor, dealing with p2p
         //    networking, data replication and gossipping.
@@ -90,7 +89,6 @@ impl Node {
             nats,
             panda,
             blobs,
-            watcher,
             node_actor_rx,
             watcher_rx,
         );

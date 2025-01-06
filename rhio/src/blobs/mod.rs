@@ -1,52 +1,40 @@
 mod actor;
+mod proxy;
 pub mod watcher;
 
 use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use futures_util::future::{MapErr, Shared};
-use futures_util::{FutureExt, TryFutureExt};
 use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
+use proxy::BlobsActorProxy;
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use s3::{Bucket, Region};
-use tokio::sync::{mpsc, oneshot};
-use tokio::task::JoinError;
-use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
-use tracing::error;
+use tokio::sync::mpsc;
+use watcher::S3Event;
 
-use crate::blobs::actor::{BlobsActor, ToBlobsActor};
 use crate::config::Config;
 use crate::topic::Query;
-use crate::JoinErrToStr;
+
+use crate::blobs::watcher::S3Watcher;
+use s3::error::S3Error;
 
 #[derive(Debug)]
 pub struct Blobs {
-    blobs_actor_tx: mpsc::Sender<ToBlobsActor>,
+    blobs: BlobsActorProxy,
     #[allow(dead_code)]
-    actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
+    watcher: S3Watcher,
 }
 
 impl Blobs {
-    pub fn new(blob_store: S3Store, blobs_handler: BlobsHandler<Query, S3Store>) -> Self {
-        let (blobs_actor_tx, blobs_actor_rx) = mpsc::channel(512);
-        let blobs_actor = BlobsActor::new(blob_store.clone(), blobs_handler, blobs_actor_rx);
-
-        let pool = LocalPoolHandle::new(1);
-        let actor_handle = pool.spawn_pinned(|| async move {
-            if let Err(err) = blobs_actor.run().await {
-                error!("blobs actor failed: {err:?}");
-            }
-        });
-
-        let actor_drop_handle = AbortOnDropHandle::new(actor_handle)
-            .map_err(Box::new(|e: JoinError| e.to_string()) as JoinErrToStr)
-            .shared();
-
-        Self {
-            blobs_actor_tx,
-            actor_handle: actor_drop_handle,
-        }
+    pub fn new(
+        blob_store: S3Store,
+        blobs_handler: BlobsHandler<Query, S3Store>,
+        watcher_tx: mpsc::Sender<Result<S3Event, S3Error>>,
+    ) -> Blobs {
+        let blobs = BlobsActorProxy::new(blob_store.clone(), blobs_handler);
+        let watcher = S3Watcher::new(blob_store, watcher_tx);
+        Blobs { blobs, watcher }
     }
 
     /// Download a blob from the network.
@@ -54,32 +42,16 @@ impl Blobs {
     /// Attempt to download a blob from peers on the network and place it into the nodes MinIO
     /// bucket.
     pub async fn download(&self, blob: SignedBlobInfo) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::DownloadBlob { blob, reply })
-            .await?;
-        let result = reply_rx.await?;
-        result?;
-        Ok(())
+        self.blobs.download(blob).await
     }
 
     /// Import an existing, local S3 object into the blob store, preparing it for p2p sync.
     pub async fn import_s3_object(&self, object: NotImportedObject) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::ImportS3Object { object, reply })
-            .await?;
-        reply_rx.await??;
-        Ok(())
+        self.blobs.import_s3_object(object).await
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        let (reply, reply_rx) = oneshot::channel();
-        self.blobs_actor_tx
-            .send(ToBlobsActor::Shutdown { reply })
-            .await?;
-        reply_rx.await?;
-        Ok(())
+        self.blobs.shutdown().await
     }
 }
 
