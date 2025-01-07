@@ -418,7 +418,7 @@ impl NodeActor {
                     MESSAGE_RECEIVE_TOTAL,
                     LABEL_SOURCE => LABEL_SOURCE_NETWORK,
                     LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
-                    LABEL_REMOTE_BUCKET => subject.to_string()
+                    LABEL_SUBJECT => subject.to_string()
                 )
                 .increment(1);
                 // Move the authentication data into the NATS message itself, so it doesn't get
