@@ -14,6 +14,12 @@ pub struct NodeConfig {
     inner: Arc<RwLock<NodeConfigInner>>,
 }
 
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 struct NodeConfigInner {
     subscriptions: Vec<Subscription>,

@@ -3,25 +3,32 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::{
-    Config as NetworkConfig, NetworkBuilder, ResyncConfiguration, SyncConfiguration,
-};
+use p2panda_net::Config as NetworkConfig;
+use s3::error::S3Error;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
-use crate::blobs::{blobs_config, store_from_config, Blobs};
+use crate::blobs::watcher::S3Event;
+use crate::blobs::Blobs;
 use crate::config::Config;
 use crate::nats::Nats;
-use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
+
+#[derive(Debug, Clone, Default)]
+pub struct NodeOptions {
+    pub public_key: PublicKey,
+    pub private_key: PrivateKey,
+    pub direct_addresses: Vec<SocketAddr>,
+    pub node_config: NodeConfig,
+}
 
 pub struct Node {
     node_id: PublicKey,
@@ -31,61 +38,20 @@ pub struct Node {
 }
 
 impl Node {
-    /// Configure and spawn a node.
-    pub async fn spawn(config: Config, private_key: PrivateKey) -> Result<Self> {
-        // 1. Connect to NATS server and consume streams filtered by NATS subjects.
-        let nats = Nats::new(config.clone()).await?;
-
-        // 2. Configure rhio peer-to-peer network.
-        let (node_config, p2p_network_config) = Node::configure_p2p_network(&config).await?;
-
-        let blob_store = store_from_config(&config).await?;
-
-        let sync_protocol = RhioSyncProtocol::new(
-            node_config.clone(),
-            nats.clone(),
-            blob_store.clone(),
-            private_key.clone(),
-        );
-
-        let sync_config =
-            SyncConfiguration::new(sync_protocol).resync(ResyncConfiguration::default());
-
-        let builder = NetworkBuilder::from_config(p2p_network_config)
-            .private_key(private_key.clone())
-            .sync(sync_config);
-
-        // 3. Configure and set up blob store and connection handlers for blob replication.
-        let (network, blobs, watcher_rx) = if config.s3.is_some() {
-            let (network, blobs_handler) =
-                BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
-                    .await?;
-            // 3.1. Start a service which watches the S3 buckets for changes.
-            let (watcher_tx, watcher_rx) = mpsc::channel(512);
-
-            let blobs = Blobs::new(blob_store.clone(), blobs_handler, watcher_tx);
-            (network, Some(blobs), watcher_rx)
-        } else {
-            let network = builder.build().await?;
-            let (_dummy_watcher_tx, dummy_watcher_rx) = mpsc::channel(512);
-            (network, None, dummy_watcher_rx)
-        };
-
-        // 5. Move all networking logic into dedicated "p2panda" actor, dealing with p2p
-        //    networking, data replication and gossipping.
-        let node_id = network.node_id();
-        let direct_addresses = network
-            .direct_addresses()
-            .await
-            .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
-        let panda = Panda::new(network);
-
+    /// Create a new Rhio node.
+    pub async fn new(
+        nats: Nats,
+        blobs: Option<Blobs>,
+        watcher_rx: Receiver<Result<S3Event, S3Error>>,
+        panda: Panda,
+        options: NodeOptions,
+    ) -> Result<Self> {
         // 6. Finally spawn actor which orchestrates the "business logic", with the help of the
         //    blob store, p2panda network and NATS JetStream consumers.
         let (node_actor_tx, node_actor_rx) = mpsc::channel(512);
         let node_actor = NodeActor::new(
-            node_config,
-            private_key,
+            options.node_config,
+            options.private_key,
             nats,
             panda,
             blobs,
@@ -103,8 +69,8 @@ impl Node {
             .shared();
 
         let node = Node {
-            node_id,
-            direct_addresses,
+            node_id: options.public_key,
+            direct_addresses: options.direct_addresses,
             node_actor_tx,
             actor_handle: actor_drop_handle,
         };
@@ -112,7 +78,7 @@ impl Node {
         Ok(node)
     }
 
-    async fn configure_p2p_network(
+    pub async fn configure_p2p_network(
         config: &Config,
     ) -> Result<(NodeConfig, NetworkConfig), anyhow::Error> {
         let node_config = NodeConfig::new();
