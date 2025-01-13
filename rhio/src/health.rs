@@ -20,16 +20,20 @@ pub async fn run_http_server(bind_port: u16) -> Result<()> {
         IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         bind_port,
     ))
-    .await?;
+    .await
+    .context("TCP Listener binding")?;
     debug!(
         "HTTP health and metrics endpoint listening on {}",
         listener.local_addr()?
     );
+
     let app = Router::new().route(HTTP_HEALTH_ROUTE, get(health)).route(
         HTTP_METRICS_ROUTE,
         get(move || ready(recorder_handle.render())),
     );
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .await
+        .context("HTTP metrics and health serving")?;
     Ok(())
 }
 

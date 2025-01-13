@@ -131,29 +131,27 @@ impl BlobsActor {
                 DownloadBlobEvent::Abort(err) => {
                     error!(parent: &span, %err, "failed downloading blob");
 
-                    metrics::counter!(
-                        BLOBS_DOWNLOAD_TOTAL,
-                        LABEL_MSG_TYPE => LABEL_BLOB_MSG_TYPE_ERROR,
-                        LABEL_LOCAL_BUCKET => blob.local_bucket_name.to_owned(),
-                        LABEL_REMOTE_BUCKET => blob.remote_bucket_name.to_owned()
-                    )
-                    .increment(1);
+                    BlobsActor::increment_blob_downloads(LABEL_BLOB_MSG_TYPE_ERROR, &blob);
                 }
                 DownloadBlobEvent::Done => {
                     debug!(parent: &span, "finished downloading blob");
 
-                    metrics::counter!(
-                        BLOBS_DOWNLOAD_TOTAL,
-                        LABEL_MSG_TYPE => LABEL_BLOB_MSG_TYPE_DONE,
-                        LABEL_LOCAL_BUCKET => blob.local_bucket_name.to_owned(),
-                        LABEL_REMOTE_BUCKET => blob.remote_bucket_name.to_owned()
-                    )
-                    .increment(1);
+                    BlobsActor::increment_blob_downloads(LABEL_BLOB_MSG_TYPE_DONE, &blob);
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn increment_blob_downloads(msg_type: &str, blob: &SignedBlobInfo) {
+        metrics::counter!(
+            BLOBS_DOWNLOAD_TOTAL,
+            LABEL_MSG_TYPE => msg_type.to_owned(),
+            LABEL_LOCAL_BUCKET => blob.local_bucket_name.to_owned(),
+            LABEL_REMOTE_BUCKET => blob.remote_bucket_name.to_owned()
+        )
+        .increment(1);
     }
 
     async fn shutdown(&mut self) -> Result<()> {
