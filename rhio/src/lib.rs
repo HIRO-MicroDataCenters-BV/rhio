@@ -1,6 +1,7 @@
 mod blobs;
 pub mod config;
 pub mod health;
+pub mod metrics;
 mod nats;
 mod network;
 mod node;
