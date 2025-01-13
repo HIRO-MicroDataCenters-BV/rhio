@@ -293,12 +293,7 @@ impl NodeActor {
 
         debug!(subject = %message.subject, "received nats message, broadcast it in gossip overlay");
 
-        metrics::counter!(
-            MESSAGE_RECEIVE_TOTAL,
-            LABEL_SOURCE => LABEL_SOURCE_NATS,
-            LABEL_SUBJECT => message.subject.as_ref().to_owned()
-        )
-        .increment(1);
+        NodeActor::increment_received_local_messages(&message.subject);
         // Sign message as it definitely comes from us at this point (it doesn't have any signature
         // or public key yet).
         let mut network_message = NetworkMessage::new_nats(message, &self.public_key);
@@ -375,13 +370,7 @@ impl NodeActor {
                     .is_files_subscription_matching(&network_message.public_key, remote_bucket_name)
                     .await
                 {
-                    metrics::counter!(
-                        MESSAGE_RECEIVE_TOTAL,
-                        LABEL_SOURCE => LABEL_SOURCE_NETWORK,
-                        LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT,
-                        LABEL_REMOTE_BUCKET => remote_bucket_name.to_owned()
-                    )
-                    .increment(1);
+                    NodeActor::increment_received_blob_announcements(&remote_bucket_name);
 
                     self.blobs
                         .as_ref()
@@ -414,13 +403,7 @@ impl NodeActor {
                     return Ok(());
                 }
 
-                metrics::counter!(
-                    MESSAGE_RECEIVE_TOTAL,
-                    LABEL_SOURCE => LABEL_SOURCE_NETWORK,
-                    LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
-                    LABEL_SUBJECT => subject.to_string()
-                )
-                .increment(1);
+                NodeActor::increment_received_remote_messages(&subject);
                 // Move the authentication data into the NATS message itself, so it doesn't get
                 // lost after storing it in the NATS server.
                 let headers = nats::add_custom_nats_headers(
@@ -436,6 +419,35 @@ impl NodeActor {
         }
 
         Ok(())
+    }
+
+    fn increment_received_local_messages(subject: &async_nats::subject::Subject) {
+        metrics::counter!(
+            MESSAGE_RECEIVE_TOTAL,
+            LABEL_SOURCE => LABEL_SOURCE_NATS,
+            LABEL_SUBJECT => subject.as_ref().to_owned()
+        )
+        .increment(1);
+    }
+
+    fn increment_received_remote_messages(subject: &Subject) {
+        metrics::counter!(
+            MESSAGE_RECEIVE_TOTAL,
+            LABEL_SOURCE => LABEL_SOURCE_NETWORK,
+            LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
+            LABEL_SUBJECT => subject.to_string()
+        )
+        .increment(1);
+    }
+
+    fn increment_received_blob_announcements(remote_bucket_name: &String) {
+        metrics::counter!(
+            MESSAGE_RECEIVE_TOTAL,
+            LABEL_SOURCE => LABEL_SOURCE_NETWORK,
+            LABEL_MSG_TYPE => LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT,
+            LABEL_REMOTE_BUCKET => remote_bucket_name.to_owned()
+        )
+        .increment(1);
     }
 
     /// Handler for incoming events from the S3 watcher service.
