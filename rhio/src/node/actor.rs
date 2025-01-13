@@ -370,7 +370,7 @@ impl NodeActor {
                     .is_files_subscription_matching(&network_message.public_key, remote_bucket_name)
                     .await
                 {
-                    NodeActor::increment_received_blob_announcements(&remote_bucket_name);
+                    NodeActor::increment_received_blob_announcements(remote_bucket_name);
 
                     self.blobs
                         .as_ref()
