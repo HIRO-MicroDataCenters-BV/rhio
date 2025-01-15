@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::config::{Config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
-use crate::health::HTTP_HEALTH_ROUTE;
+use crate::health::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use crate::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Publication, Subscription,
 };
@@ -194,6 +194,7 @@ impl Context {
             .iter()
             .map(|addr| addr.to_string())
             .collect();
+        info!("‣ version: {}", env!("CARGO_PKG_VERSION").to_string());
         info!("‣ network id:");
         info!("  - {}", self.config.node.network_id);
         info!("‣ node public key:");
@@ -206,6 +207,11 @@ impl Context {
         info!(
             "  - 0.0.0.0:{}{}",
             self.config.node.http_bind_port, HTTP_HEALTH_ROUTE
+        );
+        info!("‣ metrics endpoint:");
+        info!(
+            "  - 0.0.0.0:{}{}",
+            self.config.node.http_bind_port, HTTP_METRICS_ROUTE
         );
     }
 
