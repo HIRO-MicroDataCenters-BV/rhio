@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use async_nats::jetstream::context::Publish;
-use async_nats::jetstream::{consumer::DeliverPolicy, Context as JetstreamContext};
-use async_nats::{Client as NatsClient, HeaderMap};
+use async_nats::jetstream::consumer::DeliverPolicy;
+use async_nats::HeaderMap;
 use rand::random;
 use rhio_core::{subjects_to_str, Subject};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error};
 
-use crate::nats::consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName};
+use crate::nats::{
+    client::types::NatsClient,
+    consumer::{Consumer, ConsumerId, JetStreamEvent, StreamName},
+};
+
+use super::client::types::NatsMessageStream;
 
 pub enum ToNatsActor {
     Publish {
@@ -86,19 +90,25 @@ pub enum ToNatsActor {
     },
 }
 
-pub struct NatsActor {
+pub struct NatsActor<M, N>
+where
+    M: NatsMessageStream + Send + Sync + Unpin + 'static,
+    N: NatsClient<M>,
+{
     inbox: mpsc::Receiver<ToNatsActor>,
-    nats_jetstream: JetstreamContext,
-    consumers: HashMap<ConsumerId, Consumer>,
+    nats_client: Box<N>,
+    consumers: HashMap<ConsumerId, Consumer<M>>,
 }
 
-impl NatsActor {
-    pub fn new(nats_client: NatsClient, inbox: mpsc::Receiver<ToNatsActor>) -> Self {
-        let nats_jetstream = async_nats::jetstream::new(nats_client.clone());
-
+impl<M, N> NatsActor<M, N>
+where
+    M: NatsMessageStream + Send + Sync + Unpin + 'static,
+    N: NatsClient<M>,
+{
+    pub fn new(nats_client: Box<N>, inbox: mpsc::Receiver<ToNatsActor>) -> Self {
         Self {
             inbox,
-            nats_jetstream,
+            nats_client,
             consumers: HashMap::new(),
         }
     }
@@ -190,17 +200,9 @@ impl NatsActor {
     ) -> Result<()> {
         debug!(%subject, ?payload, bytes = payload.len(), "publish NATS message");
 
-        let mut publish = Publish::build().payload(payload.into());
-        if let Some(headers) = headers {
-            publish = publish.headers(headers);
-        }
-        let server_ack = self.nats_jetstream.send_publish(subject, publish).await?;
-
-        // Wait until the server confirmed receiving this message, to make sure it got delivered
-        // and persisted.
-        if wait_for_ack {
-            server_ack.await.context("publish message to nats server")?;
-        }
+        self.nats_client
+            .publish(wait_for_ack, subject, payload.into(), headers)
+            .await?;
 
         Ok(())
     }
@@ -225,15 +227,17 @@ impl NatsActor {
                     stream_name.clone(),
                     format!("{filter_subjects_str}-{random_id}"),
                 );
+                let (messages, consumer_info) = self
+                    .nats_client
+                    .create_consumer_stream(
+                        stream_name.clone(),
+                        filter_subjects.clone(),
+                        deliver_policy,
+                    )
+                    .await?;
 
-                let mut consumer = Consumer::new(
-                    &self.nats_jetstream,
-                    stream_name,
-                    filter_subjects,
-                    deliver_policy,
-                    topic_id,
-                )
-                .await?;
+                let mut consumer =
+                    Consumer::new(messages, consumer_info, stream_name, topic_id).await?;
 
                 let rx = consumer.subscribe();
                 self.consumers.insert(consumer_id.clone(), consumer);
@@ -246,14 +250,17 @@ impl NatsActor {
                 let rx = match self.consumers.get_mut(&consumer_id) {
                     Some(consumer) => consumer.subscribe(),
                     None => {
-                        let mut consumer = Consumer::new(
-                            &self.nats_jetstream,
-                            stream_name,
-                            filter_subjects,
-                            deliver_policy,
-                            topic_id,
-                        )
-                        .await?;
+                        let (messages, consumer_info) = self
+                            .nats_client
+                            .create_consumer_stream(
+                                stream_name.clone(),
+                                filter_subjects.clone(),
+                                deliver_policy,
+                            )
+                            .await?;
+
+                        let mut consumer =
+                            Consumer::new(messages, consumer_info, stream_name, topic_id).await?;
                         let rx = consumer.subscribe();
                         self.consumers.insert(consumer_id.clone(), consumer);
                         rx

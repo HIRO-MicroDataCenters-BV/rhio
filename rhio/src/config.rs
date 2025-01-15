@@ -166,7 +166,7 @@ impl Default for S3Config {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct NatsConfig {
     pub endpoint: String,
     pub credentials: Option<NatsCredentials>,
@@ -181,7 +181,7 @@ impl Default for NatsConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct NatsCredentials {
     pub nkey: Option<String>,
     pub username: Option<String>,

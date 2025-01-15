@@ -17,6 +17,10 @@ use crate::blobs::{blobs_config, Blobs};
 use crate::config::PRIVATE_KEY_ENV;
 use crate::config::{load_config, Config};
 use crate::health::run_http_server;
+#[cfg(test)]
+use crate::nats::client::fake::client::FakeNatsClient;
+#[cfg(not(test))]
+use crate::nats::client::nats::NatsClientImpl;
 use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
 use crate::tracing::setup_tracing;
@@ -32,6 +36,7 @@ pub struct ContextBuilder {
 
 impl ContextBuilder {
     pub fn new(config: Config, private_key: PrivateKey) -> Self {
+        setup_tracing(config.log_level.clone());
         ContextBuilder {
             public_key: private_key.public_key(),
             config,
@@ -93,15 +98,15 @@ impl ContextBuilder {
                 .context("failed to initialize Rhio node")
         })?;
 
+        // Launch HTTP server in separate runtime to not block rhio runtime.
         let http_runtime = Builder::new_current_thread()
             .enable_io()
             .thread_name("http-server")
             .build()
             .expect("http server tokio runtime");
-
         let cancellation_token = CancellationToken::new();
-        // Launch HTTP server in separate runtime to not block rhio runtime.
         let http_handle = self.start_http_server(&http_runtime, cancellation_token.clone());
+
         Ok(Context::new(
             node,
             self.config.clone(),
@@ -114,9 +119,16 @@ impl ContextBuilder {
     }
 
     async fn init_rhio_node(config: Config, private_key: PrivateKey) -> Result<Node> {
-        let nats = Nats::new(config.clone()).await?;
+        // 1. Depends on the context - tests or prod, we configure corresponding nats client.
+        #[cfg(not(test))]
+        let nats_client = NatsClientImpl::new(config.nats.clone()).await?;
+        #[cfg(test)]
+        let nats_client = FakeNatsClient::new(config.nats.clone())?;
 
-        // 2. Configure rhio peer-to-peer network.
+        // 2. Configure Nats consumer streams management
+        let nats = Nats::new(nats_client).await?;
+
+        // 3. Configure rhio peer-to-peer network.
         let (node_config, p2p_network_config) = Node::configure_p2p_network(&config).await?;
 
         let blob_store = store_from_config(&config).await?;
@@ -136,12 +148,12 @@ impl ContextBuilder {
             .sync(sync_config);
 
         let (watcher_tx, watcher_rx) = mpsc::channel(512);
-        // 3. Configure and set up blob store and connection handlers for blob replication.
+        // 4. Configure and set up blob store and connection handlers for blob replication.
         let (network, blobs, watcher_rx) = if config.s3.is_some() {
             let (network, blobs_handler) =
                 BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
                     .await?;
-            // 3.1. Start a service which watches the S3 buckets for changes.
+            // 4.1. we also start a service which watches the S3 buckets for changes.
             let blobs = Blobs::new(blob_store.clone(), blobs_handler, watcher_tx);
             (network, Some(blobs), watcher_rx)
         } else {
@@ -158,6 +170,7 @@ impl ContextBuilder {
             .ok_or_else(|| anyhow!("socket is not bind to any interface"))?;
         let panda = Panda::new(network);
 
+        // 6. Creating rhio Node responsible for managing s3, nats and p2p network
         let options = NodeOptions {
             public_key: node_id,
             node_config,
@@ -168,6 +181,7 @@ impl ContextBuilder {
         Node::new(nats, blobs, watcher_rx, panda, options).await
     }
 
+    /// Starts the HTTP server with health endpoint.
     fn start_http_server(
         &self,
         runtime: &Runtime,

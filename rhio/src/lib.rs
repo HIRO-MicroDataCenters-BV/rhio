@@ -16,5 +16,8 @@ pub use topic::{
 
 pub use node::rhio::Node;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) type JoinErrToStr =
     Box<dyn Fn(tokio::task::JoinError) -> String + Send + Sync + 'static>;
