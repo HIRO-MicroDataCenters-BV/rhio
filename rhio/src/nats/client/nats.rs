@@ -1,3 +1,5 @@
+use crate::config::NatsCredentials;
+use crate::{config, StreamName};
 use anyhow::{bail, Context as AnyhowContext, Result};
 use async_nats::jetstream::consumer::push::MessagesError;
 use async_nats::jetstream::consumer::push::{Config as ConsumerConfig, Messages};
@@ -5,17 +7,13 @@ use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy};
 use async_nats::jetstream::consumer::{Info, PushConsumer};
 use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::Message;
+use async_nats::{Client, Message};
 use async_nats::{ConnectOptions, HeaderMap};
 use async_trait::async_trait;
 use bytes::Bytes;
 use pin_project::pin_project;
-use rand::random;
 use rhio_core::{subjects_to_str, Subject};
 use tracing::{span, trace, Level};
-
-use crate::config::NatsCredentials;
-use crate::{config, StreamName};
 
 use super::types::{NatsClient, NatsMessageStream};
 
@@ -32,18 +30,19 @@ use super::types::{NatsClient, NatsMessageStream};
 /// - `create_consumer_stream`: Creates a push-based, ephemeral consumer for a NATS stream with specified filter subjects and delivery policy.
 pub struct NatsClientImpl {
     jetstream: JetstreamContext,
+    client: Client,
 }
 
 impl NatsClientImpl {
     #[allow(dead_code)]
     pub async fn new(nats: config::NatsConfig) -> Result<Self> {
         let nats_options = connect_options(nats.credentials.clone())?;
-        let nats_client = async_nats::connect_with_options(nats.endpoint.clone(), nats_options)
+        let client = async_nats::connect_with_options(nats.endpoint.clone(), nats_options)
             .await
             .context(format!("connecting to NATS server {}", nats.endpoint))?;
 
-        let jetstream = async_nats::jetstream::new(nats_client.clone());
-        Ok(NatsClientImpl { jetstream })
+        let jetstream = async_nats::jetstream::new(client.clone());
+        Ok(NatsClientImpl { jetstream, client })
     }
 }
 
@@ -122,8 +121,13 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
                     // delivery subject is the same across consumers, they'll all consume messages
                     // at the same time, which we avoid here by giving each consumer an unique,
                     // random identifier:
-                    let random_deliver_subject: u32 = random();
-                    format!("rhio-{random_deliver_subject}")
+                    // @NOTE(ktatarnikov): The async_nats library example of push consumer
+                    // (https://github.com/nats-io/nats.rs/blob/main/async-nats/examples/jetstream_push.rs)
+                    // uses `client.new_inbox()` method to generate deliver_subject.
+                    // The method provides stronger guarantees (globally unique) then we used previously with `random`.
+                    // https://docs.rs/async-nats/0.38.0/async_nats/client/struct.Client.html#method.new_inbox
+                    //
+                    self.client.new_inbox()
                 },
                 // For rhio two different delivery policies are configured:
                 //

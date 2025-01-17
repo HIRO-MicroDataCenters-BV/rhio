@@ -1,4 +1,5 @@
 use crate::config::NatsConfig;
+use anyhow::bail;
 use anyhow::{Context as AnyhowContext, Result};
 use async_nats::jetstream::consumer::push::MessagesError;
 use async_nats::jetstream::consumer::DeliverPolicy;
@@ -106,10 +107,16 @@ impl FakeNatsServer {
             filter_subjects,
         };
 
-        if deliver_policy == DeliverPolicy::All {
-            self.publish_existing_messages(&subscription, subscriber_tx.clone())
-                .await
-                .context("FakeNatsClient: Publishing existing messages for delivery policy ALL")?;
+        match deliver_policy {
+            DeliverPolicy::All => {
+                self.publish_existing_messages(&subscription, subscriber_tx.clone())
+                    .await
+                    .context(
+                        "FakeNatsServer: Publishing existing messages for delivery policy ALL",
+                    )?;
+            }
+            DeliverPolicy::New => (),
+            policy => bail!("FakeNatsServer: Unimplemented deliver policy {:?}", policy),
         }
 
         self.subscribers
@@ -153,7 +160,6 @@ impl FakeNatsServer {
     async fn persist_message(&self, message: &Message) {
         let mut storage = self.storage.lock().await;
         storage.push(message.clone());
-        drop(storage);
     }
 
     fn distribute_to_subscribers(&self, subject: Subject, message: Message) -> Result<()> {

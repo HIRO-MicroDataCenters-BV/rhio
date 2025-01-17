@@ -27,6 +27,10 @@ use crate::{
 use super::fake_rhio_server::FakeRhioServer;
 use anyhow::Result;
 
+static TEST_INSTANCE_HTTP_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(8080));
+static TEST_INSTANCE_RHIO_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(31000));
+static TEST_INSTANCE_NATS_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(4222));
+
 /// A structure representing the setup for a two-cluster messaging system.
 ///
 /// This setup includes two instances of `FakeRhioServer` and two instances of
@@ -126,9 +130,6 @@ pub fn create_two_node_messaging_setup() -> Result<TwoClusterMessagingSetup> {
     Ok(setup)
 }
 
-static TEST_INSTANCE_HTTP_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(8080));
-static TEST_INSTANCE_RHIO_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(31000));
-
 pub fn generate_rhio_config(nats_config: &NatsConfig, s3_config: &Option<S3Config>) -> Config {
     let http_port = TEST_INSTANCE_HTTP_PORT.fetch_add(1, Ordering::SeqCst);
     let rhio_port = TEST_INSTANCE_RHIO_PORT.fetch_add(1, Ordering::SeqCst);
@@ -144,8 +145,6 @@ pub fn generate_rhio_config(nats_config: &NatsConfig, s3_config: &Option<S3Confi
     config.log_level = Some("=INFO".to_string());
     config
 }
-
-static TEST_INSTANCE_NATS_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(4222));
 
 pub fn generate_nats_config() -> NatsConfig {
     let nats_port = TEST_INSTANCE_NATS_PORT.fetch_add(1, Ordering::SeqCst);
