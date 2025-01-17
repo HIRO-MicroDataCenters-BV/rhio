@@ -1,21 +1,18 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_nats::error::Error;
-use async_nats::jetstream::consumer::push::{
-    Config as ConsumerConfig, Messages, MessagesErrorKind,
-};
-use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy, PushConsumer};
-use async_nats::jetstream::{Context as JetstreamContext, Message as MessageWithContext};
+use async_nats::jetstream::consumer::push::MessagesErrorKind;
+use async_nats::jetstream::consumer::Info;
 use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use rand::random;
-use rhio_core::{subjects_to_str, Subject};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{error, span, trace, Level, Span};
 
 use crate::JoinErrToStr;
+
+use super::client::types::NatsMessageStream;
 
 pub type StreamName = String;
 
@@ -70,9 +67,12 @@ enum ConsumerStatus {
 /// what the limits (duration, size, interest) of the retention are. In rhio we use streams for
 /// permament storage: messages are kept forever (for now). Streams consume normal NATS subjects,
 /// any message published on those subjects will be captured in the defined storage system.
-pub struct ConsumerActor {
+pub struct ConsumerActor<M>
+where
+    M: NatsMessageStream + Unpin,
+{
     subscribers_tx: loole::Sender<JetStreamEvent>,
-    messages: Messages,
+    messages: M,
     num_pending: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
@@ -80,10 +80,13 @@ pub struct ConsumerActor {
     _span: Span,
 }
 
-impl ConsumerActor {
+impl<M> ConsumerActor<M>
+where
+    M: NatsMessageStream + Unpin,
+{
     pub fn new(
         subscribers_tx: loole::Sender<JetStreamEvent>,
-        messages: Messages,
+        messages: M,
         num_pending: u64,
         stream_name: StreamName,
         topic_id: [u8; 32],
@@ -127,7 +130,7 @@ impl ConsumerActor {
 
     async fn on_message(
         &mut self,
-        message: Result<MessageWithContext, Error<MessagesErrorKind>>,
+        message: Result<NatsMessage, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         if let Err(err) = self.on_message_inner(message).await {
             error!(parent: &self._span, "consuming nats stream failed: {err}");
@@ -146,13 +149,13 @@ impl ConsumerActor {
 
     async fn on_message_inner(
         &mut self,
-        message: Result<MessageWithContext, Error<MessagesErrorKind>>,
+        message: Result<NatsMessage, Error<MessagesErrorKind>>,
     ) -> Result<()> {
         let message = message?;
 
         self.subscribers_tx.send(JetStreamEvent::Message {
             is_init: matches!(self.status, ConsumerStatus::Initializing),
-            message: message.message.clone(),
+            message: message.clone(),
             topic_id: self.topic_id,
         })?;
 
@@ -179,22 +182,32 @@ impl ConsumerActor {
     }
 }
 
-impl Drop for ConsumerActor {
+impl<M> Drop for ConsumerActor<M>
+where
+    M: NatsMessageStream + Unpin,
+{
     fn drop(&mut self) {
         trace!(parent: &self._span, "drop consumer");
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Consumer {
+pub struct Consumer<M>
+where
+    M: NatsMessageStream + Send + Sync + Unpin + 'static,
+{
     #[allow(dead_code)]
     subscribers_tx: loole::Sender<JetStreamEvent>,
     subscribers_rx: loole::Receiver<JetStreamEvent>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
+    phantom: std::marker::PhantomData<M>,
 }
 
-impl Consumer {
+impl<M> Consumer<M>
+where
+    M: NatsMessageStream + Send + Sync + Unpin + 'static,
+{
     /// Create a consumer of a NATS stream.
     ///
     /// The consumers used here are push-based, "un-acking" and ephemeral, meaning that no state of
@@ -206,102 +219,16 @@ impl Consumer {
     /// This allows rhio operators to have full flexibility over the nature of the stream. This is
     /// why for every published subject a "stream name" needs to be mentioned.
     pub async fn new(
-        context: &JetstreamContext,
+        messages: M,
+        consumer_info: Info,
         stream_name: StreamName,
-        filter_subjects: Vec<Subject>,
-        deliver_policy: DeliverPolicy,
         topic_id: [u8; 32],
     ) -> Result<Self> {
-        let mut consumer: PushConsumer = context
-            // Streams need to already be created on the server, if not, this method will fail
-            // here. Note that no checks are applied here for validating if the NATS stream
-            // configuration is compatible with rhio's design.
-            .get_stream(&stream_name)
-            .await
-            .context(format!(
-                "create or get '{}' stream from nats server",
-                stream_name,
-            ))?
-            .create_consumer(ConsumerConfig {
-                // Setting a delivery subject is crucial for making this consumer push-based. We
-                // need to create a push based consumer as pull-based ones are required to
-                // explicitly acknowledge messages.
-                //
-                // @NOTE(adz): Unclear to me what this really does other than it is required to be
-                // set for push-consumers? The documentation says: "The subject to deliver messages
-                // to. Setting this field decides whether the consumer is push or pull-based. With
-                // a deliver subject, the server will push messages to clients subscribed to this
-                // subject." https://docs.nats.io/nats-concepts/jetstream/consumers#push-specific
-                //
-                // .. it seems to not matter what the value inside this field is, we will still
-                // receive all messages from that stream, optionally filtered by "filter_subject"?
-                deliver_subject: {
-                    // @NOTE(adz): Another thing I couldn't find documented was that if this
-                    // delivery subject is the same across consumers, they'll all consume messages
-                    // at the same time, which we avoid here by giving each consumer an unique,
-                    // random identifier:
-                    let random_deliver_subject: u32 = random();
-                    format!("rhio-{random_deliver_subject}")
-                },
-                // For rhio two different delivery policies are configured:
-                //
-                // 1. Live-Mode: We're only interested in _upcoming_ messages as this consumer will
-                //    only be used to forward NATS messages into the gossip overlay. This happens
-                //    when a rhio node decided to "publish" a NATS subject, the created consumer
-                //    lives as long as the process.
-                // 2. Sync-Session: Here we want to load and exchange _past_ messages, usually
-                //    loading all messages from after a given timestamp. This happens when a remote
-                //    rhio node requests data from a NATS subject from us, the created consumer
-                //    lives as long as the sync session with this remote peer.
-                deliver_policy,
-                // We filter the given stream based on this subject filter, like this we can have
-                // different "views" on the same stream.
-                filter_subjects: filter_subjects
-                    .iter()
-                    .map(|subject| subject.to_string())
-                    .collect(),
-                // This is an ephemeral consumer which will not be persisted on the server / the
-                // progress of the consumer will not be remembered. We do this by _not_ setting
-                // "durable_name".
-                durable_name: None,
-                // Do _not_ acknowledge every incoming message, as we want to receive them _again_
-                // after rhio got restarted. The to-be-consumed stream needs to accommodate for
-                // this setting and accept an unlimited amount of un-acked message deliveries.
-                ack_policy: AckPolicy::None,
-                ..Default::default()
-            })
-            .await
-            .context(format!(
-                "create ephemeral jetstream consumer for '{}' stream",
-                stream_name,
-            ))?;
-
-        // Retrieve info about the consumer to learn how many messages are currently persisted on
-        // the server (number of "pending messages"). These are the messages we need to download
-        // first before we can continue.
-        let consumer_info = consumer.info().await?;
-        let consumer_name = consumer_info.name.clone();
-        let num_pending = consumer_info.num_pending;
-
-        let messages = consumer.messages().await.context("get message stream")?;
-
         let (subscribers_tx, subscribers_rx) = loole::bounded(256);
 
+        let consumer_name = consumer_info.name.clone();
+        let num_pending = consumer_info.num_pending;
         let span = span!(Level::TRACE, "consumer", id = %consumer_name);
-        let deliver_policy_str = match deliver_policy {
-            DeliverPolicy::All => "all",
-            DeliverPolicy::New => "new",
-            _ => unimplemented!(),
-        };
-        let filter_subjects_str = subjects_to_str(filter_subjects);
-        trace!(
-            parent: &span,
-            stream = %stream_name,
-            subject = %filter_subjects_str,
-            deliver_policy = deliver_policy_str,
-            num_pending = num_pending,
-            "create consumer for NATS"
-        );
 
         let consumer_actor = ConsumerActor::new(
             subscribers_tx.clone(),
@@ -326,6 +253,7 @@ impl Consumer {
             subscribers_tx,
             subscribers_rx,
             actor_handle: actor_drop_handle,
+            phantom: std::marker::PhantomData,
         })
     }
 
