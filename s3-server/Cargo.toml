@@ -1,0 +1,23 @@
+[package]
+name = "s3-server"
+description = "Simple S3 server for testing purposes"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "s3_server"
+
+[dependencies]
+anyhow.workspace = true
+s3s-fs.workspace = true
+s3s.workspace = true
+hyper-util.workspace = true
+url.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tokio-util.workspace = true
