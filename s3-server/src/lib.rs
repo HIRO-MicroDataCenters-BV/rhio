@@ -125,7 +125,7 @@ impl FakeS3Server {
             .await
             .context("FakeS3Server: tcp listener binding")?;
 
-        let result = tokio::select! {
+        tokio::select! {
             result = listener.accept() => {
                 let (socket, _) = match result {
                     Ok(ok) => ok,
@@ -143,7 +143,7 @@ impl FakeS3Server {
             }
             _ = cancel_token.cancelled() => bail!("FakeS3Server: cancelled")
         };
-        Ok(result)
+        Ok(())
     }
 
     /// Creates a new bucket in the fake S3 server.

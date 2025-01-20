@@ -140,8 +140,17 @@ impl ContextBuilder {
             private_key.clone(),
         );
 
-        let sync_config =
-            SyncConfiguration::new(sync_protocol).resync(ResyncConfiguration::default());
+        let resync_config = config
+            .node
+            .protocol
+            .map(|c| {
+                ResyncConfiguration::new()
+                    .poll_interval(c.poll_interval_seconds)
+                    .interval(c.resync_interval_seconds)
+            })
+            .unwrap_or_default();
+
+        let sync_config = SyncConfiguration::new(sync_protocol).resync(resync_config);
 
         let builder = NetworkBuilder::from_config(p2p_network_config)
             .private_key(private_key.clone())

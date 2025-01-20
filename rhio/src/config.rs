@@ -189,7 +189,7 @@ pub struct NatsCredentials {
     pub token: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct NodeConfig {
     pub bind_port: u16,
     pub http_bind_port: u16,
@@ -197,6 +197,7 @@ pub struct NodeConfig {
     pub known_nodes: Vec<KnownNode>,
     pub private_key_path: PathBuf,
     pub network_id: String,
+    pub protocol: Option<ProtocolConfig>,
 }
 
 impl Default for NodeConfig {
@@ -207,18 +208,36 @@ impl Default for NodeConfig {
             known_nodes: vec![],
             private_key_path: DEFAULT_PRIVATE_KEY_PATH.into(),
             network_id: DEFAULT_NETWORK_ID.to_string(),
+            protocol: None,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct KnownNode {
     pub public_key: PublicKey,
     #[serde(rename = "endpoints")]
     pub direct_addresses: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub struct ProtocolConfig {
+    #[serde(rename = "poll_interval_seconds")]
+    pub poll_interval_seconds: u64,
+    #[serde(rename = "resync_interval_seconds")]
+    pub resync_interval_seconds: u64,
+}
+
+impl Default for ProtocolConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval_seconds: 1,
+            resync_interval_seconds: 60,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct PublishConfig {
     #[serde(default)]
     pub s3_buckets: Vec<BucketName>,
@@ -226,7 +245,7 @@ pub struct PublishConfig {
     pub nats_subjects: Vec<LocalNatsSubject>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct SubscribeConfig {
     #[serde(default)]
     pub s3_buckets: Vec<RemoteS3Bucket>,
@@ -234,7 +253,7 @@ pub struct SubscribeConfig {
     pub nats_subjects: Vec<RemoteNatsSubject>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct RemoteS3Bucket {
     #[serde(rename = "remote_bucket")]
     pub remote_bucket_name: BucketName,
@@ -243,14 +262,14 @@ pub struct RemoteS3Bucket {
     pub public_key: PublicKey,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct LocalNatsSubject {
     pub subject: Subject,
     #[serde(rename = "stream")]
     pub stream_name: StreamName,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct RemoteNatsSubject {
     pub subject: Subject,
     #[serde(rename = "stream")]
@@ -268,7 +287,8 @@ mod tests {
 
     use crate::config::{
         Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig,
-        PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
+        ProtocolConfig, PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config,
+        SubscribeConfig,
     };
 
     #[test]
@@ -312,6 +332,7 @@ mod tests {
                         known_nodes: vec![],
                         private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
+                        protocol: None
                     },
                     s3: None,
                     log_level: None,
@@ -334,6 +355,9 @@ bind_port: 1112
 http_bind_port: 2223
 private_key_path: "/usr/app/rhio/private.key"
 network_id: "rhio-default-network-1"
+protocol:
+    poll_interval_seconds: 1
+    resync_interval_seconds: 60
 
 s3:
     endpoint: "http://minio.svc.kubernetes.local"
@@ -429,6 +453,7 @@ subscribe:
                         }],
                         private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
+                        protocol: Some(ProtocolConfig::default()),
                     },
                     log_level: None,
                     publish: Some(PublishConfig {
