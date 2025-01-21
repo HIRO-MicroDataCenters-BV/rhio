@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   rhio:
   - apiVersion: v2
+    appVersion: 0.1.3-dev.47.rhio-operator.dda1eddf
+    created: "2025-01-21T10:47:19.18369879Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: db2057a14e892f0e227e3f71b97f7465d9a4e69b86cb350f93a7b3f63b5ef512
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.47.rhio-operator.dda1eddf.tgz
+    version: 0.1.3-dev.47.rhio-operator.dda1eddf
+  - apiVersion: v2
     appVersion: 0.1.3-dev.43.integration-test.dddbc4e9
     created: "2025-01-20T09:11:58.952625791Z"
     description: peer-to-peer message stream and blob storage solution
@@ -301,4 +311,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.14.aarch64-support.c172c035.tgz
     version: 0.1.3-dev.14.aarch64-support.c172c035
-generated: "2025-01-20T09:11:58.951053461Z"
+generated: "2025-01-21T10:47:19.183097408Z"
