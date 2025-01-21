@@ -5597,6 +5597,7 @@ dependencies = [
  "assert-json-diff",
  "built",
  "chrono",
+ "clap",
  "futures",
  "http 1.1.0",
  "hyper 1.5.2",
