@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::cluster_operation::ClusterOperation;
+use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::config::fragment::Fragment;
 use stackable_operator::config::merge::Merge;
 use stackable_operator::kube::CustomResource;
@@ -11,15 +12,14 @@ use stackable_operator::status::condition::ClusterCondition;
 use stackable_operator::status::condition::HasStatusCondition;
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
-#[cfg_attr(test, derive(Default))]
 #[kube(
     kind = "RhioService",
-    group = "rhio.io",
+    group = "rhio.hiro.io",
     version = "v1",
-    namespaced,
-    plural = "rhioservices",
     status = "RhioServiceStatus",
     shortname = "rhio",
+    plural = "rhioservices",
+    namespaced,
     crates(
         kube_core = "stackable_operator::kube::core",
         k8s_openapi = "stackable_operator::k8s_openapi",
@@ -27,6 +27,7 @@ use stackable_operator::status::condition::HasStatusCondition;
     )
 )]
 pub struct RhioServiceSpec {
+    pub image: ProductImage,
     pub configuration: RhioConfig,
     pub app_version_label: String,
     pub nodes: Vec<NodePeerConfigSpec>,

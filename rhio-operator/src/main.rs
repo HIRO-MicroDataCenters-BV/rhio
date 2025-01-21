@@ -6,10 +6,13 @@ use actix_web::{get, middleware, App, HttpRequest, HttpResponse, HttpServer, Res
 use futures::StreamExt;
 use product_config::ProductConfigManager;
 use prometheus::{Encoder, TextEncoder};
+use rhio_operator::api::message_stream::ReplicatedMessageStream;
+use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
+use rhio_operator::api::object_store::ReplicatedObjectStore;
+use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use rhio_operator::api::service::RhioService;
-use rhio_operator::rhio_controller;
-use rhio_operator::state::State;
-pub use rhio_operator::{self, telemetry};
+use rhio_operator::{built_info, rhio_controller};
+use rhio_operator::rhio_controller::{APP_NAME, OPERATOR_NAME, RHIO_CONTROLLER_NAME};
 
 use clap::{crate_description, crate_version, Parser};
 use stackable_operator::{
@@ -28,11 +31,6 @@ use stackable_operator::{
     CustomResourceExt,
 };
 
-mod built_info {
-    // The file has been placed there by the build script.
-    include!(concat!(env!("OUT_DIR"), "/built.rs"));
-}
-
 #[derive(clap::Parser)]
 #[clap(about, author)]
 struct Opts {
@@ -48,15 +46,17 @@ struct RhioRun {
     common: ProductOperatorRun,
 }
 
-pub const APP_NAME: &str = "rhio";
-pub const OPERATOR_NAME: &str = "rhio.hiro.io";
-pub const RHIO_CONTROLLER_NAME: &str = "rhioservice";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => RhioService::print_yaml_schema(built_info::PKG_VERSION)?,
+        Command::Crd => {
+            RhioService::print_yaml_schema(built_info::PKG_VERSION)?;
+            ReplicatedMessageStream::print_yaml_schema(built_info::PKG_VERSION)?;
+            ReplicatedMessageStreamSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
+            ReplicatedObjectStore::print_yaml_schema(built_info::PKG_VERSION)?;
+            ReplicatedObjectStoreSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
+        },
         Command::Run(RhioRun {
             common:
                 ProductOperatorRun {
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
                 built_info::RUSTC_VERSION,
             );
             let product_config = product_config.load(&[
-                "deploy/config-spec/properties.yaml",
+                "./config-spec/properties.yaml",
                 "/etc/hiro/rhio-operator/config-spec/properties.yaml",
             ])?;
             let client =
@@ -103,7 +103,7 @@ pub async fn create_controller(
     product_config: ProductConfigManager,
     namespace: WatchNamespace,
 ) {
-    let kafka_controller = Controller::new(
+    let rhio_controller = Controller::new(
         namespace.get_api::<DeserializeGuard<RhioService>>(&client),
         watcher::Config::default(),
     )
@@ -113,10 +113,6 @@ pub async fn create_controller(
     )
     .owns(
         namespace.get_api::<Service>(&client),
-        watcher::Config::default(),
-    )
-    .owns(
-        namespace.get_api::<Listener>(&client),
         watcher::Config::default(),
     )
     .owns(
@@ -148,5 +144,5 @@ pub async fn create_controller(
         );
     });
 
-    kafka_controller.collect::<()>().await;
+    rhio_controller.collect::<()>().await;
 }

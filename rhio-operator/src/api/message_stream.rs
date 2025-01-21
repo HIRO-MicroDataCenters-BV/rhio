@@ -6,7 +6,7 @@ use stackable_operator::kube::CustomResource;
 #[cfg_attr(test, derive(Default))]
 #[kube(
     kind = "ReplicatedMessageStream",
-    group = "rhio.io",
+    group = "rhio.hiro.io",
     version = "v1",
     namespaced,
     crates(

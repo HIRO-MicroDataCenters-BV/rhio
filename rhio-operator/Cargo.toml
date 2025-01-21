@@ -4,19 +4,10 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# [[bin]]
-# doc = false
-# name = "rhio-operator"
-# path = "src/main.rs"
-
 [[bin]]
 doc = false
-name = "crdgen"
-path = "src/crdgen.rs"
-
-[lib]
-name = "rhio_operator"
-path = "src/lib.rs"
+name = "rhio-operator"
+path = "src/main.rs"
 
 [features]
 default = []
