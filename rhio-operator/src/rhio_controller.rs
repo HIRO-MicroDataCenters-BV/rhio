@@ -1,5 +1,11 @@
 #![allow(unused_imports, unused_variables)]
-use crate::{api::service::{RhioService, RhioServiceStatus}, service_resource::build_rhio_statefulset};
+use crate::{
+    api::{
+        role::RhioRole,
+        service::{RhioService, RhioServiceStatus},
+    },
+    service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
+};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
@@ -39,7 +45,7 @@ use stackable_operator::{
             core::v1::{
                 ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
                 EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServiceAccount, ServiceSpec, Volume,
+                ServiceAccount, ServicePort, ServiceSpec, Volume,
             },
         },
         apimachinery::pkg::apis::meta::v1::LabelSelector,
@@ -51,7 +57,7 @@ use stackable_operator::{
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
     },
-    kvp::{Label, Labels},
+    kvp::{Label, LabelError, Labels},
     logging::controller::ReconcilerError,
     memory::{BinaryMultiple, MemoryQuantity},
     product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
@@ -137,6 +143,74 @@ pub enum Error {
         source: stackable_operator::builder::pod::Error,
     },
 
+    #[snafu(display("object {} is missing metadata to build owner reference", rhio_service))]
+    ObjectMissingMetadataForOwnerRef {
+        source: stackable_operator::builder::meta::Error,
+        rhio_service: ObjectRef<RhioService>,
+    },
+
+    #[snafu(display("failed to build ConfigMap"))]
+    BuildConfigMap {
+        source: stackable_operator::builder::configmap::Error,
+    },
+
+    #[snafu(display("failed to apply Rhio ConfigMap"))]
+    ApplyRhioConfig {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to serialize Rhio config"))]
+    RhioConfigurationSerialization { source: serde_json::Error },
+
+    #[snafu(display("failed to build label"))]
+    BuildLabel { source: LabelError },
+
+    #[snafu(display("failed to create RBAC service account"))]
+    ApplyServiceAccount {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to create RBAC role binding"))]
+    ApplyRoleBinding {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to build RBAC resources"))]
+    BuildRbacResources {
+        source: stackable_operator::commons::rbac::Error,
+    },
+
+    #[snafu(display("failed to apply global Service"))]
+    ApplyRoleService {
+        source: stackable_operator::cluster_resources::Error,
+    },
+
+    #[snafu(display("failed to calculate global service name"))]
+    GlobalServiceNameNotFound,
+
+    #[snafu(display("failed to build object  meta data"))]
+    ObjectMeta {
+        source: stackable_operator::builder::meta::Error,
+    },
+
+    #[snafu(display("object defines no server role"))]
+    NoServerRole,
+
+    #[snafu(display("failed to generate product config"))]
+    GenerateProductConfig {
+        source: stackable_operator::product_config_utils::Error,
+    },
+
+    #[snafu(display("invalid product config"))]
+    InvalidProductConfig {
+        source: stackable_operator::product_config_utils::Error,
+    },
+
+    #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
+    ApplyRoleGroupStatefulSet {
+        source: stackable_operator::cluster_resources::Error,
+        rolegroup: RoleGroupRef<RhioService>,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -173,7 +247,7 @@ pub async fn reconcile_rhio(
 
     let client = &ctx.client;
 
-    let cluster_resources = ClusterResources::new(
+    let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
         RHIO_CONTROLLER_NAME,
@@ -182,34 +256,65 @@ pub async fn reconcile_rhio(
     )
     .context(CreateClusterResourcesSnafu)?;
 
-    // let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
-    //     rhio_service,
-    //     APP_NAME,
-    //     cluster_resources
-    //         .get_required_labels()
-    //         .context(GetRequiredLabelsSnafu)?,
-    //     )
-    //     .context(BuildRbacResourcesSnafu)?;
+    let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
+        rhio_service,
+        APP_NAME,
+        cluster_resources
+            .get_required_labels()
+            .context(BuildLabelSnafu)?,
+    )
+    .context(BuildRbacResourcesSnafu)?;
 
-    // let rbac_sa = cluster_resources
-    //     .add(client, rbac_sa.clone())
-    //     .await
-    //     .context(ApplyServiceAccountSnafu)?;
-    // cluster_resources
-    //     .add(client, rbac_rolebinding)
-    //     .await
-    //     .context(ApplyRoleBindingSnafu)?;
+    cluster_resources
+        .add(client, rbac_sa.clone())
+        .await
+        .context(ApplyServiceAccountSnafu)?;
 
+    cluster_resources
+        .add(client, rbac_rolebinding)
+        .await
+        .context(ApplyRoleBindingSnafu)?;
 
-    // let statefulset = build_rhio_statefulset(
-    //     rhio_service,
-    //     &resolved_product_image,
-    //     &client.kubernetes_cluster_info,
-    // )?;
+    let server_role_service = cluster_resources
+        .add(
+            client,
+            build_server_role_service(rhio_service, &resolved_product_image)?,
+        )
+        .await
+        .context(ApplyRoleServiceSnafu)?;
 
+    let rhio_configmap = build_rhio_configmap(rhio_service, rhio_service, &resolved_product_image)?;
 
+    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
-    let status = RhioServiceStatus { conditions: vec![] };
+    cluster_resources
+        .add(client, rhio_configmap)
+        .await
+        .context(ApplyRhioConfigSnafu)?;
+
+    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
+
+    let rhio_statefulset =
+        build_rhio_statefulset(rhio_service, &resolved_product_image, &rolegroup, &rbac_sa)?;
+
+    ss_cond_builder.add(
+        cluster_resources
+            .add(client, rhio_statefulset)
+            .await
+            .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+                rolegroup: rolegroup.clone(),
+            })?,
+    );
+
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
+
+    let status = RhioServiceStatus {
+        conditions: compute_conditions(
+            rhio_service,
+            &[&ss_cond_builder, &cluster_operation_cond_builder],
+        ),
+    };
 
     cluster_resources
         .delete_orphaned_resources(client)
@@ -233,4 +338,59 @@ pub fn error_policy(
         Error::InvalidRhioService { .. } => Action::await_change(),
         _ => Action::requeue(*Duration::from_secs(5)),
     }
+}
+
+/// The server-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
+/// including targets outside of the cluster.
+///
+pub fn build_server_role_service(
+    rhio: &RhioService,
+    resolved_product_image: &ResolvedProductImage,
+) -> Result<Service> {
+    let role_name = RhioRole::Server.to_string();
+    let role_svc_name = rhio
+        .server_role_service_name()
+        .context(GlobalServiceNameNotFoundSnafu)?;
+
+    let metadata = ObjectMetaBuilder::new()
+        .name_and_namespace(rhio)
+        .name(&role_svc_name)
+        .ownerreference_from_resource(rhio, None, Some(true))
+        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
+        .with_recommended_labels(build_recommended_labels(
+            rhio,
+            RHIO_CONTROLLER_NAME,
+            &resolved_product_image.app_version_label,
+            &role_name,
+            "global",
+        ))
+        .context(ObjectMetaSnafu)?
+        .build();
+
+    let service_selector_labels =
+        Labels::role_selector(rhio, APP_NAME, &role_name).context(BuildLabelSnafu)?;
+
+    let service_spec = ServiceSpec {
+        ports: Some(vec![ServicePort {
+            name: Some("rhio".to_string()),
+            port: 9102,
+            protocol: Some("UDP".to_string()),
+            ..ServicePort::default()
+        }]),
+        selector: Some(service_selector_labels.into()),
+        type_: Some(rhio.spec.cluster_config.listener_class.k8s_service_type()),
+        ..ServiceSpec::default()
+    };
+
+    Ok(Service {
+        metadata,
+        spec: Some(service_spec),
+        status: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
 }

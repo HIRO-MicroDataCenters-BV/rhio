@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stackable_operator::kube::CustomResource;
+use stackable_operator::{crd::ClusterRef, kube::CustomResource};
+
+use super::service::RhioService;
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
@@ -8,6 +10,9 @@ use stackable_operator::kube::CustomResource;
     kind = "ReplicatedObjectStoreSubscription",
     group = "rhio.hiro.io",
     version = "v1",
+    plural = "replicatedobjectstoresubscriptions",
+    status = "ReplicatedObjectStoreSubscriptionStatus",
+    shortname = "ross",
     namespaced,
     crates(
         kube_core = "stackable_operator::kube::core",
@@ -15,7 +20,6 @@ use stackable_operator::kube::CustomResource;
         schemars = "stackable_operator::schemars"
     )
 )]
-#[kube(status = "ReplicatedObjectStoreSubscriptionStatus", shortname = "ross")]
 pub struct ReplicatedObjectStoreSubscriptionSpec {
     pub subscriptions: Vec<SubscriptionsSpec>,
 }
@@ -23,6 +27,9 @@ pub struct ReplicatedObjectStoreSubscriptionSpec {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionsSpec {
+    #[serde(default)]
+    pub service_ref: ClusterRef<RhioService>,
+
     pub public_key: String,
     pub buckets: Vec<String>,
 }

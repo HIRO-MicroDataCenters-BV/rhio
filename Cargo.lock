@@ -423,7 +423,7 @@ checksum = "fd3bdd6ea595b2ea504500a3566071beb81125fc15d40a6f6bffa43575f64152"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures",
+ "futures 0.3.30",
  "memchr",
  "nkeys",
  "nuid",
@@ -1964,6 +1964,12 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "futures"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a471a38ef8ed83cd6e40aa59c1ffe17db6855c18e3604d9c4ed8c08ebc28678"
+
+[[package]]
+name = "futures"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "645c6916888f6cb6350d2550b80fb63e734897a8498abe35cfb732b6487804b0"
@@ -2099,6 +2105,7 @@ version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d6401deb83407ab3da39eba7e33987a73c3df0c82b4bb5813ee871c19c41d48"
 dependencies = [
+ "futures 0.1.31",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -2199,7 +2206,7 @@ checksum = "68a7f542ee6b35af73b06abc0dad1c1bae89964e4e253bc4b587b91c9637867b"
 dependencies = [
  "cfg-if",
  "dashmap 5.5.3",
- "futures",
+ "futures 0.3.30",
  "futures-timer",
  "no-std-compat",
  "nonzero_ext",
@@ -2891,7 +2898,7 @@ dependencies = [
  "async-trait",
  "attohttpc 0.24.1",
  "bytes",
- "futures",
+ "futures 0.3.30",
  "http 0.2.12",
  "hyper 0.14.30",
  "log",
@@ -3403,7 +3410,7 @@ dependencies = [
  "bytes",
  "chrono",
  "either",
- "futures",
+ "futures 0.3.30",
  "home",
  "http 1.1.0",
  "http-body 1.0.1",
@@ -3474,7 +3481,7 @@ dependencies = [
  "async-trait",
  "backoff",
  "educe",
- "futures",
+ "futures 0.3.30",
  "hashbrown 0.14.5",
  "json-patch",
  "jsonptr",
@@ -3897,7 +3904,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86b33524dc0968bfad349684447bfce6db937a9ac3332a1fe60c0c5a5ce63f21"
 dependencies = [
  "bytes",
- "futures",
+ "futures 0.3.30",
  "log",
  "netlink-packet-core",
  "netlink-sys",
@@ -3912,7 +3919,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "416060d346fbaf1f23f9512963e3e878f1a78e707cb699ba9215761754244307"
 dependencies = [
  "bytes",
- "futures",
+ "futures 0.3.30",
  "libc",
  "log",
  "tokio",
@@ -4506,7 +4513,7 @@ version = "0.1.0"
 source = "git+https://github.com/p2panda/p2panda.git?rev=26474c72151d304fc86aca147799b5dd7cd640d5#26474c72151d304fc86aca147799b5dd7cd640d5"
 dependencies = [
  "async-trait",
- "futures",
+ "futures 0.3.30",
  "p2panda-core",
  "p2panda-store",
  "serde",
@@ -4732,7 +4739,7 @@ dependencies = [
  "dyn-clone",
  "ed25519-dalek",
  "flume",
- "futures",
+ "futures 0.3.30",
  "js-sys",
  "lru",
  "mainline",
@@ -5528,7 +5535,7 @@ dependencies = [
  "dashmap 6.1.0",
  "directories",
  "figment",
- "futures",
+ "futures 0.3.30",
  "futures-util",
  "hex",
  "loole",
@@ -5574,6 +5581,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rhio-config"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "directories",
+ "figment",
+ "p2panda-core",
+ "rhio-core",
+ "rust-s3",
+ "serde",
+]
+
+[[package]]
 name = "rhio-core"
 version = "0.1.1"
 dependencies = [
@@ -5598,13 +5619,15 @@ dependencies = [
  "built",
  "chrono",
  "clap",
- "futures",
+ "futures 0.3.30",
  "http 1.1.0",
  "hyper 1.5.2",
  "opentelemetry 0.20.0",
  "opentelemetry-otlp",
+ "p2panda-core",
  "product-config",
  "prometheus",
+ "rhio-config",
  "schemars",
  "serde",
  "serde_json",
@@ -5663,7 +5686,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a552eb82d19f38c3beed3f786bd23aa434ceb9ac43ab44419ca6d67a7e186c0"
 dependencies = [
- "futures",
+ "futures 0.3.30",
  "log",
  "netlink-packet-core",
  "netlink-packet-route",
@@ -5699,7 +5722,7 @@ dependencies = [
  "block_on_proc",
  "bytes",
  "cfg-if",
- "futures",
+ "futures 0.3.30",
  "hex",
  "hmac",
  "http 0.2.12",
@@ -5909,7 +5932,7 @@ dependencies = [
  "crc32c",
  "crc32fast",
  "digest",
- "futures",
+ "futures 0.3.30",
  "hex-simd",
  "hmac",
  "http-body 1.0.1",
@@ -5950,7 +5973,7 @@ dependencies = [
  "bytes",
  "chrono",
  "crc32c",
- "futures",
+ "futures 0.3.30",
  "hex-simd",
  "md-5",
  "mime",
@@ -6507,7 +6530,7 @@ dependencies = [
  "dockerfile-parser",
  "educe",
  "either",
- "futures",
+ "futures 0.3.30",
  "indexmap 2.7.1",
  "json-patch",
  "k8s-openapi",
@@ -7394,7 +7417,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c9f0a709784e86923586cff0d872dba54cd2d2e116b3bc57587d15737cfce9d"
 dependencies = [
- "futures",
+ "futures 0.3.30",
  "pin-project-lite",
  "tokio",
 ]
@@ -8062,7 +8085,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff00ac1309d4c462be86f03a55e409509e8bf4323ec296aeb4b381dd9aabe6ec"
 dependencies = [
  "chrono",
- "futures",
+ "futures 0.3.30",
  "log",
  "serde",
  "thiserror 1.0.63",

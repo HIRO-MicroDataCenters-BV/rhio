@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use stackable_operator::kube::CustomResource;
+use stackable_operator::{crd::ClusterRef, kube::CustomResource};
+
+use super::service::RhioService;
 
 /// Generate the Kubernetes wrapper struct `ReplicatedObjectStore` from our Spec and Status struct
 ///
@@ -11,6 +13,9 @@ use stackable_operator::kube::CustomResource;
     kind = "ReplicatedObjectStore",
     group = "rhio.hiro.io",
     version = "v1",
+    plural = "replicatedobjectstores",
+    status = "ReplicatedObjectStoreStatus",
+    shortname = "ros",
     namespaced,
     crates(
         kube_core = "stackable_operator::kube::core",
@@ -18,9 +23,11 @@ use stackable_operator::kube::CustomResource;
         schemars = "stackable_operator::schemars"
     )
 )]
-#[kube(status = "ReplicatedObjectStoreStatus", shortname = "ros")]
 #[serde(rename_all = "camelCase")]
 pub struct ReplicatedObjectStoreSpec {
+    #[serde(default)]
+    pub service_ref: ClusterRef<RhioService>,
+
     pub buckets: Vec<String>,
 }
 

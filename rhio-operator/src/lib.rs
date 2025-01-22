@@ -1,7 +1,6 @@
 pub mod api;
-pub mod error;
-pub mod rhio;
 pub mod rhio_controller;
+pub mod rms_controller;
 pub mod service_resource;
 
 pub mod built_info {

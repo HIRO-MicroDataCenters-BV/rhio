@@ -14,10 +14,11 @@ default = []
 telemetry = ["tonic", "opentelemetry-otlp"]
 
 [dependencies]
+rhio-config.workspace = true
+p2panda-core.workspace = true
 actix-web = "4.4.0"
-futures = "0.3.28"
+futures = { version="0.3.28", features = ["compat"] }
 tokio = { version = "1.40", features = ["full"] }
-# k8s-openapi = { version = "0.22.0", features = ["latest"] }
 schemars = { version = "0.8.12", features = ["chrono"] }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0"
@@ -46,13 +47,3 @@ tower-test = "0.4.0"
 
 [build-dependencies]
 built = { version = "0.7", features = ["chrono", "git2"] }
-
-# [dependencies.kube]
-# features = ["runtime", "client", "derive" ]
-# version = "0.91.0"
-
-# testing new releases - ignore
-#git = "https://github.com/kube-rs/kube.git"
-#branch = "main"
-#rev = "19b90ad3a4dbc83e1dd742847c7707333259b1bb"
-#path = "../kube/kube"
