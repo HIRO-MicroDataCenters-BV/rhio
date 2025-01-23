@@ -1,9 +1,5 @@
-#![allow(unused_imports, unused_variables)]
-use actix_web::web::Data;
-use actix_web::{get, middleware, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures::{pin_mut, StreamExt};
 use product_config::ProductConfigManager;
-use prometheus::{Encoder, TextEncoder};
 use rhio_operator::api::message_stream::ReplicatedMessageStream;
 use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
 use rhio_operator::api::object_store::ReplicatedObjectStore;
@@ -15,8 +11,6 @@ use stackable_operator::kube::Resource;
 use std::sync::Arc;
 
 use clap::{crate_description, crate_version, Parser};
-use stackable_operator::k8s_openapi::api::core::v1::ObjectReference;
-use stackable_operator::kube::runtime::events::{Recorder, Reporter};
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
@@ -115,7 +109,7 @@ pub async fn create_rhio_controller(
     namespace: WatchNamespace,
 ) {
     let rhio_controller = Controller::new(
-        namespace.get_api::<DeserializeGuard<RhioService>>(&client),
+        namespace.get_api::<DeserializeGuard<RhioService>>(client),
         watcher::Config::default(),
     );
 
@@ -126,7 +120,7 @@ pub async fn create_rhio_controller(
 
     let rhio_controller = rhio_controller
         .watches(
-            namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(&client),
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(client),
             watcher::Config::default(),
             move |stream| {
                 rhio_store_streams
@@ -145,7 +139,7 @@ pub async fn create_rhio_controller(
             },
         )
         .watches(
-            namespace.get_api::<DeserializeGuard<ReplicatedObjectStore>>(&client),
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStore>>(client),
             watcher::Config::default(),
             move |object_store| {
                 rhio_store_stores
@@ -164,7 +158,7 @@ pub async fn create_rhio_controller(
             },
         )
         .watches(
-            namespace.get_api::<DeserializeGuard<ReplicatedMessageStreamSubscription>>(&client),
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStreamSubscription>>(client),
             watcher::Config::default(),
             move |subs| {
                 rhio_store_stream_subs_store
@@ -183,7 +177,7 @@ pub async fn create_rhio_controller(
             },
         )
         .watches(
-            namespace.get_api::<DeserializeGuard<ReplicatedObjectStoreSubscription>>(&client),
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStoreSubscription>>(client),
             watcher::Config::default(),
             move |subs| {
                 rhio_store_bucket_subs_store
@@ -202,23 +196,23 @@ pub async fn create_rhio_controller(
             },
         )
         .owns(
-            namespace.get_api::<StatefulSet>(&client),
+            namespace.get_api::<StatefulSet>(client),
             watcher::Config::default(),
         )
         .owns(
-            namespace.get_api::<Service>(&client),
+            namespace.get_api::<Service>(client),
             watcher::Config::default(),
         )
         .owns(
-            namespace.get_api::<ConfigMap>(&client),
+            namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
         )
         .owns(
-            namespace.get_api::<ServiceAccount>(&client),
+            namespace.get_api::<ServiceAccount>(client),
             watcher::Config::default(),
         )
         .owns(
-            namespace.get_api::<RoleBinding>(&client),
+            namespace.get_api::<RoleBinding>(client),
             watcher::Config::default(),
         )
         .shutdown_on_signal()
@@ -227,12 +221,12 @@ pub async fn create_rhio_controller(
             rhio_controller::error_policy,
             Arc::new(rhio_controller::Ctx {
                 client: client.clone(),
-                product_config: product_config,
+                product_config,
             }),
         )
         .map(|res| {
             report_controller_reconciled(
-                &client,
+                client,
                 &format!("{RHIO_CONTROLLER_NAME}.{OPERATOR_NAME}"),
                 &res,
             );
@@ -243,18 +237,18 @@ pub async fn create_rhio_controller(
 
 pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {
     let rms_controller = Controller::new(
-        namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(&client),
+        namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(client),
         watcher::Config::default(),
     );
     let rms_store = rms_controller.store();
 
     let rms_controller = rms_controller
         .owns(
-            namespace.get_api::<ConfigMap>(&client),
+            namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
         )
         .watches(
-            namespace.get_api::<DeserializeGuard<RhioService>>(&client),
+            namespace.get_api::<DeserializeGuard<RhioService>>(client),
             watcher::Config::default(),
             move |rhio| {
                 rms_store
@@ -281,7 +275,7 @@ pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {
         )
         .map(|res| {
             report_controller_reconciled(
-                &client,
+                client,
                 &format!("{RHIO_CONTROLLER_NAME}.{OPERATOR_NAME}"),
                 &res,
             );

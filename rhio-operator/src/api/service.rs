@@ -52,7 +52,7 @@ impl RhioService {
         }
     }
     pub fn service_ref(&self) -> ClusterRef<RhioService> {
-        ClusterRef::to_object(&self)
+        ClusterRef::to_object(self)
     }
 }
 

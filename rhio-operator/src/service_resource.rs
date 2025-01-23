@@ -3,10 +3,9 @@ use std::str::FromStr;
 
 use crate::api::container::Container;
 use crate::api::message_stream::ReplicatedMessageStream;
-use crate::api::message_stream_subscription::{self, ReplicatedMessageStreamSubscription};
+use crate::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
 use crate::api::object_store::ReplicatedObjectStore;
-use crate::api::object_store_subscription::{self, ReplicatedObjectStoreSubscription};
-use crate::api::role::RhioRole;
+use crate::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use crate::api::service::{RhioConfig, RhioService};
 use crate::rhio_controller::{
     AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, InvalidNatsSubjectSnafu,
@@ -21,7 +20,7 @@ use rhio_config::configuration::{
     RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
 };
 use s3::creds::Credentials;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::ResultExt;
 use stackable_operator::builder::configmap::ConfigMapBuilder;
 use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::builder::pod::container::ContainerBuilder;
@@ -52,19 +51,10 @@ pub const STACKABLE_VENDOR_VALUE_HIRO: &str = "HIRO";
 
 pub fn build_rhio_statefulset(
     rhio: &RhioService,
-    // rhio_role: &RhioRole,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
     service_account: &ServiceAccount,
 ) -> Result<StatefulSet> {
-    // let recommended_object_labels = build_recommended_labels(
-    //     rhio,
-    //     RHIO_CONTROLLER_NAME,
-    //     &resolved_product_image.app_version_label,
-    //     &rolegroup_ref.role,
-    //     &rolegroup_ref.role_group,
-    // );
-
     let mut container_rhio =
         ContainerBuilder::new(&Container::Rhio.to_string()).context(InvalidContainerNameSnafu {
             name: Container::Rhio.to_string(),
@@ -113,12 +103,7 @@ pub fn build_rhio_statefulset(
 
     let mut pod_builder = PodBuilder::new();
 
-    // let mut metadata = ObjectMetaBuilder::new()
-    //     .with_recommended_labels(recommended_object_labels)
-    //     .context(MetadataBuildSnafu)?
-    //     .build();
-
-    let pod_metadata = ObjectMetaBuilder::new()
+    let mut pod_metadata = ObjectMetaBuilder::new()
         .with_recommended_labels(build_recommended_labels(
             rhio,
             RHIO_CONTROLLER_NAME,
@@ -129,9 +114,10 @@ pub fn build_rhio_statefulset(
         .context(ObjectMetaSnafu)?
         .build();
 
-    // metadata.labels
-    //     .get_or_insert(BTreeMap::new())
-    //     .insert(STACKABLE_VENDOR_KEY.into(), STACKABLE_VENDOR_VALUE_HIRO.into());
+    pod_metadata.labels.get_or_insert(BTreeMap::new()).insert(
+        STACKABLE_VENDOR_KEY.into(),
+        STACKABLE_VENDOR_VALUE_HIRO.into(),
+    );
 
     pod_builder
         .metadata(pod_metadata)
@@ -149,7 +135,7 @@ pub fn build_rhio_statefulset(
         .context(AddVolumeSnafu)?
         .service_account_name(service_account.name_any());
 
-    let sts_metadata = ObjectMetaBuilder::new()
+    let mut sts_metadata = ObjectMetaBuilder::new()
         .name_and_namespace(rhio)
         .name(rolegroup_ref.object_name())
         .ownerreference_from_resource(rhio, None, Some(true))
@@ -164,9 +150,10 @@ pub fn build_rhio_statefulset(
         .context(ObjectMetaSnafu)?
         .build();
 
-    // sts_metadata.labels
-    //     .get_or_insert(BTreeMap::new())
-    //     .insert(STACKABLE_VENDOR_KEY.into(), STACKABLE_VENDOR_VALUE_HIRO.into());
+    sts_metadata.labels.get_or_insert(BTreeMap::new()).insert(
+        STACKABLE_VENDOR_KEY.into(),
+        STACKABLE_VENDOR_VALUE_HIRO.into(),
+    );
 
     Ok(StatefulSet {
         metadata: sts_metadata,
@@ -246,6 +233,7 @@ pub fn build_recommended_labels<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_rhio_configmap(
     rhio: &RhioService,
     streams: Vec<ReplicatedMessageStream>,
@@ -293,7 +281,7 @@ pub fn build_rhio_configmap(
 
                     Ok(RemoteNatsSubject {
                         stream_name: spec.stream.to_owned(),
-                        public_key: public_key.clone(),
+                        public_key,
                         subject,
                     })
                 })
@@ -316,7 +304,7 @@ pub fn build_rhio_configmap(
                 .map(|bucket| RemoteS3Bucket {
                     remote_bucket_name: bucket.remote_bucket.to_owned(),
                     local_bucket_name: bucket.local_bucket.to_owned(),
-                    public_key: public_key.clone(),
+                    public_key,
                 })
                 .collect::<Vec<RemoteS3Bucket>>()
         })
@@ -332,7 +320,7 @@ pub fn build_rhio_configmap(
     let rhio_configuration =
         serde_json::to_string(&config).context(RhioConfigurationSerializationSnafu)?;
 
-    let metadata = ObjectMetaBuilder::new()
+    let mut metadata = ObjectMetaBuilder::new()
         .name_and_namespace(rhio)
         .ownerreference_from_resource(owner, None, Some(true))
         .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
@@ -347,6 +335,11 @@ pub fn build_rhio_configmap(
         ))
         .context(MetadataBuildSnafu)?
         .build();
+
+    metadata.labels.get_or_insert(BTreeMap::new()).insert(
+        STACKABLE_VENDOR_KEY.into(),
+        STACKABLE_VENDOR_VALUE_HIRO.into(),
+    );
 
     ConfigMapBuilder::new()
         .metadata(metadata)
@@ -366,7 +359,7 @@ fn build_rhio_configuration(
         .nodes
         .iter()
         .map(|n| KnownNode {
-            public_key: PublicKey::from_str(&n.public_key).unwrap().into(),
+            public_key: PublicKey::from_str(&n.public_key).unwrap(),
             direct_addresses: n.endpoints.to_owned(),
         })
         .collect();

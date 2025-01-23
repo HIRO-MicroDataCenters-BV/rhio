@@ -1,82 +1,15 @@
-#![allow(unused_imports, unused_variables)]
-use crate::{
-    api::{
-        message_stream::ReplicatedMessageStream,
-        role::RhioRole,
-        service::{RhioService, RhioServiceStatus},
-    },
-    service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
-};
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use crate::api::message_stream::ReplicatedMessageStream;
+use std::sync::Arc;
 
-use product_config::{
-    types::PropertyNameKind,
-    writer::{to_java_properties_string, PropertiesWriterError},
-    ProductConfigManager,
-};
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::{
-    builder::{
-        self,
-        configmap::ConfigMapBuilder,
-        meta::ObjectMetaBuilder,
-        pod::{
-            container::ContainerBuilder,
-            resources::ResourceRequirementsBuilder,
-            security::PodSecurityContextBuilder,
-            volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
-            PodBuilder,
-        },
-    },
-    cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::{
-        authentication::AuthenticationClass,
-        listener::{Listener, ListenerPort, ListenerSpec},
-        opa::OpaApiVersion,
-        product_image_selection::ResolvedProductImage,
-        rbac::build_rbac_resources,
-    },
-    k8s_openapi::{
-        api::{
-            apps::v1::{StatefulSet, StatefulSetSpec},
-            core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
-                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServiceAccount, ServicePort, ServiceSpec, Volume,
-            },
-        },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
-        DeepMerge,
-    },
     kube::{
         api::DynamicObject,
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
-        Resource, ResourceExt,
     },
-    kvp::{Label, LabelError, Labels},
     logging::controller::ReconcilerError,
-    memory::{BinaryMultiple, MemoryQuantity},
-    product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
-    product_logging::{
-        self,
-        framework::LoggingError,
-        spec::{
-            ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
-            CustomContainerLogConfig,
-        },
-    },
-    role_utils::{GenericRoleConfig, RoleGroupRef},
-    status::condition::{
-        compute_conditions, operations::ClusterOperationsConditionBuilder,
-        statefulset::StatefulSetConditionBuilder,
-    },
     time::Duration,
-    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -115,11 +48,11 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub async fn reconcile_rms(
     rhio: Arc<DeserializeGuard<ReplicatedMessageStream>>,
-    ctx: Arc<Ctx>,
+    _ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
 
-    let rms = rhio
+    let _rms = rhio
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)

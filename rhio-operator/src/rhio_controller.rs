@@ -1,4 +1,3 @@
-#![allow(unused_imports, unused_variables)]
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -10,77 +9,29 @@ use crate::{
     },
     service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
 };
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use product_config::{
-    types::PropertyNameKind,
-    writer::{to_java_properties_string, PropertiesWriterError},
-    ProductConfigManager,
-};
+use product_config::ProductConfigManager;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
-    builder::{
-        self,
-        configmap::ConfigMapBuilder,
-        meta::ObjectMetaBuilder,
-        pod::{
-            container::ContainerBuilder,
-            resources::ResourceRequirementsBuilder,
-            security::PodSecurityContextBuilder,
-            volume::{ListenerOperatorVolumeSourceBuilder, ListenerReference, VolumeBuilder},
-            PodBuilder,
-        },
-    },
+    builder::meta::ObjectMetaBuilder,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::{
-        authentication::AuthenticationClass,
-        listener::{Listener, ListenerPort, ListenerSpec},
-        opa::OpaApiVersion,
-        product_image_selection::ResolvedProductImage,
-        rbac::build_rbac_resources,
-    },
-    k8s_openapi::{
-        api::{
-            apps::v1::{StatefulSet, StatefulSetSpec},
-            core::v1::{
-                ConfigMap, ConfigMapKeySelector, ConfigMapVolumeSource, ContainerPort, EnvVar,
-                EnvVarSource, ExecAction, ObjectFieldSelector, PodSpec, Probe, Service,
-                ServiceAccount, ServicePort, ServiceSpec, Volume,
-            },
-        },
-        apimachinery::pkg::apis::meta::v1::LabelSelector,
-        DeepMerge,
-    },
+    commons::{product_image_selection::ResolvedProductImage, rbac::build_rbac_resources},
+    k8s_openapi::api::core::v1::{Service, ServicePort, ServiceSpec},
     kube::{
         api::{DynamicObject, ListParams},
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
-        Resource, ResourceExt,
+        Resource,
     },
-    kvp::{Label, LabelError, Labels},
+    kvp::{LabelError, Labels},
     logging::controller::ReconcilerError,
-    memory::{BinaryMultiple, MemoryQuantity},
-    product_config_utils::{transform_all_roles_to_config, validate_all_roles_and_groups_config},
-    product_logging::{
-        self,
-        framework::LoggingError,
-        spec::{
-            ConfigMapLogConfig, ContainerLogConfig, ContainerLogConfigChoice,
-            CustomContainerLogConfig,
-        },
-    },
-    role_utils::{GenericRoleConfig, RoleGroupRef},
+    role_utils::RoleGroupRef,
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
     time::Duration,
-    utils::cluster_info::KubernetesClusterInfo,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -294,7 +245,7 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    let server_role_service = cluster_resources
+    cluster_resources
         .add(
             client,
             build_server_role_service(rhio_service, &resolved_product_image)?,
@@ -480,5 +431,5 @@ pub fn build_server_role_service(
 #[cfg(test)]
 mod tests {
 
-    use super::*;
+    // use super::*;
 }
