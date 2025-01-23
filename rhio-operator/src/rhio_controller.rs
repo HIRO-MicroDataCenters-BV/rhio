@@ -181,6 +181,11 @@ pub enum Error {
         source: anyhow::Error,
         subject: String,
     },
+
+    #[snafu(display("invalid annotation"))]
+    InvalidAnnotation {
+        source: stackable_operator::kvp::AnnotationError,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -315,7 +320,7 @@ pub async fn reconcile_rhio(
 
     let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
 
-    let rhio_configmap = build_rhio_configmap(
+    let (rhio_configmap, config_map_hash) = build_rhio_configmap(
         rhio_service,
         streams,
         stream_subscriptions,
@@ -333,8 +338,13 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRhioConfigSnafu)?;
 
-    let rhio_statefulset =
-        build_rhio_statefulset(rhio_service, &resolved_product_image, &rolegroup, &rbac_sa)?;
+    let rhio_statefulset = build_rhio_statefulset(
+        rhio_service,
+        &resolved_product_image,
+        &rolegroup,
+        &rbac_sa,
+        config_map_hash,
+    )?;
 
     ss_cond_builder.add(
         cluster_resources

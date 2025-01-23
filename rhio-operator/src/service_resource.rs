@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::str::FromStr;
 
 use crate::api::container::Container;
@@ -8,9 +9,9 @@ use crate::api::object_store::ReplicatedObjectStore;
 use crate::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use crate::api::service::{RhioConfig, RhioService};
 use crate::rhio_controller::{
-    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, InvalidNatsSubjectSnafu,
-    LabelBuildSnafu, MetadataBuildSnafu, ObjectMissingMetadataForOwnerRefSnafu, Result,
-    RhioConfigurationSerializationSnafu,
+    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, InvalidAnnotationSnafu,
+    InvalidNatsSubjectSnafu, LabelBuildSnafu, MetadataBuildSnafu,
+    ObjectMissingMetadataForOwnerRefSnafu, Result, RhioConfigurationSerializationSnafu,
 };
 use crate::rhio_controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
 use crate::rhio_controller::{APP_NAME, OPERATOR_NAME};
@@ -38,7 +39,7 @@ use stackable_operator::k8s_openapi::apimachinery::pkg::util::intstr::IntOrStrin
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::{Resource, ResourceExt};
 use stackable_operator::kvp::consts::STACKABLE_VENDOR_KEY;
-use stackable_operator::kvp::{Labels, ObjectLabels};
+use stackable_operator::kvp::{Annotations, Labels, ObjectLabels};
 use stackable_operator::role_utils::RoleGroupRef;
 
 pub const RHIO_CONTROLLER_NAME: &str = "rhioservice";
@@ -54,6 +55,7 @@ pub fn build_rhio_statefulset(
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
     service_account: &ServiceAccount,
+    config_hash: String,
 ) -> Result<StatefulSet> {
     let mut container_rhio =
         ContainerBuilder::new(&Container::Rhio.to_string()).context(InvalidContainerNameSnafu {
@@ -104,6 +106,10 @@ pub fn build_rhio_statefulset(
     let mut pod_builder = PodBuilder::new();
 
     let mut pod_metadata = ObjectMetaBuilder::new()
+        .annotations(
+            Annotations::try_from([("rhio.hiro.io/config-hash", config_hash)])
+                .context(InvalidAnnotationSnafu)?,
+        )
         .with_recommended_labels(build_recommended_labels(
             rhio,
             RHIO_CONTROLLER_NAME,
@@ -243,7 +249,7 @@ pub fn build_rhio_configmap(
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
-) -> Result<ConfigMap> {
+) -> Result<(ConfigMap, String)> {
     let published_nats_subjects = streams
         .into_iter()
         .flat_map(|stream| {
@@ -340,12 +346,17 @@ pub fn build_rhio_configmap(
         STACKABLE_VENDOR_KEY.into(),
         STACKABLE_VENDOR_VALUE_HIRO.into(),
     );
+    let mut hasher = DefaultHasher::new();
+    rhio_configuration.hash(&mut hasher);
+    let config_hash = hasher.finish().to_string();
 
-    ConfigMapBuilder::new()
+    let config_map = ConfigMapBuilder::new()
         .metadata(metadata)
         .add_data("config.yaml", rhio_configuration)
         .build()
-        .context(BuildConfigMapSnafu)
+        .context(BuildConfigMapSnafu)?;
+
+    Ok((config_map, config_hash))
 }
 
 fn build_rhio_configuration(
