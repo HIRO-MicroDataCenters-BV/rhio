@@ -8,7 +8,7 @@ use rhio_operator::api::message_stream::ReplicatedMessageStream;
 use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
 use rhio_operator::api::object_store::ReplicatedObjectStore;
 use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
-use rhio_operator::api::service::RhioService;
+use rhio_operator::api::service::{HasServiceRef, RhioService};
 use rhio_operator::rhio_controller::{APP_NAME, OPERATOR_NAME, RHIO_CONTROLLER_NAME};
 use rhio_operator::{built_info, rhio_controller, rms_controller};
 use stackable_operator::kube::Resource;
@@ -118,39 +118,88 @@ pub async fn create_rhio_controller(
         namespace.get_api::<DeserializeGuard<RhioService>>(&client),
         watcher::Config::default(),
     );
-    // let reference = ObjectReference {
-    //     ..Default::default()
-    // };
-    //     let rhio_event_recorder = Arc::new(Recorder::new(
-    //     client.as_kube_client(),
-    //     Reporter {
-    //         controller: RHIO_CONTROLLER_NAME.to_string(),
-    //         instance: None,
-    //     },
-    //     reference
-    // ));
-    let rhio_store = rhio_controller.store();
+
+    let rhio_store_streams = rhio_controller.store();
+    let rhio_store_stores = rhio_controller.store();
+    let rhio_store_stream_subs_store = rhio_controller.store();
+    let rhio_store_bucket_subs_store = rhio_controller.store();
 
     let rhio_controller = rhio_controller
-        .owns(
-            namespace.get_api::<Listener>(&client),
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(&client),
             watcher::Config::default(),
+            move |stream| {
+                rhio_store_streams
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(stream) = &stream.0 else {
+                            return false;
+                        };
+                        stream.service_ref() == rhio.service_ref()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
         )
-        .owns(
-            namespace.get_api::<ReplicatedMessageStream>(&client),
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStore>>(&client),
             watcher::Config::default(),
+            move |object_store| {
+                rhio_store_stores
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(object_store) = &object_store.0 else {
+                            return false;
+                        };
+                        object_store.service_ref() == rhio.service_ref()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
         )
-        .owns(
-            namespace.get_api::<ReplicatedMessageStreamSubscription>(&client),
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStreamSubscription>>(&client),
             watcher::Config::default(),
+            move |subs| {
+                rhio_store_stream_subs_store
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(subs) = &subs.0 else {
+                            return false;
+                        };
+                        subs.service_ref() == rhio.service_ref()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
         )
-        .owns(
-            namespace.get_api::<ReplicatedObjectStore>(&client),
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStoreSubscription>>(&client),
             watcher::Config::default(),
-        )
-        .owns(
-            namespace.get_api::<ReplicatedObjectStoreSubscription>(&client),
-            watcher::Config::default(),
+            move |subs| {
+                rhio_store_bucket_subs_store
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(subs) = &subs.0 else {
+                            return false;
+                        };
+                        subs.service_ref() == rhio.service_ref()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
         )
         .owns(
             namespace.get_api::<StatefulSet>(&client),
@@ -190,23 +239,6 @@ pub async fn create_rhio_controller(
         })
         .collect::<()>();
     rhio_controller.await
-    // We can let the reporting happen in the background
-    // .for_each_concurrent(
-    //     16, // concurrency limit
-    //     |result| {
-    //         // The event_recorder needs to be shared across all invocations, so that
-    //         // events are correctly aggregated
-    //         let event_recorder = rhio_event_recorder.clone();
-    //         async move {
-    //             report_controller_reconciled(
-    //                 &event_recorder,
-    //                 RHIO_CONTROLLER_NAME,
-    //                 &result,
-    //             )
-    //             .await;
-    //         }
-    //     },
-    // );
 }
 
 pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {

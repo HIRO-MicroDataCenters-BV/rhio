@@ -2,6 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::cluster_operation::ClusterOperation;
 use stackable_operator::commons::product_image_selection::ProductImage;
+use stackable_operator::crd::ClusterRef;
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::CustomResource;
 use stackable_operator::role_utils::RoleGroupRef;
@@ -50,6 +51,9 @@ impl RhioService {
             role_group: group_name.into(),
         }
     }
+    pub fn service_ref(&self) -> ClusterRef<RhioService> {
+        ClusterRef::to_object(&self)
+    }
 }
 
 #[derive(Clone, Debug, Default, Display, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -93,7 +97,7 @@ pub struct RhioConfig {
     pub private_key_secret: String,
     pub nodes: Vec<NodePeerConfigSpec>,
     pub s3: Option<S3ConfigSpec>,
-    pub nats: Option<NatsConfigSpec>,
+    pub nats: NatsConfigSpec,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default, Eq, PartialEq)]
@@ -146,4 +150,8 @@ impl HasStatusCondition for RhioService {
 pub struct NodePeerConfigSpec {
     pub public_key: String,
     pub endpoints: Vec<String>,
+}
+
+pub trait HasServiceRef {
+    fn service_ref(&self) -> ClusterRef<RhioService>;
 }

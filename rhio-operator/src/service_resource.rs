@@ -1,18 +1,26 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use super::rhio_controller::Result;
 use crate::api::container::Container;
+use crate::api::message_stream::ReplicatedMessageStream;
+use crate::api::message_stream_subscription::{self, ReplicatedMessageStreamSubscription};
+use crate::api::object_store::ReplicatedObjectStore;
+use crate::api::object_store_subscription::{self, ReplicatedObjectStoreSubscription};
 use crate::api::role::RhioRole;
 use crate::api::service::{RhioConfig, RhioService};
 use crate::rhio_controller::{
-    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, Error, LabelBuildSnafu,
-    MetadataBuildSnafu, ObjectMissingMetadataForOwnerRefSnafu, RhioConfigurationSerializationSnafu,
+    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, InvalidNatsSubjectSnafu,
+    LabelBuildSnafu, MetadataBuildSnafu, ObjectMissingMetadataForOwnerRefSnafu, Result,
+    RhioConfigurationSerializationSnafu,
 };
 use crate::rhio_controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
 use crate::rhio_controller::{APP_NAME, OPERATOR_NAME};
 use p2panda_core::PublicKey;
-use rhio_config::configuration::{Config, KnownNode, NatsConfig, NatsCredentials, NodeConfig};
+use rhio_config::configuration::{
+    Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig, PublishConfig,
+    RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
+};
+use s3::creds::Credentials;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::builder::configmap::ConfigMapBuilder;
 use stackable_operator::builder::meta::ObjectMetaBuilder;
@@ -240,10 +248,87 @@ pub fn build_recommended_labels<'a>(
 
 pub fn build_rhio_configmap(
     rhio: &RhioService,
+    streams: Vec<ReplicatedMessageStream>,
+    stream_subscriptions: Vec<ReplicatedMessageStreamSubscription>,
+    stores: Vec<ReplicatedObjectStore>,
+    store_subscriptions: Vec<ReplicatedObjectStoreSubscription>,
     owner: &impl Resource<DynamicType = ()>,
     resolved_product_image: &ResolvedProductImage,
-) -> Result<ConfigMap, Error> {
-    let config = build_rhio_configuration(&rhio.spec.configuration)?;
+    rolegroup_ref: &RoleGroupRef<RhioService>,
+) -> Result<ConfigMap> {
+    let published_nats_subjects = streams
+        .into_iter()
+        .flat_map(|stream| {
+            stream
+                .spec
+                .subjects
+                .into_iter()
+                .map(|published_subject| {
+                    rhio_core::Subject::from_str(&published_subject)
+                        .context(InvalidNatsSubjectSnafu {
+                            subject: published_subject.to_owned(),
+                        })
+                        .map(|subject| LocalNatsSubject {
+                            stream_name: stream.spec.stream_name.to_owned(),
+                            subject,
+                        })
+                })
+                .collect::<Vec<Result<LocalNatsSubject>>>()
+        })
+        .collect::<Result<Vec<LocalNatsSubject>>>()?;
+
+    let subscribed_subjects = stream_subscriptions
+        .into_iter()
+        .flat_map(|sub| {
+            let public_key = PublicKey::from_str(&sub.spec.public_key).unwrap();
+            sub.spec
+                .subscriptions
+                .into_iter()
+                .map(|spec| {
+                    let subject = rhio_core::Subject::from_str(&spec.subject).context(
+                        InvalidNatsSubjectSnafu {
+                            subject: spec.subject.to_owned(),
+                        },
+                    )?;
+
+                    Ok(RemoteNatsSubject {
+                        stream_name: spec.stream.to_owned(),
+                        public_key: public_key.clone(),
+                        subject,
+                    })
+                })
+                .collect::<Vec<Result<RemoteNatsSubject>>>()
+        })
+        .collect::<Result<Vec<RemoteNatsSubject>>>()?;
+
+    let published_buckets = stores
+        .into_iter()
+        .flat_map(|store| store.spec.buckets.into_iter())
+        .collect::<Vec<String>>();
+
+    let subscribed_buckets = store_subscriptions
+        .into_iter()
+        .flat_map(|sub| {
+            let public_key = PublicKey::from_str(&sub.spec.public_key).unwrap();
+            sub.spec
+                .buckets
+                .into_iter()
+                .map(|bucket| RemoteS3Bucket {
+                    remote_bucket_name: bucket.remote_bucket.to_owned(),
+                    local_bucket_name: bucket.local_bucket.to_owned(),
+                    public_key: public_key.clone(),
+                })
+                .collect::<Vec<RemoteS3Bucket>>()
+        })
+        .collect::<Vec<RemoteS3Bucket>>();
+
+    let config = build_rhio_configuration(
+        &rhio.spec.configuration,
+        published_nats_subjects,
+        subscribed_subjects,
+        published_buckets,
+        subscribed_buckets,
+    )?;
     let rhio_configuration =
         serde_json::to_string(&config).context(RhioConfigurationSerializationSnafu)?;
 
@@ -256,12 +341,13 @@ pub fn build_rhio_configmap(
         .with_recommended_labels(build_recommended_labels(
             rhio,
             RHIO_CONTROLLER_NAME,
-            &resolved_product_image.product_version,
-            &RhioRole::Server.to_string(),
-            "discovery",
+            &resolved_product_image.app_version_label,
+            &rolegroup_ref.role,
+            &rolegroup_ref.role_group,
         ))
         .context(MetadataBuildSnafu)?
         .build();
+
     ConfigMapBuilder::new()
         .metadata(metadata)
         .add_data("config.yaml", rhio_configuration)
@@ -269,7 +355,13 @@ pub fn build_rhio_configmap(
         .context(BuildConfigMapSnafu)
 }
 
-fn build_rhio_configuration(spec_config: &RhioConfig) -> Result<Config> {
+fn build_rhio_configuration(
+    spec_config: &RhioConfig,
+    nats_subjects: Vec<LocalNatsSubject>,
+    subscribe_subjects: Vec<RemoteNatsSubject>,
+    s3_buckets: Vec<String>,
+    subscribe_buckets: Vec<RemoteS3Bucket>,
+) -> Result<Config> {
     let known_nodes = spec_config
         .nodes
         .iter()
@@ -281,7 +373,6 @@ fn build_rhio_configuration(spec_config: &RhioConfig) -> Result<Config> {
     let credentials = spec_config
         .nats
         .clone()
-        .unwrap()
         .credentials
         .map(|c| NatsCredentials {
             nkey: None,
@@ -289,10 +380,25 @@ fn build_rhio_configuration(spec_config: &RhioConfig) -> Result<Config> {
             password: Some(c.password.to_owned()),
             token: None,
         });
+
     let nats = NatsConfig {
-        endpoint: spec_config.nats.as_ref().unwrap().endpoint.to_owned(),
+        endpoint: spec_config.nats.endpoint.to_owned(),
         credentials,
     };
+    let s3 = spec_config.s3.as_ref().map(|s3_conf| {
+        let credentials = s3_conf.credentials.as_ref().map(|cred| Credentials {
+            access_key: Some(cred.access_key.to_owned()),
+            secret_key: Some(cred.secret_key.to_owned()),
+            security_token: None,
+            session_token: None,
+            expiration: None,
+        });
+        S3Config {
+            endpoint: s3_conf.endpoint.to_owned(),
+            region: s3_conf.region.to_owned(),
+            credentials,
+        }
+    });
     let config = Config {
         node: NodeConfig {
             bind_port: spec_config.bind_port,
@@ -302,11 +408,17 @@ fn build_rhio_configuration(spec_config: &RhioConfig) -> Result<Config> {
             network_id: spec_config.network_id.to_owned(),
             protocol: None,
         },
-        s3: None,
+        s3,
         nats,
         log_level: None,
-        publish: None,
-        subscribe: None,
+        publish: Some(PublishConfig {
+            s3_buckets,
+            nats_subjects,
+        }),
+        subscribe: Some(SubscribeConfig {
+            s3_buckets: subscribe_buckets,
+            nats_subjects: subscribe_subjects,
+        }),
     };
     Ok(config)
 }

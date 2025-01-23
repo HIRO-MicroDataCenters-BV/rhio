@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::{crd::ClusterRef, kube::CustomResource};
 
-use super::service::RhioService;
+use super::service::{HasServiceRef, RhioService};
 
 /// Generate the Kubernetes wrapper struct `ReplicatedObjectStore` from our Spec and Status struct
 ///
@@ -27,9 +27,15 @@ use super::service::RhioService;
 pub struct ReplicatedObjectStoreSpec {
     #[serde(default)]
     pub service_ref: ClusterRef<RhioService>,
-
     pub buckets: Vec<String>,
 }
 
+impl HasServiceRef for ReplicatedObjectStore {
+    fn service_ref(&self) -> ClusterRef<RhioService> {
+        self.spec.service_ref.clone()
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicatedObjectStoreStatus {}

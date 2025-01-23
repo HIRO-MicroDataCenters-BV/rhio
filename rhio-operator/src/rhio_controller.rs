@@ -1,14 +1,19 @@
 #![allow(unused_imports, unused_variables)]
 use crate::{
     api::{
+        message_stream::ReplicatedMessageStream,
+        message_stream_subscription::ReplicatedMessageStreamSubscription,
+        object_store::ReplicatedObjectStore,
+        object_store_subscription::ReplicatedObjectStoreSubscription,
         role::RhioRole,
-        service::{RhioService, RhioServiceStatus},
+        service::{HasServiceRef, RhioService, RhioServiceStatus},
     },
     service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
 };
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    str::FromStr,
     sync::Arc,
 };
 
@@ -52,7 +57,7 @@ use stackable_operator::{
         DeepMerge,
     },
     kube::{
-        api::DynamicObject,
+        api::{DynamicObject, ListParams},
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
@@ -211,6 +216,20 @@ pub enum Error {
         source: stackable_operator::cluster_resources::Error,
         rolegroup: RoleGroupRef<RhioService>,
     },
+
+    #[snafu(display("object defines no namespace"))]
+    ObjectHasNoNamespace,
+
+    #[snafu(display("failed to get associated replicated message streams"))]
+    GetReplicatedMessageStreams {
+        source: stackable_operator::client::Error,
+    },
+
+    #[snafu(display("invalid NATS subject {subject}"))]
+    InvalidNatsSubject {
+        source: anyhow::Error,
+        subject: String,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -234,7 +253,7 @@ pub async fn reconcile_rhio(
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
 
-    let rhio_service = rhio
+    let rhio_service: &RhioService = rhio
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
@@ -283,7 +302,78 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleServiceSnafu)?;
 
-    let rhio_configmap = build_rhio_configmap(rhio_service, rhio_service, &resolved_product_image)?;
+    let streams = client
+        .list::<ReplicatedMessageStream>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .collect::<Vec<ReplicatedMessageStream>>();
+
+    let stores = client
+        .list::<ReplicatedObjectStore>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .collect::<Vec<ReplicatedObjectStore>>();
+
+    let stream_subscriptions = client
+        .list::<ReplicatedMessageStreamSubscription>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .collect::<Vec<ReplicatedMessageStreamSubscription>>();
+
+    let store_subscriptions = client
+        .list::<ReplicatedObjectStoreSubscription>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .collect::<Vec<ReplicatedObjectStoreSubscription>>();
+
+    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
+
+    let rhio_configmap = build_rhio_configmap(
+        rhio_service,
+        streams,
+        stream_subscriptions,
+        stores,
+        store_subscriptions,
+        rhio_service,
+        &resolved_product_image,
+        &rolegroup,
+    )?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
@@ -291,8 +381,6 @@ pub async fn reconcile_rhio(
         .add(client, rhio_configmap)
         .await
         .context(ApplyRhioConfigSnafu)?;
-
-    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
 
     let rhio_statefulset =
         build_rhio_statefulset(rhio_service, &resolved_product_image, &rolegroup, &rbac_sa)?;

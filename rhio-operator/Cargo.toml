@@ -15,6 +15,8 @@ telemetry = ["tonic", "opentelemetry-otlp"]
 
 [dependencies]
 rhio-config.workspace = true
+rhio-core.workspace = true
+rust-s3.workspace = true
 p2panda-core.workspace = true
 actix-web = "4.4.0"
 futures = { version="0.3.28", features = ["compat"] }
