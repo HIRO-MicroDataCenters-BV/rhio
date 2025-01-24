@@ -5,7 +5,7 @@ use crate::{
         object_store::ReplicatedObjectStore,
         object_store_subscription::ReplicatedObjectStoreSubscription,
         role::RhioRole,
-        service::{HasServiceRef, RhioService, RhioServiceStatus},
+        service::{RhioService, RhioServiceStatus},
     },
     service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
 };
@@ -276,7 +276,7 @@ pub async fn reconcile_rhio(
         .await
         .context(GetReplicatedMessageStreamsSnafu)?
         .into_iter()
-        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
         .collect::<Vec<ReplicatedMessageStream>>();
 
     let stores = client
@@ -291,7 +291,7 @@ pub async fn reconcile_rhio(
         .await
         .context(GetReplicatedMessageStreamsSnafu)?
         .into_iter()
-        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
         .collect::<Vec<ReplicatedObjectStore>>();
 
     let stream_subscriptions = client
@@ -306,7 +306,7 @@ pub async fn reconcile_rhio(
         .await
         .context(GetReplicatedMessageStreamsSnafu)?
         .into_iter()
-        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
         .collect::<Vec<ReplicatedMessageStreamSubscription>>();
 
     let store_subscriptions = client
@@ -321,7 +321,7 @@ pub async fn reconcile_rhio(
         .await
         .context(GetReplicatedMessageStreamsSnafu)?
         .into_iter()
-        .filter(|stream| stream.service_ref() == rhio_service.service_ref())
+        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
         .collect::<Vec<ReplicatedObjectStoreSubscription>>();
 
     let (rhio_configmap, config_map_hash) = build_rhio_configmap(

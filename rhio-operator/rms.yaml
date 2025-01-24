@@ -3,11 +3,7 @@ kind: ReplicatedMessageStream
 metadata:
   name: test-strean
 spec:
-  serviceRef:
-    namespace: default
-    name: test-service
   streamName: test-stream
   subjects:
     - test.integration
-    - test.validation
   

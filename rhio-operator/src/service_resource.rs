@@ -142,7 +142,7 @@ pub fn build_rhio_statefulset(
         .service_account_name(service_account.name_any());
 
     if let Some(affinity) = &rhio.spec.cluster_config.affinity {
-        pod_builder.affinity(&affinity);
+        pod_builder.affinity(affinity);
     }
 
     let mut sts_metadata = ObjectMetaBuilder::new()

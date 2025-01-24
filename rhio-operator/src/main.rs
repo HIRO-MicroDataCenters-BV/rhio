@@ -4,10 +4,10 @@ use rhio_operator::api::message_stream::ReplicatedMessageStream;
 use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
 use rhio_operator::api::object_store::ReplicatedObjectStore;
 use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
-use rhio_operator::api::service::{HasServiceRef, RhioService};
+use rhio_operator::api::service::RhioService;
 use rhio_operator::rhio_controller::{APP_NAME, OPERATOR_NAME, RHIO_CONTROLLER_NAME};
 use rhio_operator::{built_info, rhio_controller, rms_controller};
-use stackable_operator::kube::Resource;
+use stackable_operator::kube::{Resource, ResourceExt};
 use std::sync::Arc;
 
 use clap::{crate_description, crate_version, Parser};
@@ -131,7 +131,7 @@ pub async fn create_rhio_controller(
                         let Ok(stream) = &stream.0 else {
                             return false;
                         };
-                        stream.service_ref() == rhio.service_ref()
+                        stream.namespace() == rhio.namespace()
                     })
                     .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
@@ -150,7 +150,7 @@ pub async fn create_rhio_controller(
                         let Ok(object_store) = &object_store.0 else {
                             return false;
                         };
-                        object_store.service_ref() == rhio.service_ref()
+                        object_store.namespace() == rhio.namespace()
                     })
                     .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
@@ -169,7 +169,7 @@ pub async fn create_rhio_controller(
                         let Ok(subs) = &subs.0 else {
                             return false;
                         };
-                        subs.service_ref() == rhio.service_ref()
+                        subs.namespace() == rhio.namespace()
                     })
                     .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
@@ -188,7 +188,7 @@ pub async fn create_rhio_controller(
                         let Ok(subs) = &subs.0 else {
                             return false;
                         };
-                        subs.service_ref() == rhio.service_ref()
+                        subs.namespace() == rhio.namespace()
                     })
                     .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
@@ -257,8 +257,7 @@ pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {
                             return false;
                         };
                         let rhio_meta = rhio.meta();
-                        rhio_meta.namespace == rms.spec.service_ref.namespace
-                            && rhio_meta.name == rms.spec.service_ref.name
+                        rhio_meta.namespace == rms.meta().namespace
                     })
                     .map(|rms| ObjectRef::from_obj(&*rms))
             },

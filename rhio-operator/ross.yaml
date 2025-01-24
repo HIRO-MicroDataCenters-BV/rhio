@@ -3,9 +3,6 @@ kind: ReplicatedObjectStoreSubscription
 metadata:
   name: test-store-subscription
 spec:
-  serviceRef:
-    namespace: default
-    name: test-service
   publicKey: b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c
   buckets:
     - remoteBucket: source

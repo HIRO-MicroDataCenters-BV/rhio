@@ -3,9 +3,6 @@ kind: ReplicatedObjectStore
 metadata:
   name: test-store
 spec:
-  serviceRef:
-    namespace: default
-    name: test-service
   buckets:
     - source
   
