@@ -1,7 +1,8 @@
-# Default values for zookeeper-operator.
+# Default values for rhio-operator.
 ---
 image:
-  repository: ghcr.io/hiro-microdatacenters-bv/rhio-operator
+  repository: ""
+  tag: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
 

@@ -37,8 +37,6 @@ struct Opts {
 
 #[derive(clap::Parser)]
 struct RhioRun {
-    #[clap(long, env)]
-    rhio_clusterrole: String,
     #[clap(flatten)]
     common: ProductOperatorRun,
 }
