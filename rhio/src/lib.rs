@@ -1,5 +1,4 @@
 mod blobs;
-pub mod config;
 pub mod context;
 pub mod context_builder;
 pub mod health;

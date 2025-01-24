@@ -10,11 +10,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::config::{Config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use crate::health::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use crate::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Publication, Subscription,
 };
+use rhio_config::configuration::{Config, LocalNatsSubject, RemoteNatsSubject, RemoteS3Bucket};
 use rhio_core::Subject;
 
 pub struct Context {

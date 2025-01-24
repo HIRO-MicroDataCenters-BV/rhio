@@ -14,8 +14,6 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::blobs::{blobs_config, Blobs};
-use crate::config::PRIVATE_KEY_ENV;
-use crate::config::{load_config, Config};
 use crate::health::run_http_server;
 #[cfg(test)]
 use crate::nats::client::fake::client::FakeNatsClient;
@@ -25,6 +23,8 @@ use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
 use crate::tracing::setup_tracing;
 use figment::providers::Env;
+use rhio_config::configuration::PRIVATE_KEY_ENV;
+use rhio_config::configuration::{load_config, Config};
 use rhio_core::load_private_key_from_file;
 
 #[derive(Debug)]

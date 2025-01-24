@@ -1,17 +1,15 @@
-use crate::{
-    config::{
-        Config, LocalNatsSubject, NatsConfig, ProtocolConfig, PublishConfig, RemoteNatsSubject,
-        RemoteS3Bucket, S3Config, SubscribeConfig,
-    },
-    nats::client::fake::{
-        blocking::BlockingClient,
-        client::{FakeNatsClient, FakeNatsMessages},
-    },
+use crate::nats::client::fake::{
+    blocking::BlockingClient,
+    client::{FakeNatsClient, FakeNatsMessages},
 };
 use anyhow::anyhow;
 use anyhow::Context;
 use once_cell::sync::Lazy;
 use p2panda_core::{PrivateKey, PublicKey};
+use rhio_config::configuration::{
+    Config, KnownNode, LocalNatsSubject, NatsConfig, ProtocolConfig, PublishConfig,
+    RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
+};
 use rhio_core::Subject;
 use s3_server::FakeS3Server;
 use s3s::auth::SimpleAuth;
@@ -319,7 +317,7 @@ pub fn configure_network(nodes: Vec<(&mut Config, &PrivateKey)>) {
         for j in 0..nodes.len() {
             if i != j {
                 let (node_config, private_key) = &nodes[j];
-                known_nodes.push(crate::config::KnownNode {
+                known_nodes.push(KnownNode {
                     public_key: private_key.public_key(),
                     direct_addresses: vec![format!("127.0.0.1:{}", node_config.node.bind_port)],
                 });

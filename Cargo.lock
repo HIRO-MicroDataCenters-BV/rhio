@@ -5002,6 +5002,7 @@ dependencies = [
  "pin-project",
  "rand 0.8.5",
  "rhio-blobs",
+ "rhio-config",
  "rhio-core",
  "rust-s3",
  "s3-server",

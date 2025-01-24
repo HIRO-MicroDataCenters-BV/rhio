@@ -35,6 +35,7 @@ p2panda-sync.workspace = true
 rand.workspace = true
 rhio-blobs.workspace = true
 rhio-core.workspace = true
+rhio-config.workspace = true
 rust-s3.workspace = true
 serde.workspace = true
 tokio.workspace = true
