@@ -221,6 +221,7 @@ pub async fn reconcile_rhio(
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
 
     let client = &ctx.client;
+    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -253,7 +254,7 @@ pub async fn reconcile_rhio(
     cluster_resources
         .add(
             client,
-            build_server_role_service(rhio_service, &resolved_product_image)?,
+            build_server_role_service(rhio_service, &resolved_product_image, &rolegroup)?,
         )
         .await
         .context(ApplyRoleServiceSnafu)?;
@@ -317,8 +318,6 @@ pub async fn reconcile_rhio(
         .into_iter()
         .filter(|stream| stream.service_ref() == rhio_service.service_ref())
         .collect::<Vec<ReplicatedObjectStoreSubscription>>();
-
-    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
 
     let (rhio_configmap, config_map_hash) = build_rhio_configmap(
         rhio_service,
@@ -395,8 +394,8 @@ pub fn error_policy(
 pub fn build_server_role_service(
     rhio: &RhioService,
     resolved_product_image: &ResolvedProductImage,
+    rolegroup_ref: &RoleGroupRef<RhioService>,
 ) -> Result<Service> {
-    let role_name = RhioRole::Server.to_string();
     let role_svc_name = rhio
         .server_role_service_name()
         .context(GlobalServiceNameNotFoundSnafu)?;
@@ -410,22 +409,35 @@ pub fn build_server_role_service(
             rhio,
             RHIO_CONTROLLER_NAME,
             &resolved_product_image.app_version_label,
-            &role_name,
-            "global",
+            &rolegroup_ref.role,
+            &rolegroup_ref.role_group,
         ))
         .context(ObjectMetaSnafu)?
         .build();
 
-    let service_selector_labels =
-        Labels::role_selector(rhio, APP_NAME, &role_name).context(BuildLabelSnafu)?;
+    let service_selector_labels = Labels::role_group_selector(
+        rhio,
+        APP_NAME,
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    )
+    .context(BuildLabelSnafu)?;
 
     let service_spec = ServiceSpec {
-        ports: Some(vec![ServicePort {
-            name: Some("rhio".to_string()),
-            port: 9102,
-            protocol: Some("UDP".to_string()),
-            ..ServicePort::default()
-        }]),
+        ports: Some(vec![
+            ServicePort {
+                name: Some("rhio".to_string()),
+                port: 9102,
+                protocol: Some("UDP".to_string()),
+                ..ServicePort::default()
+            },
+            ServicePort {
+                name: Some("health".to_string()),
+                port: 8080,
+                protocol: Some("TCP".to_string()),
+                ..ServicePort::default()
+            },
+        ]),
         selector: Some(service_selector_labels.into()),
         type_: Some(rhio.spec.cluster_config.listener_class.k8s_service_type()),
         ..ServiceSpec::default()
