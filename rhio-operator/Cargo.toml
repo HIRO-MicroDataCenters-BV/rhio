@@ -3,6 +3,7 @@ name = "rhio-operator"
 version = "0.1.0"
 edition = "2021"
 publish = false
+default-run = "rhio-operator"
 
 [[bin]]
 doc = false

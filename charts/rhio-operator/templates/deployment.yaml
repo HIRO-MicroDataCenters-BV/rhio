@@ -41,8 +41,8 @@ spec:
             - run
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          volumeMounts:
-            - mountPath: /etc/stackable/{{ include "operator.appname" . }}/config-spec
+          volumeMounts:          
+            - mountPath: /etc/hiro/{{ include "operator.appname" . }}/config-spec
               name: config-spec
           env:
             - name: OPERATOR_IMAGE
