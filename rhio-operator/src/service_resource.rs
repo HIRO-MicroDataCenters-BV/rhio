@@ -8,9 +8,10 @@ use crate::api::message_stream_subscription::ReplicatedMessageStreamSubscription
 use crate::api::object_store::ReplicatedObjectStore;
 use crate::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use crate::api::service::{RhioConfig, RhioService};
+use crate::operations::graceful_shutdown::add_graceful_shutdown_config;
 use crate::rhio_controller::{
-    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, InvalidAnnotationSnafu,
-    InvalidNatsSubjectSnafu, LabelBuildSnafu, MetadataBuildSnafu,
+    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, GracefulShutdownSnafu,
+    InvalidAnnotationSnafu, InvalidNatsSubjectSnafu, LabelBuildSnafu, MetadataBuildSnafu,
     ObjectMissingMetadataForOwnerRefSnafu, Result, RhioConfigurationSerializationSnafu,
 };
 use crate::rhio_controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
@@ -129,7 +130,6 @@ pub fn build_rhio_statefulset(
         .metadata(pod_metadata)
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(container_rhio.build())
-        // .affinity(&merged_config.affinity)
         .add_volume(Volume {
             name: "config".to_string(),
             config_map: Some(ConfigMapVolumeSource {
@@ -140,6 +140,10 @@ pub fn build_rhio_statefulset(
         })
         .context(AddVolumeSnafu)?
         .service_account_name(service_account.name_any());
+
+    if let Some(affinity) = &rhio.spec.cluster_config.affinity {
+        pod_builder.affinity(&affinity);
+    }
 
     let mut sts_metadata = ObjectMetaBuilder::new()
         .name_and_namespace(rhio)
@@ -160,6 +164,9 @@ pub fn build_rhio_statefulset(
         STACKABLE_VENDOR_KEY.into(),
         STACKABLE_VENDOR_VALUE_HIRO.into(),
     );
+
+    add_graceful_shutdown_config(&rhio.spec.cluster_config, &mut pod_builder)
+        .context(GracefulShutdownSnafu)?;
 
     Ok(StatefulSet {
         metadata: sts_metadata,

@@ -4,11 +4,13 @@ metadata:
   name: test-service
 spec:
     clusterConfig:
-      listenerClass: external-unstable
+      listenerClass: cluster-internal
+      gracefulShutdownTimeout: 1s
+
     image:
       custom: ghcr.io/hiro-microdatacenters-bv/rhio:0.1.3-dev.44.main.b6a8617a
       productVersion: 0.1.3
-      pullPolicy: IfNotPresent
+      pullPolicy: IfNotPresent      
 
     configuration:
       bindPort: 9102

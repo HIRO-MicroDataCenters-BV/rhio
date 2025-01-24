@@ -186,6 +186,11 @@ pub enum Error {
     InvalidAnnotation {
         source: stackable_operator::kvp::AnnotationError,
     },
+
+    #[snafu(display("failed to configure graceful shutdown"))]
+    GracefulShutdown {
+        source: crate::operations::graceful_shutdown::Error,
+    },
 }
 
 impl ReconcilerError for Error {

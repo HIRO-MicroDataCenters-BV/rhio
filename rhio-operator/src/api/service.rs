@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use stackable_operator::commons::affinity::StackableAffinity;
 use stackable_operator::commons::cluster_operation::ClusterOperation;
 use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::crd::ClusterRef;
@@ -8,6 +9,7 @@ use stackable_operator::kube::CustomResource;
 use stackable_operator::role_utils::RoleGroupRef;
 use stackable_operator::status::condition::ClusterCondition;
 use stackable_operator::status::condition::HasStatusCondition;
+use stackable_operator::time::Duration;
 use strum::Display;
 
 use super::role::RhioRole;
@@ -75,7 +77,7 @@ impl CurrentlySupportedListenerClasses {
     }
 }
 
-#[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, Debug, JsonSchema, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RhioClusterConfig {
     /// This field controls which type of Service the Operator creates for this ZookeeperCluster:
@@ -86,6 +88,11 @@ pub struct RhioClusterConfig {
     ///
     #[serde(default)]
     pub listener_class: CurrentlySupportedListenerClasses,
+
+    pub affinity: Option<StackableAffinity>,
+
+    /// Time period Pods have to gracefully shut down, e.g. `30m`, `1h` or `2d`. Consult the operator documentation for details.
+    pub graceful_shutdown_timeout: Option<Duration>,
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize, Default)]
