@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::health::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
+use crate::http::server::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use crate::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Publication, Subscription,
 };

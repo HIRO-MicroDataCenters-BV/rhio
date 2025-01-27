@@ -1,7 +1,7 @@
 mod blobs;
 pub mod context;
 pub mod context_builder;
-pub mod health;
+mod http;
 pub mod metrics;
 mod nats;
 mod network;

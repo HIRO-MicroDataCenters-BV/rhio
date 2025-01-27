@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::blobs::{blobs_config, Blobs};
-use crate::health::run_http_server;
+use crate::http::server::run_http_server;
 #[cfg(test)]
 use crate::nats::client::fake::client::FakeNatsClient;
 #[cfg(not(test))]
@@ -196,9 +196,10 @@ impl ContextBuilder {
         runtime: &Runtime,
         cancellation_token: CancellationToken,
     ) -> JoinHandle<Result<()>> {
+        let config = self.config.clone();
         let http_bind_port = self.config.node.http_bind_port;
         runtime.spawn(async move {
-            let result = run_http_server(http_bind_port)
+            let result = run_http_server(http_bind_port, config)
                 .await
                 .context("failed to start http server with health endpoint");
             cancellation_token.cancel();

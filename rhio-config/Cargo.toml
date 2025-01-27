@@ -20,6 +20,7 @@ p2panda-core.workspace = true
 rust-s3.workspace = true
 serde.workspace = true
 rhio-core.workspace = true
+schemars.workspace = true
 
 [dev-dependencies]
 figment = { workspace = true, features = ["test"] }
