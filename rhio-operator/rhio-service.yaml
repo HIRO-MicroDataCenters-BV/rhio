@@ -8,7 +8,7 @@ spec:
       gracefulShutdownTimeout: 1s
 
     image:
-      custom: ghcr.io/hiro-microdatacenters-bv/rhio:0.1.3-dev.44.main.b6a8617a
+      custom: ghcr.io/hiro-microdatacenters-bv/rhio-dev:0.1.3-dev.operator.2
       productVersion: 0.1.3
       pullPolicy: IfNotPresent      
 

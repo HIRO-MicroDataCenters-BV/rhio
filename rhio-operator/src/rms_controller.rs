@@ -1,12 +1,19 @@
-use crate::api::message_stream::ReplicatedMessageStream;
+use crate::{
+    api::{
+        message_stream::{ReplicatedMessageStream, ReplicatedMessageStreamStatus},
+        service::RhioService,
+    },
+    rhio_controller::OPERATOR_NAME,
+};
 use std::sync::Arc;
 
-use snafu::{ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     kube::{
-        api::DynamicObject,
+        api::{DynamicObject, ListParams},
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
+        ResourceExt,
     },
     logging::controller::ReconcilerError,
     time::Duration,
@@ -27,8 +34,33 @@ pub enum Error {
         source: error_boundary::InvalidObject,
     },
 
+    #[snafu(display("object defines no namespace"))]
+    ObjectHasNoNamespace,
+
     #[snafu(display("object has no name"))]
     ObjectHasNoName,
+
+    #[snafu(display("failed to get rhio services"))]
+    GetRhioService {
+        source: stackable_operator::client::Error,
+    },
+
+    #[snafu(display("failed to get rhio services"))]
+    RhioIsAbsent,
+
+    #[snafu(display("Unable to contact RhioService"))]
+    UnableToContactRhioService { source: reqwest::Error },
+
+    #[snafu(display("Rhio Service has no status"))]
+    RhioServiceHasNoStatus,
+
+    #[snafu(display("Rhio Service has no status"))]
+    RhioServiceHasNoStatusForStream,
+
+    #[snafu(display("failed to update status"))]
+    ApplyStatus {
+        source: stackable_operator::client::Error,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -47,18 +79,47 @@ impl ReconcilerError for Error {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub async fn reconcile_rms(
-    rhio: Arc<DeserializeGuard<ReplicatedMessageStream>>,
-    _ctx: Arc<Ctx>,
+    rms_object: Arc<DeserializeGuard<ReplicatedMessageStream>>,
+    ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
 
-    let _rms = rhio
+    let rms = rms_object
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidReplicatedMessageStreamSnafu)?;
 
-    Ok(Action::await_change())
+    let client = &ctx.client;
+
+    let services = client
+        .list::<RhioService>(
+            rms.namespace()
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetRhioServiceSnafu)?
+        .into_iter()
+        .filter(|stream| stream.metadata.namespace == rms.metadata.namespace)
+        .collect::<Vec<RhioService>>();
+
+    let service = services.first().context(RhioIsAbsentSnafu)?;
+    let service_status = service
+        .status
+        .as_ref()
+        .context(RhioServiceHasNoStatusSnafu)?;
+    let statuses = service_status.status_for(rms);
+
+    let status = ReplicatedMessageStreamStatus { subjects: statuses };
+
+    client
+        .apply_patch_status(OPERATOR_NAME, rms, &status)
+        .await
+        .context(ApplyStatusSnafu)?;
+
+    Ok(Action::requeue(*Duration::from_secs(60)))
 }
 
 pub fn error_policy(

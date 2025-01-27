@@ -1,3 +1,5 @@
+use rhio_config::status::HealthStatus;
+use rhio_config::status::MessageStreamPublishStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::affinity::StackableAffinity;
@@ -12,6 +14,7 @@ use stackable_operator::status::condition::HasStatusCondition;
 use stackable_operator::time::Duration;
 use strum::Display;
 
+use super::message_stream::ReplicatedMessageStream;
 use super::role::RhioRole;
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
@@ -141,6 +144,22 @@ pub struct NatsCredentials {
 pub struct RhioServiceStatus {
     #[serde(default)]
     pub conditions: Vec<ClusterCondition>,
+    pub status: HealthStatus,
+}
+
+impl RhioServiceStatus {
+    pub fn status_for(&self, stream: &ReplicatedMessageStream) -> Vec<MessageStreamPublishStatus> {
+        let mut results = vec![];
+        let statuses = &self.status.streams.published;
+        for subject in stream.spec.subjects.iter() {
+            for published in statuses {
+                if published.stream == stream.spec.stream_name && subject == &published.subject {
+                    results.push(published.to_owned())
+                }
+            }
+        }
+        results
+    }
 }
 
 impl HasStatusCondition for RhioService {

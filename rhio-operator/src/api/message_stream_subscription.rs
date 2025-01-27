@@ -1,3 +1,4 @@
+use rhio_config::status::MessageStreamSubscribeStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;
@@ -33,4 +34,6 @@ pub struct SubjectSpec {
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ReplicatedMessageStreamSubscriptionStatus {}
+pub struct ReplicatedMessageStreamSubscriptionStatus {
+    pub subjects: Vec<MessageStreamSubscribeStatus>,
+}

@@ -1,3 +1,4 @@
+use rhio_config::status::MessageStreamPublishStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;
@@ -26,4 +27,6 @@ pub struct ReplicatedMessageStreamSpec {
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ReplicatedMessageStreamStatus {}
+pub struct ReplicatedMessageStreamStatus {
+    pub subjects: Vec<MessageStreamPublishStatus>,
+}

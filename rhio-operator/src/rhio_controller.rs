@@ -8,10 +8,12 @@ use crate::{
         service::{RhioService, RhioServiceStatus},
     },
     service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
+    status::fetch_status,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use product_config::ProductConfigManager;
+use rhio_config::status::HealthStatus;
 use snafu::{OptionExt, ResultExt, Snafu};
 use stackable_operator::{
     builder::meta::ObjectMetaBuilder,
@@ -31,7 +33,6 @@ use stackable_operator::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
     },
-    time::Duration,
 };
 use strum::{EnumDiscriminants, IntoStaticStr};
 
@@ -213,6 +214,7 @@ pub async fn reconcile_rhio(
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
+    let mut requeue_duration = Duration::from_secs(5 * 60);
 
     let rhio_service: &RhioService = rhio
         .0
@@ -362,11 +364,21 @@ pub async fn reconcile_rhio(
     let cluster_operation_cond_builder =
         ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
 
+    let maybe_health_status = fetch_status(&rhio_service).await;
+    let health_status = match maybe_health_status {
+        Ok(health_status) => health_status,
+        Err(_e) => {
+            requeue_duration = Duration::from_secs(5);
+            HealthStatus::default()
+        }
+    };
+
     let status = RhioServiceStatus {
         conditions: compute_conditions(
             rhio_service,
             &[&ss_cond_builder, &cluster_operation_cond_builder],
         ),
+        status: health_status,
     };
 
     cluster_resources
@@ -379,7 +391,7 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyStatusSnafu)?;
 
-    Ok(Action::await_change())
+    Ok(Action::requeue(requeue_duration))
 }
 
 pub fn error_policy(
@@ -389,7 +401,7 @@ pub fn error_policy(
 ) -> Action {
     match error {
         Error::InvalidRhioService { .. } => Action::await_change(),
-        _ => Action::requeue(*Duration::from_secs(5)),
+        _ => Action::requeue(Duration::from_secs(5)),
     }
 }
 

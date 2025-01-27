@@ -1,3 +1,4 @@
+use rhio_config::status::ObjectStorePublishStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;
@@ -28,4 +29,6 @@ pub struct ReplicatedObjectStoreSpec {
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ReplicatedObjectStoreStatus {}
+pub struct ReplicatedObjectStoreStatus {
+    pub subjects: Vec<ObjectStorePublishStatus>,
+}
