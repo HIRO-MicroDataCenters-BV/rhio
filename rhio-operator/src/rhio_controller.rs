@@ -4,23 +4,23 @@ use crate::{
         message_stream_subscription::ReplicatedMessageStreamSubscription,
         object_store::ReplicatedObjectStore,
         object_store_subscription::ReplicatedObjectStoreSubscription,
-        role::RhioRole,
         service::{RhioService, RhioServiceStatus},
     },
-    service_resource::{build_rhio_configmap, build_rhio_statefulset, build_server_role_service},
+    configuration::RhioConfigurationResources,
+    service_resource::{build_rhio_statefulset, build_server_role_service},
     status::fetch_status,
 };
 use futures::StreamExt;
 use product_config::ProductConfigManager;
 use rhio_config::status::HealthStatus;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{ResultExt, Snafu};
 use stackable_operator::kube::ResourceExt;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::rbac::build_rbac_resources,
     kube::{
-        api::{DynamicObject, ListParams},
+        api::DynamicObject,
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource,
@@ -237,7 +237,7 @@ pub async fn reconcile_rhio(
         .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
 
     let client = &ctx.client;
-    let rolegroup = rhio_service.server_rolegroup_ref(RhioRole::Server.to_string());
+    let rolegroup = rhio_service.server_rolegroup_ref();
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -275,76 +275,10 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleServiceSnafu)?;
 
-    let streams = client
-        .list::<ReplicatedMessageStream>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedMessageStream>>();
-
-    let stores = client
-        .list::<ReplicatedObjectStore>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedObjectStore>>();
-
-    let stream_subscriptions = client
-        .list::<ReplicatedMessageStreamSubscription>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedMessageStreamSubscription>>();
-
-    let store_subscriptions = client
-        .list::<ReplicatedObjectStoreSubscription>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedObjectStoreSubscription>>();
-
-    let (rhio_configmap, config_map_hash) = build_rhio_configmap(
-        rhio_service,
-        streams,
-        stream_subscriptions,
-        stores,
-        store_subscriptions,
-        rhio_service,
-        &resolved_product_image,
-        &rolegroup,
-    )?;
+    let (rhio_configmap, config_map_hash) =
+        RhioConfigurationResources::load(client.clone(), &rhio_service)
+            .await?
+            .build_rhio_configmap(&resolved_product_image)?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 

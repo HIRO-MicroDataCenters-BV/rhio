@@ -55,11 +55,11 @@ impl RhioService {
     }
 
     /// Metadata about a server rolegroup
-    pub fn server_rolegroup_ref(&self, group_name: impl Into<String>) -> RoleGroupRef<RhioService> {
+    pub fn server_rolegroup_ref(&self) -> RoleGroupRef<RhioService> {
         RoleGroupRef {
             cluster: ObjectRef::from_obj(self),
             role: RhioRole::Server.to_string(),
-            role_group: group_name.into(),
+            role_group: "default".into(),
         }
     }
     pub fn service_ref(&self) -> ClusterRef<RhioService> {

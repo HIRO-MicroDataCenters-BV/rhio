@@ -1,4 +1,5 @@
 pub mod api;
+pub mod configuration;
 pub mod operations;
 pub mod rhio_controller;
 pub mod service_resource;
