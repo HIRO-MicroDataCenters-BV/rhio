@@ -7,26 +7,25 @@ use crate::{
         role::RhioRole,
         service::{RhioService, RhioServiceStatus},
     },
-    service_resource::{build_recommended_labels, build_rhio_configmap, build_rhio_statefulset},
+    service_resource::{build_rhio_configmap, build_rhio_statefulset, build_server_role_service},
     status::fetch_status,
 };
-use std::{sync::Arc, time::Duration};
-
+use futures::StreamExt;
 use product_config::ProductConfigManager;
 use rhio_config::status::HealthStatus;
 use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_operator::kube::ResourceExt;
+use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
-    builder::meta::ObjectMetaBuilder,
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
-    commons::{product_image_selection::ResolvedProductImage, rbac::build_rbac_resources},
-    k8s_openapi::api::core::v1::{Service, ServicePort, ServiceSpec},
+    commons::rbac::build_rbac_resources,
     kube::{
         api::{DynamicObject, ListParams},
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource,
     },
-    kvp::{LabelError, Labels},
+    kvp::LabelError,
     logging::controller::ReconcilerError,
     role_utils::RoleGroupRef,
     status::condition::{
@@ -34,6 +33,16 @@ use stackable_operator::{
         statefulset::StatefulSetConditionBuilder,
     },
 };
+use stackable_operator::{
+    k8s_openapi::api::{
+        apps::v1::StatefulSet,
+        core::v1::{ConfigMap, Service, ServiceAccount},
+        rbac::v1::RoleBinding,
+    },
+    kube::runtime::watcher,
+    logging::controller::report_controller_reconciled,
+};
+use std::{sync::Arc, time::Duration};
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 pub const APP_NAME: &str = "rhio";
@@ -364,7 +373,7 @@ pub async fn reconcile_rhio(
     let cluster_operation_cond_builder =
         ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
 
-    let maybe_health_status = fetch_status(&rhio_service).await;
+    let maybe_health_status = fetch_status(rhio_service).await;
     let health_status = match maybe_health_status {
         Ok(health_status) => health_status,
         Err(_e) => {
@@ -405,66 +414,136 @@ pub fn error_policy(
     }
 }
 
-/// The server-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
-/// including targets outside of the cluster.
-///
-pub fn build_server_role_service(
-    rhio: &RhioService,
-    resolved_product_image: &ResolvedProductImage,
-    rolegroup_ref: &RoleGroupRef<RhioService>,
-) -> Result<Service> {
-    let role_svc_name = rhio
-        .server_role_service_name()
-        .context(GlobalServiceNameNotFoundSnafu)?;
+pub async fn create_rhio_controller(
+    client: &Client,
+    product_config: ProductConfigManager,
+    namespace: WatchNamespace,
+) {
+    let rhio_controller = Controller::new(
+        namespace.get_api::<DeserializeGuard<RhioService>>(client),
+        watcher::Config::default(),
+    );
 
-    let metadata = ObjectMetaBuilder::new()
-        .name_and_namespace(rhio)
-        .name(&role_svc_name)
-        .ownerreference_from_resource(rhio, None, Some(true))
-        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
-        .with_recommended_labels(build_recommended_labels(
-            rhio,
-            RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
-            &rolegroup_ref.role,
-            &rolegroup_ref.role_group,
-        ))
-        .context(ObjectMetaSnafu)?
-        .build();
+    let rhio_store_streams = rhio_controller.store();
+    let rhio_store_stores = rhio_controller.store();
+    let rhio_store_stream_subs_store = rhio_controller.store();
+    let rhio_store_bucket_subs_store = rhio_controller.store();
 
-    let service_selector_labels = Labels::role_group_selector(
-        rhio,
-        APP_NAME,
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    )
-    .context(BuildLabelSnafu)?;
-
-    let service_spec = ServiceSpec {
-        ports: Some(vec![
-            ServicePort {
-                name: Some("rhio".to_string()),
-                port: 9102,
-                protocol: Some("UDP".to_string()),
-                ..ServicePort::default()
+    let rhio_controller = rhio_controller
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(client),
+            watcher::Config::default(),
+            move |stream| {
+                rhio_store_streams
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(stream) = &stream.0 else {
+                            return false;
+                        };
+                        stream.namespace() == rhio.namespace()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
-            ServicePort {
-                name: Some("health".to_string()),
-                port: 8080,
-                protocol: Some("TCP".to_string()),
-                ..ServicePort::default()
+        )
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStore>>(client),
+            watcher::Config::default(),
+            move |object_store| {
+                rhio_store_stores
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(object_store) = &object_store.0 else {
+                            return false;
+                        };
+                        object_store.namespace() == rhio.namespace()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
             },
-        ]),
-        selector: Some(service_selector_labels.into()),
-        type_: Some(rhio.spec.cluster_config.listener_class.k8s_service_type()),
-        ..ServiceSpec::default()
-    };
-
-    Ok(Service {
-        metadata,
-        spec: Some(service_spec),
-        status: None,
-    })
+        )
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedMessageStreamSubscription>>(client),
+            watcher::Config::default(),
+            move |subs| {
+                rhio_store_stream_subs_store
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(subs) = &subs.0 else {
+                            return false;
+                        };
+                        subs.namespace() == rhio.namespace()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
+        )
+        .watches(
+            namespace.get_api::<DeserializeGuard<ReplicatedObjectStoreSubscription>>(client),
+            watcher::Config::default(),
+            move |subs| {
+                rhio_store_bucket_subs_store
+                    .state()
+                    .into_iter()
+                    .filter(move |rhio| {
+                        let Ok(rhio) = &rhio.0 else {
+                            return false;
+                        };
+                        let Ok(subs) = &subs.0 else {
+                            return false;
+                        };
+                        subs.namespace() == rhio.namespace()
+                    })
+                    .map(|rhio| ObjectRef::from_obj(&*rhio))
+            },
+        )
+        .owns(
+            namespace.get_api::<StatefulSet>(client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<Service>(client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<ConfigMap>(client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<ServiceAccount>(client),
+            watcher::Config::default(),
+        )
+        .owns(
+            namespace.get_api::<RoleBinding>(client),
+            watcher::Config::default(),
+        )
+        .shutdown_on_signal()
+        .run(
+            reconcile_rhio,
+            error_policy,
+            Arc::new(Ctx {
+                client: client.clone(),
+                product_config,
+            }),
+        )
+        .map(|res| {
+            report_controller_reconciled(
+                client,
+                &format!("{RHIO_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                &res,
+            );
+        })
+        .collect::<()>();
+    rhio_controller.await
 }
 
 #[cfg(test)]

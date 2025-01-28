@@ -10,8 +10,9 @@ use crate::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use crate::api::service::{RhioConfig, RhioService};
 use crate::operations::graceful_shutdown::add_graceful_shutdown_config;
 use crate::rhio_controller::{
-    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, GracefulShutdownSnafu,
-    InvalidAnnotationSnafu, InvalidNatsSubjectSnafu, LabelBuildSnafu, MetadataBuildSnafu,
+    AddVolumeMountSnafu, AddVolumeSnafu, BuildConfigMapSnafu, BuildLabelSnafu,
+    GlobalServiceNameNotFoundSnafu, GracefulShutdownSnafu, InvalidAnnotationSnafu,
+    InvalidNatsSubjectSnafu, LabelBuildSnafu, MetadataBuildSnafu,
     ObjectMissingMetadataForOwnerRefSnafu, Result, RhioConfigurationSerializationSnafu,
 };
 use crate::rhio_controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
@@ -22,7 +23,7 @@ use rhio_config::configuration::{
     RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
 };
 use s3::creds::Credentials;
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::configmap::ConfigMapBuilder;
 use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::builder::pod::container::ContainerBuilder;
@@ -31,8 +32,8 @@ use stackable_operator::builder::pod::PodBuilder;
 use stackable_operator::commons::product_image_selection::ResolvedProductImage;
 use stackable_operator::k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetSpec};
 use stackable_operator::k8s_openapi::api::core::v1::{
-    ConfigMap, ConfigMapVolumeSource, ContainerPort, EnvVarSource, ServiceAccount, Volume,
-    VolumeMount,
+    ConfigMap, ConfigMapVolumeSource, ContainerPort, EnvVarSource, Service, ServiceAccount,
+    ServicePort, ServiceSpec, Volume, VolumeMount,
 };
 use stackable_operator::k8s_openapi::api::core::v1::{HTTPGetAction, Probe, SecretKeySelector};
 use stackable_operator::k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
@@ -432,4 +433,72 @@ fn build_rhio_configuration(
         }),
     };
     Ok(config)
+}
+
+/// The server-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
+/// including targets outside of the cluster.
+///
+pub fn build_server_role_service(
+    rhio: &RhioService,
+    resolved_product_image: &ResolvedProductImage,
+    rolegroup_ref: &RoleGroupRef<RhioService>,
+) -> Result<Service> {
+    let role_svc_name = rhio
+        .server_role_service_name()
+        .context(GlobalServiceNameNotFoundSnafu)?;
+
+    let metadata = ObjectMetaBuilder::new()
+        .name_and_namespace(rhio)
+        .name(&role_svc_name)
+        .ownerreference_from_resource(rhio, None, Some(true))
+        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
+        .with_recommended_labels(build_recommended_labels(
+            rhio,
+            RHIO_CONTROLLER_NAME,
+            &resolved_product_image.app_version_label,
+            &rolegroup_ref.role,
+            &rolegroup_ref.role_group,
+        ))
+        .context(ObjectMetaSnafu)?
+        .build();
+
+    let service_selector_labels = Labels::role_group_selector(
+        rhio,
+        APP_NAME,
+        &rolegroup_ref.role,
+        &rolegroup_ref.role_group,
+    )
+    .context(BuildLabelSnafu)?;
+
+    let service_spec = ServiceSpec {
+        ports: Some(vec![
+            ServicePort {
+                name: Some("rhio".to_string()),
+                port: 9102,
+                protocol: Some("UDP".to_string()),
+                ..ServicePort::default()
+            },
+            ServicePort {
+                name: Some("health".to_string()),
+                port: 8080,
+                protocol: Some("TCP".to_string()),
+                ..ServicePort::default()
+            },
+        ]),
+        selector: Some(service_selector_labels.into()),
+        type_: Some(rhio.spec.cluster_config.listener_class.k8s_service_type()),
+        ..ServiceSpec::default()
+    };
+
+    Ok(Service {
+        metadata,
+        spec: Some(service_spec),
+        status: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+
+    // use super::*;
 }

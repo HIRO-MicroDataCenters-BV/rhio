@@ -1,5 +1,4 @@
 use rhio_config::status::HealthStatus;
-use rhio_config::status::MessageStreamPublishStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::affinity::StackableAffinity;
@@ -15,6 +14,13 @@ use stackable_operator::time::Duration;
 use strum::Display;
 
 use super::message_stream::ReplicatedMessageStream;
+use super::message_stream::ReplicatedMessageStreamStatus;
+use super::message_stream_subscription::ReplicatedMessageStreamSubscription;
+use super::message_stream_subscription::ReplicatedMessageStreamSubscriptionStatus;
+use super::object_store::ReplicatedObjectStore;
+use super::object_store::ReplicatedObjectStoreStatus;
+use super::object_store_subscription::ReplicatedObjectStoreSubscription;
+use super::object_store_subscription::ReplicatedObjectStoreSubscriptionStatus;
 use super::role::RhioRole;
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
@@ -35,7 +41,7 @@ use super::role::RhioRole;
 #[serde(rename_all = "camelCase")]
 pub struct RhioServiceSpec {
     pub image: ProductImage,
-    pub cluster_config: RhioClusterConfig,
+    pub cluster_config: RhioServiceConfig,
     pub configuration: RhioConfig,
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
@@ -82,8 +88,8 @@ impl CurrentlySupportedListenerClasses {
 
 #[derive(Clone, Deserialize, Debug, JsonSchema, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct RhioClusterConfig {
-    /// This field controls which type of Service the Operator creates for this ZookeeperCluster:
+pub struct RhioServiceConfig {
+    /// This field controls which type of Service the Operator creates for this RhioService:
     ///
     /// * cluster-internal: Use a ClusterIP service
     ///
@@ -148,7 +154,7 @@ pub struct RhioServiceStatus {
 }
 
 impl RhioServiceStatus {
-    pub fn status_for(&self, stream: &ReplicatedMessageStream) -> Vec<MessageStreamPublishStatus> {
+    pub fn stream_status(&self, stream: &ReplicatedMessageStream) -> ReplicatedMessageStreamStatus {
         let mut results = vec![];
         let statuses = &self.status.streams.published;
         for subject in stream.spec.subjects.iter() {
@@ -158,7 +164,58 @@ impl RhioServiceStatus {
                 }
             }
         }
-        results
+        ReplicatedMessageStreamStatus { subjects: results }
+    }
+
+    pub fn stream_subscription_status(
+        &self,
+        stream: &ReplicatedMessageStreamSubscription,
+    ) -> ReplicatedMessageStreamSubscriptionStatus {
+        let mut results = vec![];
+        let statuses = &self.status.streams.subscribed;
+        for subject in stream.spec.subscriptions.iter() {
+            for subscription in statuses {
+                if subject.stream == subscription.stream
+                    && subject.subject == subscription.subject
+                    && stream.spec.public_key == subscription.source
+                {
+                    results.push(subscription.to_owned())
+                }
+            }
+        }
+        ReplicatedMessageStreamSubscriptionStatus { subjects: results }
+    }
+
+    pub fn store_status(&self, store: &ReplicatedObjectStore) -> ReplicatedObjectStoreStatus {
+        let mut results = vec![];
+        let statuses = &self.status.stores.published;
+        for bucket in store.spec.buckets.iter() {
+            for published in statuses {
+                if &published.bucket == bucket {
+                    results.push(published.to_owned())
+                }
+            }
+        }
+        ReplicatedObjectStoreStatus { buckets: results }
+    }
+
+    pub fn store_subscription_status(
+        &self,
+        subscription: &ReplicatedObjectStoreSubscription,
+    ) -> ReplicatedObjectStoreSubscriptionStatus {
+        let mut results = vec![];
+        let statuses = &self.status.stores.subscribed;
+        for bucket in subscription.spec.buckets.iter() {
+            for subscription_status in statuses {
+                if subscription_status.source == subscription.spec.public_key
+                    && subscription_status.local_bucket == bucket.local_bucket
+                    && subscription_status.remote_bucket == bucket.remote_bucket
+                {
+                    results.push(subscription_status.to_owned())
+                }
+            }
+        }
+        ReplicatedObjectStoreSubscriptionStatus { buckets: results }
     }
 }
 

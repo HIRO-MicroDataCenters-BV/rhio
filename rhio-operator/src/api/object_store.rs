@@ -30,5 +30,5 @@ pub struct ReplicatedObjectStoreSpec {
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplicatedObjectStoreStatus {
-    pub subjects: Vec<ObjectStorePublishStatus>,
+    pub buckets: Vec<ObjectStorePublishStatus>,
 }

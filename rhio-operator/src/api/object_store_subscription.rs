@@ -36,5 +36,5 @@ pub struct BucketSpec {
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplicatedObjectStoreSubscriptionStatus {
-    pub subjects: Vec<ObjectStoreSubscribeStatus>,
+    pub buckets: Vec<ObjectStoreSubscribeStatus>,
 }
