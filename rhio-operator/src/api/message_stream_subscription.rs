@@ -1,4 +1,4 @@
-use rhio_config::status::MessageStreamSubscribeStatus;
+use rhio_http_api::status::MessageStreamSubscribeStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;

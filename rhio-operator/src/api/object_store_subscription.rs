@@ -1,4 +1,4 @@
-use rhio_config::status::ObjectStoreSubscribeStatus;
+use rhio_http_api::status::ObjectStoreSubscribeStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;

@@ -36,6 +36,7 @@ rand.workspace = true
 rhio-blobs.workspace = true
 rhio-core.workspace = true
 rhio-config.workspace = true
+rhio-http-api.workspace = true
 rust-s3.workspace = true
 serde.workspace = true
 tokio.workspace = true

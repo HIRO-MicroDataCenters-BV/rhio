@@ -12,7 +12,7 @@ use crate::{
 };
 use futures::StreamExt;
 use product_config::ProductConfigManager;
-use rhio_config::status::HealthStatus;
+use rhio_http_api::status::HealthStatus;
 use snafu::{ResultExt, Snafu};
 use stackable_operator::kube::ResourceExt;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
@@ -276,7 +276,7 @@ pub async fn reconcile_rhio(
         .context(ApplyRoleServiceSnafu)?;
 
     let (rhio_configmap, config_map_hash) =
-        RhioConfigurationResources::load(client.clone(), &rhio_service)
+        RhioConfigurationResources::load(client.clone(), rhio_service)
             .await?
             .build_rhio_configmap(&resolved_product_image)?;
 

@@ -1,5 +1,5 @@
 use reqwest::Error;
-use rhio_config::status::HealthStatus;
+use rhio_http_api::status::HealthStatus;
 
 use crate::api::service::RhioService;
 

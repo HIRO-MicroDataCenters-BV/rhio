@@ -130,7 +130,7 @@ impl RhioConfigurationResources {
                     .subjects
                     .iter()
                     .map(|published_subject| {
-                        rhio_core::Subject::from_str(&published_subject)
+                        rhio_core::Subject::from_str(published_subject)
                             .context(InvalidNatsSubjectSnafu {
                                 subject: published_subject.to_owned(),
                             })

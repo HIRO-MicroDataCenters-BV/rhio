@@ -24,6 +24,8 @@ rust-s3.workspace = true
 p2panda-core.workspace = true
 anyhow.workspace = true
 
+rhio-http-api.workspace = true
+
 clap.workspace = true
 futures.workspace = true
 tokio.workspace = true

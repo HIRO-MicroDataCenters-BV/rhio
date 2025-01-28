@@ -1,6 +1,6 @@
 use axum::Json;
 use rhio_config::configuration::Config;
-use rhio_config::status::{
+use rhio_http_api::status::{
     HealthStatus, MessageStreamPublishStatus, MessageStreamSubscribeStatus, MessageStreams,
     ObjectStatus, ObjectStorePublishStatus, ObjectStoreSubscribeStatus, ObjectStores,
 };

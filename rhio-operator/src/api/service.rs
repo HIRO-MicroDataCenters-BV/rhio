@@ -1,4 +1,4 @@
-use rhio_config::status::HealthStatus;
+use rhio_http_api::status::HealthStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::affinity::StackableAffinity;
