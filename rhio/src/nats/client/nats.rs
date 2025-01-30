@@ -1,5 +1,4 @@
-use crate::config::NatsCredentials;
-use crate::{config, StreamName};
+use crate::StreamName;
 use anyhow::{bail, Context as AnyhowContext, Result};
 use async_nats::jetstream::consumer::push::MessagesError;
 use async_nats::jetstream::consumer::push::{Config as ConsumerConfig, Messages};
@@ -12,6 +11,7 @@ use async_nats::{ConnectOptions, HeaderMap};
 use async_trait::async_trait;
 use bytes::Bytes;
 use pin_project::pin_project;
+use rhio_config::configuration::{NatsConfig, NatsCredentials};
 use rhio_core::{subjects_to_str, Subject};
 use tracing::{span, trace, Level};
 
@@ -35,7 +35,7 @@ pub struct NatsClientImpl {
 
 impl NatsClientImpl {
     #[allow(dead_code)]
-    pub async fn new(nats: config::NatsConfig) -> Result<Self> {
+    pub async fn new(nats: NatsConfig) -> Result<Self> {
         let nats_options = connect_options(nats.credentials.clone())?;
         let client = async_nats::connect_with_options(nats.endpoint.clone(), nats_options)
             .await

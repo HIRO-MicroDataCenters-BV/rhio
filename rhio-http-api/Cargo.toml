@@ -1,0 +1,22 @@
+[package]
+name = "rhio-http-api"
+description = "Rhio HTTP API"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "rhio_http_api"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+schemars.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+axum.workspace = true

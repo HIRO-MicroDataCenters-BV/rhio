@@ -1,4 +1,3 @@
-use crate::config::NatsConfig;
 use crate::nats::client::fake::server::TEST_FAKE_SERVER;
 use crate::nats::HeaderMap;
 use anyhow::{Context as AnyhowContext, Result};
@@ -13,6 +12,7 @@ use loole::RecvStream;
 use pin_project::pin_project;
 use pin_project::pinned_drop;
 use rand::random;
+use rhio_config::configuration::NatsConfig;
 use rhio_core::Subject;
 use s3::creds::time::OffsetDateTime;
 use std::pin::Pin;
