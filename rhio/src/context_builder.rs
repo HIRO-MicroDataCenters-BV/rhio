@@ -201,9 +201,9 @@ impl ContextBuilder {
     ) -> Result<JoinHandle<Result<()>>> {
         let config = self.config.clone();
         let http_bind_port = self.config.node.http_bind_port;
-        let api = Arc::new(RhioApiImpl::new(config)?);
-        let http_server = RhioHTTPServer::new(http_bind_port, api);
         Ok(runtime.spawn(async move {
+            let api = Arc::new(RhioApiImpl::new(config)?);
+            let http_server = RhioHTTPServer::new(http_bind_port, api);
             let result = http_server
                 .run()
                 .await
