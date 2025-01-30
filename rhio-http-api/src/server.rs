@@ -12,11 +12,10 @@ use axum::{extract::State, Json};
 use tokio::net::TcpListener;
 use tracing::debug;
 
-use crate::api::RhioApi;
-
-pub const HTTP_HEALTH_ROUTE: &str = "/health";
-
-pub const HTTP_METRICS_ROUTE: &str = "/metrics";
+use crate::{
+    api::{RhioApi, HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE},
+    status::HealthStatus,
+};
 
 pub struct RhioHTTPServer {
     port: u16,
@@ -61,7 +60,12 @@ async fn health(State(state): State<ServerState>) -> impl IntoResponse {
         .health()
         .await
         .map(|result| (StatusCode::OK, Json(result)))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", e)))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Into::<HealthStatus>::into(e)),
+            )
+        })
 }
 
 async fn metrics(State(state): State<ServerState>) -> impl IntoResponse {

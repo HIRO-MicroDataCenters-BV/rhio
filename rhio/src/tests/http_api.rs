@@ -16,7 +16,7 @@ use tokio::runtime::Builder;
 use tracing::info;
 
 #[test]
-pub fn test_http_api() -> Result<()> {
+pub fn test_health_status() -> Result<()> {
     setup_tracing(Some("=INFO".into()));
 
     let SingleServerSetup { rhio, http_api } = create_setup()?;
@@ -30,6 +30,19 @@ pub fn test_http_api() -> Result<()> {
         },
         status
     );
+
+    rhio.discard()?;
+    Ok(())
+}
+
+#[test]
+pub fn test_metrics() -> Result<()> {
+    setup_tracing(Some("=INFO".into()));
+
+    let SingleServerSetup { rhio, http_api } = create_setup()?;
+
+    let metrics = http_api.metrics()?;
+    assert_eq!("", metrics);
 
     rhio.discard()?;
     Ok(())
@@ -54,7 +67,7 @@ fn create_setup() -> Result<SingleServerSetup> {
             .enable_io()
             .enable_time()
             .thread_name("test-runtime")
-            .worker_threads(5)
+            .worker_threads(2)
             .build()
             .expect("test tokio runtime"),
     );
@@ -64,7 +77,7 @@ fn create_setup() -> Result<SingleServerSetup> {
             "http://127.0.0.1:{}",
             rhio_config.node.http_bind_port
         )),
-        test_runtime.clone(),
+        test_runtime,
     );
     let rhio = FakeRhioServer::try_start(rhio_config.clone(), rhio_private_key.clone())
         .context("RhioServer")?;

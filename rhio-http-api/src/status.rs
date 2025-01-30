@@ -2,6 +2,24 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub struct HealthStatus {
+    pub status: ServiceStatus,
+    pub msg: Option<String>,
+    pub streams: MessageStreams,
+    pub stores: ObjectStores,
+}
+
+impl From<anyhow::Error> for HealthStatus {
+    fn from(error: anyhow::Error) -> Self {
+        HealthStatus {
+            status: ServiceStatus::Error,
+            msg: Some(format!("{:?}", error)),
+            ..HealthStatus::default()
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub enum ServiceStatus {
     #[default]
     Running,
@@ -10,9 +28,15 @@ pub enum ServiceStatus {
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-pub enum ObjectStatus {
-    #[default]
-    Activated,
+pub struct MessageStreams {
+    pub published: Vec<MessageStreamPublishStatus>,
+    pub subscribed: Vec<MessageStreamSubscribeStatus>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub struct ObjectStores {
+    pub published: Vec<ObjectStorePublishStatus>,
+    pub subscribed: Vec<ObjectStoreSubscribeStatus>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
@@ -45,31 +69,7 @@ pub struct ObjectStoreSubscribeStatus {
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-pub struct MessageStreams {
-    pub published: Vec<MessageStreamPublishStatus>,
-    pub subscribed: Vec<MessageStreamSubscribeStatus>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-pub struct ObjectStores {
-    pub published: Vec<ObjectStorePublishStatus>,
-    pub subscribed: Vec<ObjectStoreSubscribeStatus>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
-pub struct HealthStatus {
-    pub streams: MessageStreams,
-    pub stores: ObjectStores,
-    pub status: ServiceStatus,
-    pub msg: Option<String>,
-}
-
-impl From<anyhow::Error> for HealthStatus {
-    fn from(error: anyhow::Error) -> Self {
-        HealthStatus {
-            status: ServiceStatus::Error,
-            msg: Some(format!("{:?}", error)),
-            ..HealthStatus::default()
-        }
-    }
+pub enum ObjectStatus {
+    #[default]
+    Activated,
 }

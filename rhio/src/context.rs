@@ -4,7 +4,7 @@ use crate::{Node, StreamName};
 
 use anyhow::{bail, Context as AnyhowContext, Result};
 use p2panda_core::PublicKey;
-use rhio_http_api::server::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
+use rhio_http_api::api::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::task::JoinHandle;
