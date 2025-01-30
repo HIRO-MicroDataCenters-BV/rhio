@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use axum::async_trait;
-use axum_prometheus::metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use axum_prometheus::{
+    metrics::set_global_recorder,
+    metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle},
+};
 use rhio_config::configuration::Config;
 use rhio_http_api::{
     api::RhioApi,
@@ -9,6 +12,7 @@ use rhio_http_api::{
         ObjectStatus, ObjectStorePublishStatus, ObjectStoreSubscribeStatus, ObjectStores,
     },
 };
+use tracing::warn;
 
 pub struct RhioApiImpl {
     config: Config,
@@ -89,8 +93,19 @@ impl RhioApi for RhioApiImpl {
 }
 
 fn setup_metrics_recorder() -> Result<PrometheusHandle> {
-    let builder = PrometheusBuilder::new()
-        .install_recorder()
-        .context("Installing global prometheus recorder")?;
-    Ok(builder)
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    let maybe_success = set_global_recorder(recorder);
+    if let Err(e) = &maybe_success {
+        let msg = format!("{}", e);
+        if msg.contains(
+            "attempted to set a recorder after the metrics system was already initialized",
+        ) {
+            warn!("global recorder is possibly reused.")
+        } else {
+            maybe_success?;
+        }
+    }
+    Ok(handle)
 }
