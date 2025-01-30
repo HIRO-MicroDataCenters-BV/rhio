@@ -16,6 +16,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::error;
 
 use crate::blobs::{blobs_config, Blobs};
 #[cfg(test)]
@@ -102,7 +103,7 @@ impl ContextBuilder {
         })?;
 
         // Launch HTTP server in separate runtime to not block rhio runtime.
-        let http_runtime = Builder::new_current_thread()
+        let http_runtime = Builder::new_multi_thread()
             .enable_io()
             .thread_name("http-server")
             .build()
@@ -207,7 +208,8 @@ impl ContextBuilder {
             let result = http_server
                 .run()
                 .await
-                .context("failed to start rhio http server");
+                .context("failed to start rhio http server")
+                .inspect_err(|e| error!("http result {}", e));
             cancellation_token.cancel();
             result
         }))
