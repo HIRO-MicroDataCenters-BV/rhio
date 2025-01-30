@@ -1,0 +1,25 @@
+[package]
+name = "rhio-config"
+description = "Configuration for Rhio service"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+name = "rhio_config"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+directories.workspace = true
+figment.workspace = true
+p2panda-core.workspace = true
+rust-s3.workspace = true
+serde.workspace = true
+rhio-core.workspace = true
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
