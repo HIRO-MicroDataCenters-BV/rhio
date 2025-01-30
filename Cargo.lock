@@ -5075,8 +5075,13 @@ name = "rhio-http-api"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "axum",
+ "reqwest 0.11.27",
  "schemars",
  "serde",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5089,7 +5094,6 @@ dependencies = [
  "futures",
  "p2panda-core",
  "product-config",
- "reqwest 0.11.27",
  "rhio-config",
  "rhio-core",
  "rhio-http-api",

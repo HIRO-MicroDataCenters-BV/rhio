@@ -8,11 +8,10 @@ use crate::{
     },
     configuration::RhioConfigurationResources,
     service_resource::{build_rhio_statefulset, build_server_role_service},
-    status::fetch_status,
 };
 use futures::StreamExt;
 use product_config::ProductConfigManager;
-use rhio_http_api::status::HealthStatus;
+use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
 use snafu::{ResultExt, Snafu};
 use stackable_operator::kube::ResourceExt;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
@@ -307,7 +306,12 @@ pub async fn reconcile_rhio(
     let cluster_operation_cond_builder =
         ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
 
-    let maybe_health_status = fetch_status(rhio_service).await;
+    let endpoint = format!(
+        "http://{}.default.svc.cluster.local:8080/health",
+        &rhio_service.metadata.name.clone().unwrap()
+    );
+
+    let maybe_health_status = RhioApiClient::new(endpoint).health().await;
     let health_status = match maybe_health_status {
         Ok(health_status) => health_status,
         Err(_e) => {

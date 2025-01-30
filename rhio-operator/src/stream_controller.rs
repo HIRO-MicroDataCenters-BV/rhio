@@ -62,9 +62,6 @@ pub enum Error {
     #[snafu(display("failed to get rhio services"))]
     RhioIsAbsent,
 
-    #[snafu(display("Unable to contact RhioService"))]
-    UnableToContactRhioService { source: reqwest::Error },
-
     #[snafu(display("Rhio Service has no status"))]
     RhioServiceHasNoStatus,
 

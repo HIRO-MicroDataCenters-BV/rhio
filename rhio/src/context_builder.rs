@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::context::Context;
+use crate::http::api::RhioApiImpl;
 use crate::node::rhio::NodeOptions;
 
 use crate::{blobs::store_from_config, nats::Nats, Node};
@@ -8,13 +11,13 @@ use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::SyncConfiguration;
 use p2panda_net::{NetworkBuilder, ResyncConfiguration};
+use rhio_http_api::server::RhioHTTPServer;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::blobs::{blobs_config, Blobs};
-use crate::http::server::run_http_server;
 #[cfg(test)]
 use crate::nats::client::fake::client::FakeNatsClient;
 #[cfg(not(test))]
@@ -105,7 +108,7 @@ impl ContextBuilder {
             .build()
             .expect("http server tokio runtime");
         let cancellation_token = CancellationToken::new();
-        let http_handle = self.start_http_server(&http_runtime, cancellation_token.clone());
+        let http_handle = self.start_http_server(&http_runtime, cancellation_token.clone())?;
 
         Ok(Context::new(
             node,
@@ -195,15 +198,18 @@ impl ContextBuilder {
         &self,
         runtime: &Runtime,
         cancellation_token: CancellationToken,
-    ) -> JoinHandle<Result<()>> {
+    ) -> Result<JoinHandle<Result<()>>> {
         let config = self.config.clone();
         let http_bind_port = self.config.node.http_bind_port;
-        runtime.spawn(async move {
-            let result = run_http_server(http_bind_port, config)
+        let api = Arc::new(RhioApiImpl::new(config)?);
+        let http_server = RhioHTTPServer::new(http_bind_port, api);
+        Ok(runtime.spawn(async move {
+            let result = http_server
+                .run()
                 .await
-                .context("failed to start http server with health endpoint");
+                .context("failed to start rhio http server");
             cancellation_token.cancel();
             result
-        })
+        }))
     }
 }

@@ -4,13 +4,13 @@ use crate::{Node, StreamName};
 
 use anyhow::{bail, Context as AnyhowContext, Result};
 use p2panda_core::PublicKey;
+use rhio_http_api::server::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use tokio::runtime::Runtime;
 use tokio::signal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::http::server::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use crate::{
     FilesSubscription, FilteredMessageStream, MessagesSubscription, Publication, Subscription,
 };

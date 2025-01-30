@@ -3,7 +3,6 @@ pub mod configuration;
 pub mod operations;
 pub mod rhio_controller;
 pub mod service_resource;
-pub mod status;
 pub mod stream_controller;
 
 pub mod built_info {

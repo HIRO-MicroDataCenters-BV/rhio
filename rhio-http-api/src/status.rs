@@ -52,5 +52,23 @@ pub struct ObjectStores {
 pub struct HealthStatus {
     pub streams: MessageStreams,
     pub stores: ObjectStores,
-    pub status: String,
+    pub status: String, // TODO service status Unknown/running
+    pub msg: Option<String>,
+}
+
+impl From<anyhow::Error> for HealthStatus {
+    fn from(error: anyhow::Error) -> Self {
+        HealthStatus {
+            streams: MessageStreams {
+                published: vec![],
+                subscribed: vec![],
+            },
+            stores: ObjectStores {
+                published: vec![],
+                subscribed: vec![],
+            },
+            status: "error".to_string(),
+            msg: Some(format!("{:?}", error)),
+        }
+    }
 }
