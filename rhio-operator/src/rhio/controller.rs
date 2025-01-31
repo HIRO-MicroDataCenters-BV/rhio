@@ -4,16 +4,16 @@ use crate::{
         message_stream_subscription::ReplicatedMessageStreamSubscription,
         object_store::ReplicatedObjectStore,
         object_store_subscription::ReplicatedObjectStoreSubscription,
-        service::{RhioService, RhioServiceStatus},
+        service::{CurrentlySupportedListenerClasses, RhioService, RhioServiceStatus},
     },
     configuration::configmap::RhioConfigurationResources,
-    rhio::builders::{build_rhio_statefulset, build_server_role_service},
+    rhio::builders::{build_recommended_labels, build_rhio_statefulset, build_server_role_service},
 };
 use futures::StreamExt;
 use product_config::ProductConfigManager;
 use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
-use snafu::{ResultExt, Snafu};
-use stackable_operator::kube::ResourceExt;
+use snafu::{OptionExt, ResultExt, Snafu};
+use stackable_operator::kube::{api::ListParams, ResourceExt};
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -230,13 +230,16 @@ pub async fn reconcile_rhio(
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidRhioServiceSnafu)?;
 
-    let resolved_product_image = rhio_service
-        .spec
-        .image
-        .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
-
+    let resolved_product_image = rhio_service.resolve_product_image();
     let client = &ctx.client;
     let rolegroup = rhio_service.server_rolegroup_ref();
+    let labels = build_recommended_labels(
+        &rhio_service,
+        RHIO_CONTROLLER_NAME,
+        &resolved_product_image.app_version_label,
+        &rolegroup.role,
+        &rolegroup.role_group,
+    );
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -266,18 +269,22 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    cluster_resources
-        .add(
-            client,
-            build_server_role_service(rhio_service, &resolved_product_image, &rolegroup)?,
-        )
-        .await
-        .context(ApplyRoleServiceSnafu)?;
+    if rhio_service.spec.cluster_config.listener_class
+        != CurrentlySupportedListenerClasses::Disabled
+    {
+        cluster_resources
+            .add(
+                client,
+                build_server_role_service(rhio_service, &rolegroup, labels.clone())?,
+            )
+            .await
+            .context(ApplyRoleServiceSnafu)?;
+    }
 
     let (rhio_configmap, config_map_hash) =
         RhioConfigurationResources::load(client.clone(), rhio_service)
             .await?
-            .build_rhio_configmap(&resolved_product_image)?;
+            .build_rhio_configmap(labels.clone())?;
 
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
 
@@ -290,6 +297,7 @@ pub async fn reconcile_rhio(
         rhio_service,
         &resolved_product_image,
         &rolegroup,
+        labels.clone(),
         &rbac_sa,
         config_map_hash,
     )?;

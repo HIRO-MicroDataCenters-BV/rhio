@@ -13,13 +13,12 @@ use rhio_operator::rhio::controller::{create_rhio_controller, APP_NAME, OPERATOR
 use clap::{crate_description, crate_version, Parser};
 use stackable_operator::{
     cli::{Command, ProductOperatorRun},
-    client,
-    commons::listener::Listener,
-    CustomResourceExt,
+    client, CustomResourceExt,
 };
 
 const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =
     "/etc/hiro/rhio-operator/config-spec/properties.yaml";
+const RHIO_OPERATOR_LOCAL_PRODUCT_PROPERTIES: &str = "./config-spec/properties.yaml";
 const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[derive(clap::Parser)]
@@ -45,8 +44,6 @@ async fn main() -> anyhow::Result<()> {
             ReplicatedMessageStreamSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedObjectStore::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedObjectStoreSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
-            // TODO make optional
-            Listener::print_yaml_schema(built_info::PKG_VERSION)?;
         }
         Command::Run(RhioRun {
             common:
@@ -72,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
                 built_info::RUSTC_VERSION,
             );
             let product_config = product_config.load(&[
-                "./config-spec/properties.yaml",
+                RHIO_OPERATOR_LOCAL_PRODUCT_PROPERTIES,
                 RHIO_OPERATOR_PRODUCT_PROPERTIES,
             ])?;
             let client =

@@ -22,6 +22,8 @@ serviceAccount:
 labels:
   stackable.tech/vendor: Hiro
 
+enableListeners: true
+
 podAnnotations: {}
 
 podSecurityContext: {}

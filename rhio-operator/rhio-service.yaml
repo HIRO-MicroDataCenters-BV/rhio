@@ -13,8 +13,6 @@ spec:
       pullPolicy: IfNotPresent      
 
     configuration:
-      bindPort: 9102
-      httpBindPort: 8080
       networkId: test
       privateKeySecret: secret-key
       nodes: []

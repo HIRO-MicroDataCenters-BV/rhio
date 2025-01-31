@@ -31,9 +31,6 @@ use stackable_operator::kvp::consts::STACKABLE_VENDOR_KEY;
 use stackable_operator::kvp::{Annotations, Labels, ObjectLabels};
 use stackable_operator::role_utils::RoleGroupRef;
 
-pub const RHIO_CONTROLLER_NAME: &str = "rhioservice";
-pub const DOCKER_IMAGE_BASE_NAME: &str = "rhio";
-
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const RHIO_CONFIG_DIR: &str = "/etc/rhio/config.yaml";
 pub const RHIO_LOG_DIR: &str = "/var/log/rhio";
@@ -47,6 +44,7 @@ pub fn build_rhio_statefulset(
     rhio: &RhioService,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
+    labels: ObjectLabels<RhioService>,
     service_account: &ServiceAccount,
     config_hash: String,
 ) -> Result<StatefulSet> {
@@ -103,13 +101,7 @@ pub fn build_rhio_statefulset(
             Annotations::try_from([(RHIO_POD_TEMPLATE_CONFIG_HASH, config_hash)])
                 .context(InvalidAnnotationSnafu)?,
         )
-        .with_recommended_labels(build_recommended_labels(
-            rhio,
-            RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
-            &rolegroup_ref.role,
-            &rolegroup_ref.role_group,
-        ))
+        .with_recommended_labels(labels.clone())
         .context(ObjectMetaSnafu)?
         .build();
 
@@ -142,13 +134,7 @@ pub fn build_rhio_statefulset(
         .name(rolegroup_ref.object_name())
         .ownerreference_from_resource(rhio, None, Some(true))
         .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
-        .with_recommended_labels(build_recommended_labels(
-            rhio,
-            RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
-            &rolegroup_ref.role,
-            &rolegroup_ref.role_group,
-        ))
+        .with_recommended_labels(labels.clone())
         .context(ObjectMetaSnafu)?
         .build();
 
@@ -192,7 +178,7 @@ fn liveness_probe() -> Probe {
         failure_threshold: Some(3),
         http_get: Some(HTTPGetAction {
             path: Some("/health".to_owned()),
-            port: IntOrString::Int(8080),
+            port: IntOrString::Int(RHIO_BIND_HTTP_PORT_DEFAULT as i32),
             scheme: Some("HTTP".to_owned()),
             ..HTTPGetAction::default()
         }),
@@ -243,8 +229,8 @@ pub fn build_recommended_labels<'a>(
 ///
 pub fn build_server_role_service(
     rhio: &RhioService,
-    resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
+    labels: ObjectLabels<RhioService>,
 ) -> Result<Service> {
     let role_svc_name = rhio
         .server_role_service_name()
@@ -255,13 +241,7 @@ pub fn build_server_role_service(
         .name(&role_svc_name)
         .ownerreference_from_resource(rhio, None, Some(true))
         .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
-        .with_recommended_labels(build_recommended_labels(
-            rhio,
-            RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
-            &rolegroup_ref.role,
-            &rolegroup_ref.role_group,
-        ))
+        .with_recommended_labels(labels)
         .context(ObjectMetaSnafu)?
         .build();
 
@@ -277,13 +257,13 @@ pub fn build_server_role_service(
         ports: Some(vec![
             ServicePort {
                 name: Some("rhio".to_string()),
-                port: 9102,
+                port: RHIO_BIND_PORT_DEFAULT as i32,
                 protocol: Some("UDP".to_string()),
                 ..ServicePort::default()
             },
             ServicePort {
                 name: Some("health".to_string()),
-                port: 8080,
+                port: RHIO_BIND_HTTP_PORT_DEFAULT as i32,
                 protocol: Some("TCP".to_string()),
                 ..ServicePort::default()
             },
