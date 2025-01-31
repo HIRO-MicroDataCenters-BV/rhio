@@ -107,8 +107,6 @@ pub struct RhioServiceConfig {
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RhioConfig {
-    pub bind_port: u16,
-    pub http_bind_port: u16,
     pub network_id: String,
     pub private_key_secret: String,
     pub nodes: Vec<NodePeerConfigSpec>,
@@ -233,8 +231,4 @@ impl HasStatusCondition for RhioService {
 pub struct NodePeerConfigSpec {
     pub public_key: String,
     pub endpoints: Vec<String>,
-}
-
-pub trait HasServiceRef {
-    fn service_ref(&self) -> ClusterRef<RhioService>;
 }

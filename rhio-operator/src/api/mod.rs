@@ -1,4 +1,3 @@
-pub mod container;
 pub mod message_stream;
 pub mod message_stream_subscription;
 pub mod object_store;

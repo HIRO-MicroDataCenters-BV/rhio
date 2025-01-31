@@ -5,10 +5,10 @@ use rhio_operator::api::object_store::ReplicatedObjectStore;
 use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use rhio_operator::api::service::RhioService;
 use rhio_operator::built_info;
-use rhio_operator::rhio_controller::{create_rhio_controller, APP_NAME, OPERATOR_NAME};
-use rhio_operator::stream_controller::{
+use rhio_operator::configuration::controllers::{
     create_rms_controller, create_rmss_controller, create_ros_controller, create_ross_controller,
 };
+use rhio_operator::rhio::controller::{create_rhio_controller, APP_NAME, OPERATOR_NAME};
 
 use clap::{crate_description, crate_version, Parser};
 use stackable_operator::{
@@ -17,6 +17,10 @@ use stackable_operator::{
     commons::listener::Listener,
     CustomResourceExt,
 };
+
+const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =
+    "/etc/hiro/rhio-operator/config-spec/properties.yaml";
+const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[derive(clap::Parser)]
 #[clap(about, author)]
@@ -55,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
             ..
         }) => {
             stackable_operator::logging::initialize_logging(
-                "RHIO_OPERATOR_LOG",
+                RHIO_OPERATOR_LOG_ENV_VAR,
                 APP_NAME,
                 tracing_target,
             );
@@ -69,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
             );
             let product_config = product_config.load(&[
                 "./config-spec/properties.yaml",
-                "/etc/hiro/rhio-operator/config-spec/properties.yaml",
+                RHIO_OPERATOR_PRODUCT_PROPERTIES,
             ])?;
             let client =
                 client::initialize_operator(Some(OPERATOR_NAME.to_string()), &cluster_info_opts)

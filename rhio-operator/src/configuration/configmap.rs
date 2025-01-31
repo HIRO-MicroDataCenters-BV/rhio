@@ -1,4 +1,4 @@
-use crate::rhio_controller::Result;
+use crate::rhio::controller::Result;
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -7,12 +7,12 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{RhioConfig, RhioService},
     },
-    rhio_controller::{
+    rhio::builders::{build_recommended_labels, STACKABLE_VENDOR_VALUE_HIRO},
+    rhio::controller::{
         BuildConfigMapSnafu, GetReplicatedMessageStreamsSnafu, InvalidNatsSubjectSnafu,
         MetadataBuildSnafu, ObjectHasNoNamespaceSnafu, ObjectMissingMetadataForOwnerRefSnafu,
         RhioConfigurationSerializationSnafu, RHIO_CONTROLLER_NAME,
     },
-    service_resource::{build_recommended_labels, STACKABLE_VENDOR_VALUE_HIRO},
 };
 use p2panda_core::PublicKey;
 use rhio_config::configuration::{
@@ -31,6 +31,11 @@ use stackable_operator::{
 };
 use std::hash::{Hash, Hasher};
 use std::{collections::BTreeMap, hash::DefaultHasher, str::FromStr};
+
+const RHIO_PRIVATE_KEY_PATH: &str = "/etc/rhio/private-key.txt";
+pub const RHIO_BIND_PORT_DEFAULT: u16 = 9102;
+pub const RHIO_BIND_HTTP_PORT_DEFAULT: u16 = 8080;
+pub const RHIO_CONFIG_MAP_ENTRY: &str = "config.yaml";
 
 pub struct RhioConfigurationResources {
     rhio: RhioService,
@@ -228,7 +233,7 @@ impl RhioConfigurationResources {
 
         let config_map = ConfigMapBuilder::new()
             .metadata(metadata)
-            .add_data("config.yaml", rhio_configuration)
+            .add_data(RHIO_CONFIG_MAP_ENTRY, rhio_configuration)
             .build()
             .context(BuildConfigMapSnafu)?;
 
@@ -282,10 +287,10 @@ impl RhioConfigurationResources {
         });
         let config = Config {
             node: NodeConfig {
-                bind_port: spec_config.bind_port,
-                http_bind_port: spec_config.http_bind_port,
+                bind_port: RHIO_BIND_PORT_DEFAULT,
+                http_bind_port: RHIO_BIND_HTTP_PORT_DEFAULT,
                 known_nodes,
-                private_key_path: "/etc/rhio/private-key.txt".into(),
+                private_key_path: RHIO_PRIVATE_KEY_PATH.into(),
                 network_id: spec_config.network_id.to_owned(),
                 protocol: None,
             },

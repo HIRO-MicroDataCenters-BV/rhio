@@ -6,8 +6,8 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{RhioService, RhioServiceStatus},
     },
-    configuration::RhioConfigurationResources,
-    service_resource::{build_rhio_statefulset, build_server_role_service},
+    configuration::configmap::RhioConfigurationResources,
+    rhio::builders::{build_rhio_statefulset, build_server_role_service},
 };
 use futures::StreamExt;
 use product_config::ProductConfigManager;
@@ -306,6 +306,7 @@ pub async fn reconcile_rhio(
     let cluster_operation_cond_builder =
         ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
 
+    // TODO configurable cluster domain
     let endpoint = format!(
         "http://{}.default.svc.cluster.local:8080/health",
         &rhio_service.metadata.name.clone().unwrap()

@@ -6,7 +6,7 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{RhioService, RhioServiceStatus},
     },
-    rhio_controller::OPERATOR_NAME,
+    rhio::controller::OPERATOR_NAME,
 };
 use futures::StreamExt;
 use snafu::{OptionExt, ResultExt, Snafu};

@@ -1,6 +1,6 @@
 use crate::{
     api::{role::RhioRole, service::RhioService},
-    rhio_controller::{APP_NAME, OPERATOR_NAME, RHIO_CONTROLLER_NAME},
+    rhio::controller::{APP_NAME, OPERATOR_NAME, RHIO_CONTROLLER_NAME},
 };
 use snafu::{ResultExt, Snafu};
 use stackable_operator::{

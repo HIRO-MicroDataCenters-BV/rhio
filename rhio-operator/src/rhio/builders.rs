@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 
-use crate::api::container::Container;
 use crate::api::service::RhioService;
+use crate::configuration::configmap::{
+    RHIO_BIND_HTTP_PORT_DEFAULT, RHIO_BIND_PORT_DEFAULT, RHIO_CONFIG_MAP_ENTRY,
+};
 use crate::operations::graceful_shutdown::add_graceful_shutdown_config;
-use crate::rhio_controller::{
+use crate::rhio::controller::{
     AddVolumeMountSnafu, AddVolumeSnafu, BuildLabelSnafu, GlobalServiceNameNotFoundSnafu,
     GracefulShutdownSnafu, InvalidAnnotationSnafu, LabelBuildSnafu,
     ObjectMissingMetadataForOwnerRefSnafu, Result,
 };
-use crate::rhio_controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
-use crate::rhio_controller::{APP_NAME, OPERATOR_NAME};
+use crate::rhio::controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
+use crate::rhio::controller::{APP_NAME, OPERATOR_NAME};
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::builder::pod::container::ContainerBuilder;
@@ -36,6 +38,10 @@ pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const RHIO_CONFIG_DIR: &str = "/etc/rhio/config.yaml";
 pub const RHIO_LOG_DIR: &str = "/var/log/rhio";
 pub const STACKABLE_VENDOR_VALUE_HIRO: &str = "HIRO";
+pub const CONTAINER: &str = "rhio";
+pub const RHIO_POD_TEMPLATE_CONFIG_HASH: &str = "rhio.hiro.io/config-hash";
+const RHIO_BINARY: &str = "/usr/local/bin/rhio";
+const RHIO_PRIVATE_KEY_BINARY_VARIABLE: &str = "PRIVATE_KEY";
 
 pub fn build_rhio_statefulset(
     rhio: &RhioService,
@@ -45,8 +51,8 @@ pub fn build_rhio_statefulset(
     config_hash: String,
 ) -> Result<StatefulSet> {
     let mut container_rhio =
-        ContainerBuilder::new(&Container::Rhio.to_string()).context(InvalidContainerNameSnafu {
-            name: Container::Rhio.to_string(),
+        ContainerBuilder::new(CONTAINER).context(InvalidContainerNameSnafu {
+            name: CONTAINER.to_string(),
         })?;
 
     let private_key_name = &rhio.spec.configuration.private_key_secret;
@@ -54,12 +60,12 @@ pub fn build_rhio_statefulset(
     container_rhio
         .image_from_product_image(resolved_product_image)
         .args(vec![
-            "/usr/local/bin/rhio".to_string(),
+            RHIO_BINARY.to_string(),
             "-c".to_string(),
-            "/etc/rhio/config.yaml".to_string(),
+            RHIO_CONFIG_DIR.to_string(),
         ])
         .add_env_var_from_source(
-            "PRIVATE_KEY",
+            RHIO_PRIVATE_KEY_BINARY_VARIABLE,
             EnvVarSource {
                 config_map_key_ref: None,
                 field_ref: None,
@@ -74,8 +80,8 @@ pub fn build_rhio_statefulset(
         .add_container_ports(container_ports())
         .add_volume_mounts(vec![VolumeMount {
             name: "config".into(),
-            mount_path: "/etc/rhio/config.yaml".into(),
-            sub_path: Some("config.yaml".into()),
+            mount_path: RHIO_CONFIG_DIR.into(),
+            sub_path: Some(RHIO_CONFIG_MAP_ENTRY.into()),
             ..VolumeMount::default()
         }])
         .context(AddVolumeMountSnafu)?
@@ -84,7 +90,7 @@ pub fn build_rhio_statefulset(
         .resources(
             ResourceRequirementsBuilder::new()
                 .with_cpu_request("250m")
-                .with_cpu_limit("500m")
+                .with_cpu_limit("1")
                 .with_memory_request("128Mi")
                 .with_memory_limit("128Mi")
                 .build(),
@@ -94,7 +100,7 @@ pub fn build_rhio_statefulset(
 
     let mut pod_metadata = ObjectMetaBuilder::new()
         .annotations(
-            Annotations::try_from([("rhio.hiro.io/config-hash", config_hash)])
+            Annotations::try_from([(RHIO_POD_TEMPLATE_CONFIG_HASH, config_hash)])
                 .context(InvalidAnnotationSnafu)?,
         )
         .with_recommended_labels(build_recommended_labels(
@@ -200,14 +206,14 @@ fn liveness_probe() -> Probe {
 fn container_ports() -> Vec<ContainerPort> {
     vec![
         ContainerPort {
-            container_port: 8080,
+            container_port: RHIO_BIND_HTTP_PORT_DEFAULT as i32,
             name: Some("health".into()),
             protocol: Some("TCP".into()),
             ..ContainerPort::default()
         },
         ContainerPort {
-            container_port: 9102,
-            name: Some("network".into()),
+            container_port: RHIO_BIND_PORT_DEFAULT as i32,
+            name: Some("rhio".into()),
             protocol: Some("UDP".into()),
             ..ContainerPort::default()
         },

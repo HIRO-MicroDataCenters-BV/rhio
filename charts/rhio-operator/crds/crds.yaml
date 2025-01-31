@@ -569,14 +569,6 @@ spec:
                 type: object
               configuration:
                 properties:
-                  bindPort:
-                    format: uint16
-                    minimum: 0.0
-                    type: integer
-                  httpBindPort:
-                    format: uint16
-                    minimum: 0.0
-                    type: integer
                   nats:
                     properties:
                       credentials:
@@ -636,8 +628,6 @@ spec:
                     - region
                     type: object
                 required:
-                - bindPort
-                - httpBindPort
                 - nats
                 - networkId
                 - nodes
@@ -1164,10 +1154,6 @@ spec:
         description: Auto-generated derived type for ReplicatedObjectStoreSpec via `CustomResource`
         properties:
           spec:
-            description: |-
-              Generate the Kubernetes wrapper struct `ReplicatedObjectStore` from our Spec and Status struct
-
-              This provides a hook for generating the CRD yaml (in crdgen.rs)
             properties:
               buckets:
                 items:

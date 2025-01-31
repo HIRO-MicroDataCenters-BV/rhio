@@ -3,9 +3,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::kube::CustomResource;
 
-/// Generate the Kubernetes wrapper struct `ReplicatedObjectStore` from our Spec and Status struct
-///
-/// This provides a hook for generating the CRD yaml (in crdgen.rs)
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[cfg_attr(test, derive(Default))]
 #[kube(

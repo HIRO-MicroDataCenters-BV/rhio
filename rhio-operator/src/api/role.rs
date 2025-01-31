@@ -22,6 +22,8 @@ pub enum RhioRole {
     Server,
 }
 
+// TODO why
+
 impl RhioRole {
     /// Metadata about a rolegroup
     pub fn rolegroup_ref(
