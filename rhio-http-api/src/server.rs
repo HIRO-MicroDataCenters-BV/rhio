@@ -17,6 +17,20 @@ use crate::{
     status::HealthStatus,
 };
 
+/// `RhioHTTPServer` is a struct that represents an HTTP server for the Rhio application.
+/// It is responsible for serving health and metrics endpoints over HTTP.
+///
+/// # Fields
+/// - `port`: The port on which the server will listen for incoming HTTP requests.
+/// - `api`: An `Arc` to a trait object implementing `RhioApi`, which provides the health and metrics functionality.
+///
+/// # Methods
+/// - `new(port: u16, api: Arc<dyn RhioApi>) -> RhioHTTPServer`
+///   - Creates a new instance of `RhioHTTPServer` with the specified port and API implementation.
+/// - `run(&self) -> Result<()>`
+///   - Asynchronously runs the HTTP server, binding to the specified port and serving the health and metrics endpoints.
+///   - Returns a `Result` indicating success or failure of the server operation.
+///
 pub struct RhioHTTPServer {
     port: u16,
     api: Arc<dyn RhioApi>,

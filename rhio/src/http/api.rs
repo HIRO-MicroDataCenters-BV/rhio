@@ -14,6 +14,21 @@ use rhio_http_api::{
 };
 use tracing::warn;
 
+/// `RhioApiImpl` is an implementation of the `RhioApi` trait, providing methods
+/// to check the health status and retrieve metrics of the Rhio service.
+///
+/// # Fields
+/// - `config`: Configuration settings for the Rhio service.
+/// - `recorder_handle`: Handle to the Prometheus metrics recorder.
+///
+/// # Methods
+/// - `new(config: Config) -> Result<RhioApiImpl>`: Creates a new instance of `RhioApiImpl`
+///   with the provided configuration and sets up the metrics recorder.
+///
+/// # Trait Implementations
+/// - `RhioApi`: Implements the `health` and `metrics` methods to provide health status
+///   and metrics information respectively.
+///
 pub struct RhioApiImpl {
     config: Config,
     recorder_handle: PrometheusHandle,

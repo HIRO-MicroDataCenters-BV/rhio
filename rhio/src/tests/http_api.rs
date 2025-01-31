@@ -53,6 +53,27 @@ struct SingleServerSetup {
     http_api: BlockingClient<RhioApiClient>,
 }
 
+/// Creates a setup for testing with a single server instance.
+///
+/// This function generates the necessary configurations for NATS and Rhio,
+/// initializes a Tokio runtime, and starts a fake Rhio server. It also
+/// creates an HTTP API client for interacting with the Rhio server.
+///
+/// # Returns
+///
+/// A `Result` containing a `SingleServerSetup` struct with the initialized
+/// Rhio server and HTTP API client, or an error if the setup fails.
+///
+/// # Errors
+///
+/// This function will return an error if the Rhio server fails to start or
+/// if there is an issue with the configurations.
+///
+/// # Example
+///
+/// ```rust
+/// let setup = create_setup()?;
+/// ```
 fn create_setup() -> Result<SingleServerSetup> {
     let nats_config = generate_nats_config();
     info!("nats config {:?}", nats_config);

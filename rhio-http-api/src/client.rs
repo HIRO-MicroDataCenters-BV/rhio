@@ -6,6 +6,28 @@ use crate::{
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
+/// `RhioApiClient` is a client for interacting with the Rhio HTTP API.
+///
+/// # Fields
+///
+/// * `endpoint` - The base URL of the Rhio API.
+///
+/// # Examples
+///
+/// ```rust
+/// use rhio_http_api::client::RhioApiClient;
+///
+/// let client = RhioApiClient::new("http://localhost:8080".to_string());
+/// ```
+///
+/// # Methods
+///
+/// * `new` - Creates a new instance of `RhioApiClient`.
+///
+/// # Implementations
+///
+/// This struct implements the `RhioApi` trait, providing methods to check the health status
+/// and retrieve metrics from the Rhio API.
 pub struct RhioApiClient {
     endpoint: String,
 }
