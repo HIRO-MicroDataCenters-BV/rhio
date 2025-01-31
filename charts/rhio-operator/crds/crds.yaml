@@ -739,7 +739,14 @@ spec:
                     type: array
                   status:
                     properties:
+                      msg:
+                        nullable: true
+                        type: string
                       status:
+                        enum:
+                        - Running
+                        - Unknown
+                        - Error
                         type: string
                       stores:
                         properties:
@@ -885,7 +892,14 @@ spec:
                 type: array
               status:
                 properties:
+                  msg:
+                    nullable: true
+                    type: string
                   status:
+                    enum:
+                    - Running
+                    - Unknown
+                    - Error
                     type: string
                   stores:
                     properties:
