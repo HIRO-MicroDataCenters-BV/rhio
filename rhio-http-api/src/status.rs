@@ -1,20 +1,52 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-pub enum ObjectStatus {
-    #[default]
-    Activated,
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub struct HealthStatus {
+    pub status: ServiceStatus,
+    pub msg: Option<String>,
+    pub streams: MessageStreams,
+    pub stores: ObjectStores,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+impl From<anyhow::Error> for HealthStatus {
+    fn from(error: anyhow::Error) -> Self {
+        HealthStatus {
+            status: ServiceStatus::Error,
+            msg: Some(format!("{:?}", error)),
+            ..HealthStatus::default()
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub enum ServiceStatus {
+    #[default]
+    Running,
+    Unknown,
+    Error,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub struct MessageStreams {
+    pub published: Vec<MessageStreamPublishStatus>,
+    pub subscribed: Vec<MessageStreamSubscribeStatus>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub struct ObjectStores {
+    pub published: Vec<ObjectStorePublishStatus>,
+    pub subscribed: Vec<ObjectStoreSubscribeStatus>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct MessageStreamPublishStatus {
     pub stream: String,
     pub subject: String,
     pub status: ObjectStatus,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct MessageStreamSubscribeStatus {
     pub source: String,
     pub stream: String,
@@ -22,13 +54,13 @@ pub struct MessageStreamSubscribeStatus {
     pub status: ObjectStatus,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct ObjectStorePublishStatus {
     pub bucket: String,
     pub status: ObjectStatus,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct ObjectStoreSubscribeStatus {
     pub source: String,
     pub remote_bucket: String,
@@ -36,39 +68,8 @@ pub struct ObjectStoreSubscribeStatus {
     pub status: ObjectStatus,
 }
 
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-pub struct MessageStreams {
-    pub published: Vec<MessageStreamPublishStatus>,
-    pub subscribed: Vec<MessageStreamSubscribeStatus>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-pub struct ObjectStores {
-    pub published: Vec<ObjectStorePublishStatus>,
-    pub subscribed: Vec<ObjectStoreSubscribeStatus>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema)]
-pub struct HealthStatus {
-    pub streams: MessageStreams,
-    pub stores: ObjectStores,
-    pub status: String, // TODO service status Unknown/running
-    pub msg: Option<String>,
-}
-
-impl From<anyhow::Error> for HealthStatus {
-    fn from(error: anyhow::Error) -> Self {
-        HealthStatus {
-            streams: MessageStreams {
-                published: vec![],
-                subscribed: vec![],
-            },
-            stores: ObjectStores {
-                published: vec![],
-                subscribed: vec![],
-            },
-            status: "error".to_string(),
-            msg: Some(format!("{:?}", error)),
-        }
-    }
+#[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
+pub enum ObjectStatus {
+    #[default]
+    Activated,
 }

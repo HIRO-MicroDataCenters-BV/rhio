@@ -12,12 +12,25 @@ use axum::{extract::State, Json};
 use tokio::net::TcpListener;
 use tracing::debug;
 
-use crate::api::RhioApi;
+use crate::{
+    api::{RhioApi, HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE},
+    status::HealthStatus,
+};
 
-pub const HTTP_HEALTH_ROUTE: &str = "/health";
-
-pub const HTTP_METRICS_ROUTE: &str = "/metrics";
-
+/// `RhioHTTPServer` is a struct that represents an HTTP server for the Rhio application.
+/// It is responsible for serving health and metrics endpoints over HTTP.
+///
+/// # Fields
+/// - `port`: The port on which the server will listen for incoming HTTP requests.
+/// - `api`: An `Arc` to a trait object implementing `RhioApi`, which provides the health and metrics functionality.
+///
+/// # Methods
+/// - `new(port: u16, api: Arc<dyn RhioApi>) -> RhioHTTPServer`
+///   - Creates a new instance of `RhioHTTPServer` with the specified port and API implementation.
+/// - `run(&self) -> Result<()>`
+///   - Asynchronously runs the HTTP server, binding to the specified port and serving the health and metrics endpoints.
+///   - Returns a `Result` indicating success or failure of the server operation.
+///
 pub struct RhioHTTPServer {
     port: u16,
     api: Arc<dyn RhioApi>,
@@ -61,7 +74,12 @@ async fn health(State(state): State<ServerState>) -> impl IntoResponse {
         .health()
         .await
         .map(|result| (StatusCode::OK, Json(result)))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{:?}", e)))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Into::<HealthStatus>::into(e)),
+            )
+        })
 }
 
 async fn metrics(State(state): State<ServerState>) -> impl IntoResponse {
