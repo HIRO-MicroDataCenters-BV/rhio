@@ -1,3 +1,4 @@
+use crate::configuration::error::Result;
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -6,20 +7,23 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{RhioService, RhioServiceStatus},
     },
+    configuration::error::{
+        ApplyStatusSnafu, GetRhioServiceSnafu, InvalidReplicatedResourceSnafu,
+        ObjectHasNoNamespaceSnafu, RhioIsAbsentSnafu, RhioServiceHasNoStatusSnafu,
+    },
     rhio::controller::OPERATOR_NAME,
 };
 use futures::StreamExt;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt};
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     client::GetApi,
     kube::{
-        api::{DynamicObject, ListParams},
+        api::ListParams,
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
     },
-    logging::controller::ReconcilerError,
     time::Duration,
 };
 use stackable_operator::{
@@ -27,7 +31,8 @@ use stackable_operator::{
     logging::controller::report_controller_reconciled,
 };
 use std::sync::Arc;
-use strum::{EnumDiscriminants, IntoStaticStr};
+
+use super::error::Error;
 
 pub const RMS_CONTROLLER_NAME: &str = "rms";
 pub const RMSS_CONTROLLER_NAME: &str = "rmss";
@@ -37,57 +42,6 @@ pub const ROSS_CONTROLLER_NAME: &str = "ross";
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
 }
-
-#[derive(Snafu, Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(IntoStaticStr))]
-#[allow(clippy::enum_variant_names)]
-#[snafu(visibility(pub))]
-pub enum Error {
-    #[snafu(display("ReplicatedMessageStream object is invalid"))]
-    InvalidReplicatedMessageStream {
-        source: error_boundary::InvalidObject,
-    },
-
-    #[snafu(display("object defines no namespace"))]
-    ObjectHasNoNamespace,
-
-    #[snafu(display("object has no name"))]
-    ObjectHasNoName,
-
-    #[snafu(display("failed to get rhio services"))]
-    GetRhioService {
-        source: stackable_operator::client::Error,
-    },
-
-    #[snafu(display("failed to get rhio services"))]
-    RhioIsAbsent,
-
-    #[snafu(display("Rhio Service has no status"))]
-    RhioServiceHasNoStatus,
-
-    #[snafu(display("Rhio Service has no status"))]
-    RhioServiceHasNoStatusForStream,
-
-    #[snafu(display("failed to update status"))]
-    ApplyStatus {
-        source: stackable_operator::client::Error,
-    },
-}
-
-impl ReconcilerError for Error {
-    fn category(&self) -> &'static str {
-        ErrorDiscriminants::from(self).into()
-    }
-
-    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
-        match self {
-            Error::ObjectHasNoName => None,
-            _ => None,
-        }
-    }
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub async fn reconcile_rms(
     rms_object: Arc<DeserializeGuard<ReplicatedMessageStream>>,
@@ -123,7 +77,7 @@ pub async fn reconcile_ross(
     .await
 }
 
-pub async fn reconcile<R, S, GetStatusF>(
+async fn reconcile<R, S, GetStatusF>(
     rms_object: Arc<DeserializeGuard<R>>,
     ctx: Arc<Ctx>,
     get_status: GetStatusF,
@@ -139,7 +93,7 @@ where
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
-        .context(InvalidReplicatedMessageStreamSnafu)?;
+        .context(InvalidReplicatedResourceSnafu)?;
 
     let client = &ctx.client;
 
@@ -176,7 +130,7 @@ where
     R: Clone + std::fmt::Debug + serde::de::DeserializeOwned + Resource<DynamicType = ()> + GetApi,
 {
     match error {
-        Error::InvalidReplicatedMessageStream { .. } => Action::await_change(),
+        Error::InvalidReplicatedResource { .. } => Action::await_change(),
         _ => Action::requeue(*Duration::from_secs(5)),
     }
 }

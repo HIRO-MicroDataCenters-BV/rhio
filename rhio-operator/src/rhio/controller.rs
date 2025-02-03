@@ -1,3 +1,4 @@
+use crate::rhio::error::BuildLabelSnafu;
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -6,27 +7,33 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{CurrentlySupportedListenerClasses, RhioService, RhioServiceStatus},
     },
-    configuration::configmap::RhioConfigurationResources,
-    rhio::builders::{build_recommended_labels, build_rhio_statefulset, build_server_role_service},
+    configuration::configmap::RhioConfigMapBuilder,
+    rhio::{
+        builders::{build_recommended_labels, build_rhio_statefulset, build_server_role_service},
+        error::{
+            ApplyRhioConfigSnafu, ApplyRoleBindingSnafu, ApplyRoleGroupStatefulSetSnafu,
+            ApplyRoleServiceSnafu, ApplyServiceAccountSnafu, ApplyStatusSnafu, BuildConfigMapSnafu,
+            BuildRbacResourcesSnafu, CreateClusterResourcesSnafu, DeleteOrphansSnafu,
+            InvalidRhioServiceSnafu,
+        },
+    },
 };
+
+use crate::rhio::error::Result;
 use futures::StreamExt;
 use product_config::ProductConfigManager;
 use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::{OptionExt, ResultExt};
 use stackable_operator::kube::{api::ListParams, ResourceExt};
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::rbac::build_rbac_resources,
     kube::{
-        api::DynamicObject,
         core::{error_boundary, DeserializeGuard},
         runtime::{controller::Action, reflector::ObjectRef},
         Resource,
     },
-    kvp::LabelError,
-    logging::controller::ReconcilerError,
-    role_utils::RoleGroupRef,
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,
         statefulset::StatefulSetConditionBuilder,
@@ -42,7 +49,8 @@ use stackable_operator::{
     logging::controller::report_controller_reconciled,
 };
 use std::{sync::Arc, time::Duration};
-use strum::{EnumDiscriminants, IntoStaticStr};
+
+use super::error::{Error, GetReplicatedMessageStreamsSnafu, ObjectHasNoNamespaceSnafu};
 
 pub const APP_NAME: &str = "rhio";
 pub const OPERATOR_NAME: &str = "rhio.hiro.io";
@@ -53,169 +61,6 @@ pub struct Ctx {
     pub client: stackable_operator::client::Client,
     pub product_config: ProductConfigManager,
 }
-
-#[derive(Snafu, Debug, EnumDiscriminants)]
-#[strum_discriminants(derive(IntoStaticStr))]
-#[allow(clippy::enum_variant_names)]
-#[snafu(visibility(pub))]
-pub enum Error {
-    #[snafu(display("object has no name"))]
-    ObjectHasNoName,
-
-    #[snafu(display("invalid rhio service"))]
-    InvalidRhioService {
-        source: error_boundary::InvalidObject,
-    },
-
-    #[snafu(display("failed to create cluster resources"))]
-    CreateClusterResources {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to delete orphaned resources"))]
-    DeleteOrphans {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to update status"))]
-    ApplyStatus {
-        source: stackable_operator::client::Error,
-    },
-
-    #[snafu(display("failed to build Metadata"))]
-    MetadataBuildError {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("failed to build Labels"))]
-    LabelBuild {
-        source: stackable_operator::kvp::LabelError,
-    },
-
-    #[snafu(display("invalid container name"))]
-    InvalidContainerName {
-        name: String,
-        source: stackable_operator::builder::pod::container::Error,
-    },
-
-    #[snafu(display("add volume mount error"))]
-    AddVolumeMount {
-        source: stackable_operator::builder::pod::container::Error,
-    },
-
-    #[snafu(display("add volume error"))]
-    AddVolume {
-        source: stackable_operator::builder::pod::Error,
-    },
-
-    #[snafu(display("object {} is missing metadata to build owner reference", rhio_service))]
-    ObjectMissingMetadataForOwnerRef {
-        source: stackable_operator::builder::meta::Error,
-        rhio_service: ObjectRef<RhioService>,
-    },
-
-    #[snafu(display("failed to build ConfigMap"))]
-    BuildConfigMap {
-        source: stackable_operator::builder::configmap::Error,
-    },
-
-    #[snafu(display("failed to apply Rhio ConfigMap"))]
-    ApplyRhioConfig {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to serialize Rhio config"))]
-    RhioConfigurationSerialization { source: serde_json::Error },
-
-    #[snafu(display("failed to build label"))]
-    BuildLabel { source: LabelError },
-
-    #[snafu(display("failed to create RBAC service account"))]
-    ApplyServiceAccount {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to create RBAC role binding"))]
-    ApplyRoleBinding {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to build RBAC resources"))]
-    BuildRbacResources {
-        source: stackable_operator::commons::rbac::Error,
-    },
-
-    #[snafu(display("failed to apply global Service"))]
-    ApplyRoleService {
-        source: stackable_operator::cluster_resources::Error,
-    },
-
-    #[snafu(display("failed to calculate global service name"))]
-    GlobalServiceNameNotFound,
-
-    #[snafu(display("failed to build object  meta data"))]
-    ObjectMeta {
-        source: stackable_operator::builder::meta::Error,
-    },
-
-    #[snafu(display("object defines no server role"))]
-    NoServerRole,
-
-    #[snafu(display("failed to generate product config"))]
-    GenerateProductConfig {
-        source: stackable_operator::product_config_utils::Error,
-    },
-
-    #[snafu(display("invalid product config"))]
-    InvalidProductConfig {
-        source: stackable_operator::product_config_utils::Error,
-    },
-
-    #[snafu(display("failed to apply StatefulSet for {}", rolegroup))]
-    ApplyRoleGroupStatefulSet {
-        source: stackable_operator::cluster_resources::Error,
-        rolegroup: RoleGroupRef<RhioService>,
-    },
-
-    #[snafu(display("object defines no namespace"))]
-    ObjectHasNoNamespace,
-
-    #[snafu(display("failed to get associated replicated message streams"))]
-    GetReplicatedMessageStreams {
-        source: stackable_operator::client::Error,
-    },
-
-    #[snafu(display("invalid NATS subject {subject}"))]
-    InvalidNatsSubject {
-        source: anyhow::Error,
-        subject: String,
-    },
-
-    #[snafu(display("invalid annotation"))]
-    InvalidAnnotation {
-        source: stackable_operator::kvp::AnnotationError,
-    },
-
-    #[snafu(display("failed to configure graceful shutdown"))]
-    GracefulShutdown {
-        source: crate::operations::graceful_shutdown::Error,
-    },
-}
-
-impl ReconcilerError for Error {
-    fn category(&self) -> &'static str {
-        ErrorDiscriminants::from(self).into()
-    }
-
-    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
-        match self {
-            Error::ObjectHasNoName => None,
-            _ => None,
-        }
-    }
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub async fn reconcile_rhio(
     rhio: Arc<DeserializeGuard<RhioService>>,
@@ -233,7 +78,7 @@ pub async fn reconcile_rhio(
     let resolved_product_image = rhio_service.resolve_product_image();
     let client = &ctx.client;
     let rolegroup = rhio_service.server_rolegroup_ref();
-    let labels = build_recommended_labels(
+    let recommended_labels = build_recommended_labels(
         &rhio_service,
         RHIO_CONTROLLER_NAME,
         &resolved_product_image.app_version_label,
@@ -275,18 +120,16 @@ pub async fn reconcile_rhio(
         cluster_resources
             .add(
                 client,
-                build_server_role_service(rhio_service, &rolegroup, labels.clone())?,
+                build_server_role_service(rhio_service, &rolegroup, recommended_labels.clone())?,
             )
             .await
             .context(ApplyRoleServiceSnafu)?;
     }
 
-    let (rhio_configmap, config_map_hash) =
-        RhioConfigurationResources::load(client.clone(), rhio_service)
-            .await?
-            .build_rhio_configmap(labels.clone())?;
-
-    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+    let (rhio_configmap, config_map_hash) = make_builder(client.clone(), rhio_service)
+        .await?
+        .build(recommended_labels.clone())
+        .context(BuildConfigMapSnafu)?;
 
     cluster_resources
         .add(client, rhio_configmap)
@@ -297,45 +140,22 @@ pub async fn reconcile_rhio(
         rhio_service,
         &resolved_product_image,
         &rolegroup,
-        labels.clone(),
+        recommended_labels.clone(),
         &rbac_sa,
         config_map_hash,
     )?;
 
-    ss_cond_builder.add(
-        cluster_resources
-            .add(client, rhio_statefulset)
-            .await
-            .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
-                rolegroup: rolegroup.clone(),
-            })?,
-    );
+    let statefulset = cluster_resources
+        .add(client, rhio_statefulset)
+        .await
+        .with_context(|_| ApplyRoleGroupStatefulSetSnafu {
+            rolegroup: rolegroup.clone(),
+        })?;
 
-    let cluster_operation_cond_builder =
-        ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
+    let mut ss_cond_builder = StatefulSetConditionBuilder::default();
+    ss_cond_builder.add(statefulset);
 
-    // TODO configurable cluster domain
-    let endpoint = format!(
-        "http://{}.default.svc.cluster.local:8080/health",
-        &rhio_service.metadata.name.clone().unwrap()
-    );
-
-    let maybe_health_status = RhioApiClient::new(endpoint).health().await;
-    let health_status = match maybe_health_status {
-        Ok(health_status) => health_status,
-        Err(_e) => {
-            requeue_duration = Duration::from_secs(5);
-            HealthStatus::default()
-        }
-    };
-
-    let status = RhioServiceStatus {
-        conditions: compute_conditions(
-            rhio_service,
-            &[&ss_cond_builder, &cluster_operation_cond_builder],
-        ),
-        status: health_status,
-    };
+    let status = build_status(&mut requeue_duration, rhio_service, ss_cond_builder).await?;
 
     cluster_resources
         .delete_orphaned_resources(client)
@@ -348,6 +168,108 @@ pub async fn reconcile_rhio(
         .context(ApplyStatusSnafu)?;
 
     Ok(Action::requeue(requeue_duration))
+}
+
+async fn build_status(
+    requeue_duration: &mut Duration,
+    rhio_service: &RhioService,
+    ss_cond_builder: StatefulSetConditionBuilder,
+) -> Result<RhioServiceStatus> {
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
+    let endpoint = format!(
+        "http://{}.default.svc.cluster.local:8080/health", // TODO cluster domain
+        &rhio_service.metadata.name.clone().unwrap()
+    );
+    let maybe_health_status = RhioApiClient::new(endpoint).health().await;
+    let health_status = match maybe_health_status {
+        Ok(health_status) => health_status,
+        Err(_e) => {
+            *requeue_duration = Duration::from_secs(5);
+            HealthStatus::default()
+        }
+    };
+    let status = RhioServiceStatus {
+        conditions: compute_conditions(
+            rhio_service,
+            &[&ss_cond_builder, &cluster_operation_cond_builder],
+        ),
+        status: health_status,
+    };
+    Ok(status)
+}
+
+pub async fn make_builder(
+    client: Client,
+    rhio_service: &RhioService,
+) -> Result<RhioConfigMapBuilder> {
+    let rms = client
+        .list::<ReplicatedMessageStream>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
+        .collect::<Vec<ReplicatedMessageStream>>();
+
+    let ros = client
+        .list::<ReplicatedObjectStore>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
+        .collect::<Vec<ReplicatedObjectStore>>();
+
+    let rmss = client
+        .list::<ReplicatedMessageStreamSubscription>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
+        .collect::<Vec<ReplicatedMessageStreamSubscription>>();
+
+    let ross = client
+        .list::<ReplicatedObjectStoreSubscription>(
+            rhio_service
+                .meta()
+                .namespace
+                .as_deref()
+                .context(ObjectHasNoNamespaceSnafu)?,
+            &ListParams::default(),
+        )
+        .await
+        .context(GetReplicatedMessageStreamsSnafu)?
+        .into_iter()
+        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
+        .collect::<Vec<ReplicatedObjectStoreSubscription>>();
+
+    Ok(RhioConfigMapBuilder::from(
+        rhio_service.clone(),
+        rms,
+        rmss,
+        ros,
+        ross,
+    ))
 }
 
 pub fn error_policy(
@@ -491,10 +413,4 @@ pub async fn create_rhio_controller(
         })
         .collect::<()>();
     rhio_controller.await
-}
-
-#[cfg(test)]
-mod tests {
-
-    // use super::*;
 }

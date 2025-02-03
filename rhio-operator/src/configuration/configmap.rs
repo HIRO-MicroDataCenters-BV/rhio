@@ -1,5 +1,5 @@
+use crate::configuration::error::Result;
 use crate::rhio::builders::STACKABLE_VENDOR_VALUE_HIRO;
-use crate::rhio::controller::Result;
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -8,10 +8,9 @@ use crate::{
         object_store_subscription::ReplicatedObjectStoreSubscription,
         service::{RhioConfig, RhioService},
     },
-    rhio::controller::{
-        BuildConfigMapSnafu, GetReplicatedMessageStreamsSnafu, InvalidNatsSubjectSnafu,
-        MetadataBuildSnafu, ObjectHasNoNamespaceSnafu, ObjectMissingMetadataForOwnerRefSnafu,
-        RhioConfigurationSerializationSnafu,
+    configuration::error::{
+        BuildConfigMapSnafu, InvalidNatsSubjectSnafu, MetadataBuildSnafu,
+        ObjectMissingMetadataForOwnerRefSnafu, RhioConfigurationSerializationSnafu,
     },
 };
 use p2panda_core::PublicKey;
@@ -20,10 +19,10 @@ use rhio_config::configuration::{
     RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
 };
 use s3::creds::Credentials;
-use snafu::{OptionExt, ResultExt};
-use stackable_operator::client::Client;
+use snafu::ResultExt;
 use stackable_operator::k8s_openapi::api::core::v1::ConfigMap;
-use stackable_operator::kube::{api::ListParams, runtime::reflector::ObjectRef, Resource};
+use stackable_operator::kube::api::ObjectMeta;
+use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kvp::ObjectLabels;
 use stackable_operator::{
     builder::{configmap::ConfigMapBuilder, meta::ObjectMetaBuilder},
@@ -32,116 +31,70 @@ use stackable_operator::{
 use std::hash::{Hash, Hasher};
 use std::{collections::BTreeMap, hash::DefaultHasher, str::FromStr};
 
+use super::error::PublicKeyParsingSnafu;
+
+pub type ConfigHash = String;
+
 const RHIO_PRIVATE_KEY_PATH: &str = "/etc/rhio/private-key.txt";
 pub const RHIO_BIND_PORT_DEFAULT: u16 = 9102;
 pub const RHIO_BIND_HTTP_PORT_DEFAULT: u16 = 8080;
 pub const RHIO_CONFIG_MAP_ENTRY: &str = "config.yaml";
 
-pub struct RhioConfigurationResources {
+pub struct RhioConfigMapBuilder {
     rhio: RhioService,
-    ros: Vec<ReplicatedMessageStream>,
-    ross: Vec<ReplicatedMessageStreamSubscription>,
-    rms: Vec<ReplicatedObjectStore>,
-    rmss: Vec<ReplicatedObjectStoreSubscription>,
+    rms: Vec<ReplicatedMessageStream>,
+    rmss: Vec<ReplicatedMessageStreamSubscription>,
+    ros: Vec<ReplicatedObjectStore>,
+    ross: Vec<ReplicatedObjectStoreSubscription>,
 }
 
-impl RhioConfigurationResources {
+impl RhioConfigMapBuilder {
     pub fn from(
-        rhio_service: &RhioService,
-        ros: Vec<ReplicatedMessageStream>,
-        ross: Vec<ReplicatedMessageStreamSubscription>,
-        rms: Vec<ReplicatedObjectStore>,
-        rmss: Vec<ReplicatedObjectStoreSubscription>,
-    ) -> RhioConfigurationResources {
-        RhioConfigurationResources {
-            ros,
-            ross,
+        rhio: RhioService,
+        rms: Vec<ReplicatedMessageStream>,
+        rmss: Vec<ReplicatedMessageStreamSubscription>,
+        ros: Vec<ReplicatedObjectStore>,
+        ross: Vec<ReplicatedObjectStoreSubscription>,
+    ) -> RhioConfigMapBuilder {
+        RhioConfigMapBuilder {
             rms,
             rmss,
-            rhio: rhio_service.clone(),
+            ros,
+            ross,
+            rhio,
         }
     }
 
-    pub async fn load(
-        client: Client,
-        rhio_service: &RhioService,
-    ) -> Result<RhioConfigurationResources> {
-        let streams = client
-            .list::<ReplicatedMessageStream>(
-                rhio_service
-                    .meta()
-                    .namespace
-                    .as_deref()
-                    .context(ObjectHasNoNamespaceSnafu)?,
-                &ListParams::default(),
-            )
-            .await
-            .context(GetReplicatedMessageStreamsSnafu)?
-            .into_iter()
-            .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-            .collect::<Vec<ReplicatedMessageStream>>();
+    pub fn build(&self, labels: ObjectLabels<RhioService>) -> Result<(ConfigMap, ConfigHash)> {
+        let published_subjects = self.published_nats_subjects()?;
+        let subscribed_subjects = self.subscribed_nats_subjects()?;
+        let published_buckets = self.published_buckets();
+        let subscribed_buckets = self.subscribed_buckets()?;
 
-        let stores = client
-            .list::<ReplicatedObjectStore>(
-                rhio_service
-                    .meta()
-                    .namespace
-                    .as_deref()
-                    .context(ObjectHasNoNamespaceSnafu)?,
-                &ListParams::default(),
-            )
-            .await
-            .context(GetReplicatedMessageStreamsSnafu)?
-            .into_iter()
-            .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-            .collect::<Vec<ReplicatedObjectStore>>();
+        let config = self.build_rhio_config(
+            &self.rhio.spec.configuration,
+            published_subjects,
+            subscribed_subjects,
+            published_buckets,
+            subscribed_buckets,
+        )?;
+        let mut hasher = DefaultHasher::new();
+        config.hash(&mut hasher);
+        let config_hash = hasher.finish().to_string();
 
-        let stream_subscriptions = client
-            .list::<ReplicatedMessageStreamSubscription>(
-                rhio_service
-                    .meta()
-                    .namespace
-                    .as_deref()
-                    .context(ObjectHasNoNamespaceSnafu)?,
-                &ListParams::default(),
-            )
-            .await
-            .context(GetReplicatedMessageStreamsSnafu)?
-            .into_iter()
-            .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-            .collect::<Vec<ReplicatedMessageStreamSubscription>>();
+        let metadata = self.build_metadata(labels)?;
+        let config_map = ConfigMapBuilder::new()
+            .metadata(metadata)
+            .add_data(RHIO_CONFIG_MAP_ENTRY, config)
+            .build()
+            .context(BuildConfigMapSnafu)?;
 
-        let stores_subscriptions = client
-            .list::<ReplicatedObjectStoreSubscription>(
-                rhio_service
-                    .meta()
-                    .namespace
-                    .as_deref()
-                    .context(ObjectHasNoNamespaceSnafu)?,
-                &ListParams::default(),
-            )
-            .await
-            .context(GetReplicatedMessageStreamsSnafu)?
-            .into_iter()
-            .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-            .collect::<Vec<ReplicatedObjectStoreSubscription>>();
-
-        Ok(RhioConfigurationResources {
-            ros: streams,
-            ross: stream_subscriptions,
-            rms: stores,
-            rmss: stores_subscriptions,
-            rhio: rhio_service.clone(),
-        })
+        Ok((config_map, config_hash))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn build_rhio_configmap(
-        &self,
-        labels: ObjectLabels<RhioService>,
-    ) -> Result<(ConfigMap, String)> {
+    fn published_nats_subjects(&self) -> Result<Vec<LocalNatsSubject>> {
         let published_nats_subjects = self
-            .ros
+            .rms
             .iter()
             .flat_map(|stream| {
                 stream
@@ -161,12 +114,23 @@ impl RhioConfigurationResources {
                     .collect::<Vec<Result<LocalNatsSubject>>>()
             })
             .collect::<Result<Vec<LocalNatsSubject>>>()?;
+        Ok(published_nats_subjects)
+    }
 
+    fn subscribed_nats_subjects(&self) -> Result<Vec<RemoteNatsSubject>> {
         let subscribed_subjects = self
-            .ross
+            .rmss
             .iter()
             .flat_map(|sub| {
-                let public_key = PublicKey::from_str(&sub.spec.public_key).unwrap();
+                let maybe_public_key =
+                    PublicKey::from_str(&sub.spec.public_key).context(PublicKeyParsingSnafu {
+                        key: sub.spec.public_key.to_owned(),
+                    });
+
+                let public_key = match maybe_public_key {
+                    Ok(key) => key,
+                    Err(error) => return vec![Err(error)],
+                };
                 sub.spec
                     .subscriptions
                     .iter()
@@ -176,7 +140,6 @@ impl RhioConfigurationResources {
                                 subject: spec.subject.to_owned(),
                             },
                         )?;
-
                         Ok(RemoteNatsSubject {
                             stream_name: spec.stream.to_owned(),
                             public_key,
@@ -186,41 +149,53 @@ impl RhioConfigurationResources {
                     .collect::<Vec<Result<RemoteNatsSubject>>>()
             })
             .collect::<Result<Vec<RemoteNatsSubject>>>()?;
+        Ok(subscribed_subjects)
+    }
 
+    fn subscribed_buckets(&self) -> Result<Vec<RemoteS3Bucket>> {
+        let subscribed_buckets = self
+            .ross
+            .iter()
+            .flat_map(|sub| {
+                let maybe_public_key =
+                    PublicKey::from_str(&sub.spec.public_key).context(PublicKeyParsingSnafu {
+                        key: sub.spec.public_key.to_owned(),
+                    });
+
+                let public_key = match maybe_public_key {
+                    Ok(key) => key,
+                    Err(error) => return vec![Err(error)],
+                };
+
+                let buckets = sub
+                    .spec
+                    .buckets
+                    .iter()
+                    .map(|bucket| {
+                        Ok(RemoteS3Bucket {
+                            remote_bucket_name: bucket.remote_bucket.to_owned(),
+                            local_bucket_name: bucket.local_bucket.to_owned(),
+                            public_key,
+                        })
+                    })
+                    .collect::<Vec<Result<RemoteS3Bucket>>>();
+                buckets
+            })
+            .collect::<Result<Vec<RemoteS3Bucket>>>();
+        subscribed_buckets
+    }
+
+    fn published_buckets(&self) -> Vec<String> {
         let published_buckets = self
-            .rms
+            .ros
             .iter()
             .flat_map(|store| store.spec.buckets.iter())
             .cloned()
             .collect::<Vec<String>>();
+        published_buckets
+    }
 
-        let subscribed_buckets = self
-            .rmss
-            .iter()
-            .flat_map(|sub| {
-                let public_key = PublicKey::from_str(&sub.spec.public_key).unwrap(); // TODO unwrap
-                sub.spec
-                    .buckets
-                    .iter()
-                    .map(|bucket| RemoteS3Bucket {
-                        remote_bucket_name: bucket.remote_bucket.to_owned(),
-                        local_bucket_name: bucket.local_bucket.to_owned(),
-                        public_key,
-                    })
-                    .collect::<Vec<RemoteS3Bucket>>()
-            })
-            .collect::<Vec<RemoteS3Bucket>>();
-
-        let config = self.build_rhio_configuration(
-            &self.rhio.spec.configuration,
-            published_nats_subjects,
-            subscribed_subjects,
-            published_buckets,
-            subscribed_buckets,
-        )?;
-        let rhio_configuration =
-            serde_json::to_string(&config).context(RhioConfigurationSerializationSnafu)?;
-
+    fn build_metadata(&self, labels: ObjectLabels<'_, RhioService>) -> Result<ObjectMeta> {
         let mut metadata = ObjectMetaBuilder::new()
             .name_and_namespace(&self.rhio)
             .ownerreference_from_resource(&self.rhio, None, Some(true))
@@ -235,35 +210,33 @@ impl RhioConfigurationResources {
             STACKABLE_VENDOR_KEY.into(),
             STACKABLE_VENDOR_VALUE_HIRO.into(),
         );
-        let mut hasher = DefaultHasher::new();
-        rhio_configuration.hash(&mut hasher);
-        let config_hash = hasher.finish().to_string();
-
-        let config_map = ConfigMapBuilder::new()
-            .metadata(metadata)
-            .add_data(RHIO_CONFIG_MAP_ENTRY, rhio_configuration)
-            .build()
-            .context(BuildConfigMapSnafu)?;
-
-        Ok((config_map, config_hash))
+        Ok(metadata)
     }
 
-    fn build_rhio_configuration(
+    fn build_rhio_config(
         &self,
         spec_config: &RhioConfig,
         nats_subjects: Vec<LocalNatsSubject>,
         subscribe_subjects: Vec<RemoteNatsSubject>,
         s3_buckets: Vec<String>,
         subscribe_buckets: Vec<RemoteS3Bucket>,
-    ) -> Result<Config> {
+    ) -> Result<String> {
         let known_nodes = spec_config
             .nodes
             .iter()
-            .map(|n| KnownNode {
-                public_key: PublicKey::from_str(&n.public_key).unwrap(),
-                direct_addresses: n.endpoints.to_owned(),
+            .map(|n| {
+                let public_key =
+                    PublicKey::from_str(&n.public_key).context(PublicKeyParsingSnafu {
+                        key: n.public_key.to_owned(),
+                    })?;
+
+                Ok(KnownNode {
+                    public_key,
+                    direct_addresses: n.endpoints.to_owned(),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<KnownNode>>>()?;
+
         let credentials = spec_config
             .nats
             .clone()
@@ -279,6 +252,7 @@ impl RhioConfigurationResources {
             endpoint: spec_config.nats.endpoint.to_owned(),
             credentials,
         };
+
         let s3 = spec_config.s3.as_ref().map(|s3_conf| {
             let credentials = s3_conf.credentials.as_ref().map(|cred| Credentials {
                 access_key: Some(cred.access_key.to_owned()),
@@ -314,62 +288,46 @@ impl RhioConfigurationResources {
                 nats_subjects: subscribe_subjects,
             }),
         };
-        Ok(config)
+        let rhio_configuration =
+            serde_json::to_string(&config)
+                .context(RhioConfigurationSerializationSnafu)?;
+        Ok(rhio_configuration)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::str::FromStr;
 
+    use p2panda_core::PublicKey;
     use rhio_config::configuration::{
-        Config, KnownNode, NatsConfig, NatsCredentials, NodeConfig, PublishConfig, SubscribeConfig,
+        Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig,
+        PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
     };
+    use rhio_core::Subject;
+    use s3::creds::Credentials;
 
-    use super::RhioConfigurationResources;
+    use super::RhioConfigMapBuilder;
+    use super::*;
     use crate::api::message_stream::ReplicatedMessageStream;
     use crate::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
     use crate::api::object_store::ReplicatedObjectStore;
     use crate::api::object_store_subscription::ReplicatedObjectStoreSubscription;
-    use crate::rhio::controller::Result;
+    use crate::configuration::fixtures;
     use crate::{api::service::RhioService, rhio::builders::build_recommended_labels};
-    use snafu::{OptionExt, ResultExt};
 
     #[test]
     fn test_minimal_config() -> Result<()> {
-        let rhio_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: RhioService
-        metadata:
-            name: test-service
-            uid: 1
-        spec:
-            clusterConfig:
-                listenerClass: disabled
-                gracefulShutdownTimeout: 1s
-
-            image:
-                custom: ghcr.io/hiro-microdatacenters-bv/rhio-dev:1.0.1
-                productVersion: 1.0.1
-                pullPolicy: IfNotPresent      
-
-            configuration:
-                networkId: test
-                privateKeySecret: secret-key
-                nodes: []
-                s3: null
-                nats:
-                    endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
-                    credentials: null
-        "#;
-        let rhio: RhioService = serde_yaml::from_str(rhio_yaml).expect("illegal test input");
+        let rhio: RhioService =
+            serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
         let config_resources =
-            RhioConfigurationResources::from(&rhio, vec![], vec![], vec![], vec![]);
+            RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![]);
 
         let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
         let (cm, hash) = config_resources
-            .build_rhio_configmap(labels)
+            .build(labels)
             .expect("unable to build rhio config");
 
         let config = cm.data.unwrap().get("config.yaml").unwrap().to_owned();
@@ -408,135 +366,111 @@ mod tests {
 
     #[test]
     fn test_full_config() -> Result<()> {
-        let rhio_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: RhioService
-        metadata:
-            name: test-service
-            uid: 1
-        spec:
-            clusterConfig:
-                listenerClass: disabled
-                gracefulShutdownTimeout: 1s
-
-            image:
-                custom: ghcr.io/hiro-microdatacenters-bv/rhio-dev:1.0.1
-                productVersion: 1.0.1
-                pullPolicy: IfNotPresent      
-
-            configuration:
-                networkId: test
-                privateKeySecret: secret-key
-                nodes: []
-                s3: null
-                nats:
-                    endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
-                    credentials:
-
-        "#;
-        let rhio: RhioService = serde_yaml::from_str(rhio_yaml).expect("illegal test input");
+        let rhio: RhioService =
+            serde_yaml::from_str(fixtures::full::RHIO).expect("illegal input yaml");
+        let rms: ReplicatedMessageStream =
+            serde_yaml::from_str(fixtures::full::RMS).expect("illegal input yaml");
+        let rmss: ReplicatedMessageStreamSubscription =
+            serde_yaml::from_str(fixtures::full::RMSS).expect("illegal input yaml");
+        let ros: ReplicatedObjectStore =
+            serde_yaml::from_str(fixtures::full::ROS).expect("illegal input yaml");
+        let ross: ReplicatedObjectStoreSubscription =
+            serde_yaml::from_str(fixtures::full::ROSS).expect("illegal input yaml");
 
         let config_resources =
-            RhioConfigurationResources::from(&rhio, vec![], vec![], vec![], vec![]);
+            RhioConfigMapBuilder::from(rhio.clone(), vec![rms], vec![rmss], vec![ros], vec![ross]);
 
         let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
         let (cm, hash) = config_resources
-            .build_rhio_configmap(labels)
+            .build(labels)
             .expect("unable to build rhio config");
 
         let config = cm.data.unwrap().get("config.yaml").unwrap().to_owned();
 
         let expected_config = Config {
-            s3: None,
+            s3: Some(S3Config {
+                endpoint: "http://localhost:32000".into(),
+                region: "eu-west-01".into(),
+                credentials: Some(Credentials {
+                    access_key: Some("access-key".into()),
+                    secret_key: Some("secret-key".into()),
+                    security_token: None,
+                    session_token: None,
+                    expiration: None,
+                }),
+            }),
             nats: NatsConfig {
                 endpoint: "nats://nats-jetstream.dkg-engine.svc.cluster.local:4222".into(),
-                credentials: None,
+                credentials: Some(NatsCredentials {
+                    nkey: None,
+                    username: Some("username".into()),
+                    password: Some("password".into()),
+                    token: None,
+                }),
             },
             node: NodeConfig {
                 bind_port: 9102,
                 http_bind_port: 8080,
-                known_nodes: vec![],
+                known_nodes: vec![KnownNode {
+                    public_key: PublicKey::from_str(
+                        "b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c",
+                    )
+                    .unwrap(),
+                    direct_addresses: vec!["10.0.1.2:9102".into(), "10.0.1.3:9102".into()],
+                }],
                 private_key_path: PathBuf::from("/etc/rhio/private-key.txt"),
                 network_id: "test".into(),
                 protocol: None,
             },
             log_level: None,
             publish: Some(PublishConfig {
-                s3_buckets: vec![],
-                nats_subjects: vec![],
+                s3_buckets: vec!["source".into()],
+                nats_subjects: vec![LocalNatsSubject {
+                    subject: Subject::from_str("test.subject").unwrap(),
+                    stream_name: "test-stream".into(),
+                }],
             }),
             subscribe: Some(SubscribeConfig {
-                s3_buckets: vec![],
-                nats_subjects: vec![],
+                s3_buckets: vec![RemoteS3Bucket {
+                    remote_bucket_name: "source".into(),
+                    local_bucket_name: "target".into(),
+                    public_key: PublicKey::from_str(
+                        "b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c",
+                    )
+                    .unwrap(),
+                }],
+                nats_subjects: vec![RemoteNatsSubject {
+                    subject: Subject::from_str("test.subject").unwrap(),
+                    stream_name: "test-stream".into(),
+                    public_key: PublicKey::from_str(
+                        "b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c",
+                    )
+                    .unwrap(),
+                }],
             }),
         };
 
         let config: Config = serde_yaml::from_str(&config).unwrap();
         assert_eq!(config, expected_config);
-
+        assert_ne!(hash, "");
         Ok(())
     }
 
-    fn sample_rms() -> ReplicatedMessageStream {
-        let rms_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: ReplicatedMessageStream
-        metadata:
-            name: test-stream
-        spec:
-            streamName: test-stream
-            subjects:
-                - test.subject
-          "#;
-        let rms: ReplicatedMessageStream = serde_yaml::from_str(rms_yaml).expect("illegal test input");
-        rms
-    }
+    // #[test]
+    // fn test_metadata() -> Result<()> {
+    //     let rhio: RhioService =
+    //         serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
-    fn sample_rmss() -> ReplicatedMessageStreamSubscription {
-        let rmss_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: ReplicatedMessageStreamSubscription
-        metadata:
-            name: test-stream-subscription
-        spec:
-            publicKey: b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c
-            subscriptions:
-                - subject: test.integration
-                stream: test-stream
-  
-        "#;
-        let rmss: ReplicatedMessageStreamSubscription = serde_yaml::from_str(rmss_yaml).expect("illegal test input");
-        rmss
-    }
+    //     let config_resources =
+    //         RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![]);
 
-    fn sample_ros() -> ReplicatedObjectStore {
-        let ros_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: ReplicatedObjectStore
-        metadata:
-            name: test-store
-        spec:
-            buckets:
-                - source
-            "#;
-        let ros: ReplicatedObjectStore = serde_yaml::from_str(ros_yaml).expect("illegal test input");
-        ros
-    }
+    //     let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
+    //     let (cm, _) = config_resources
+    //         .build(labels)
+    //         .expect("unable to build rhio config");
+    //     let metadata = cm.metadata;
+    //     // assert_eq!(cm.metadata);
 
-    fn sample_ross() -> ReplicatedObjectStoreSubscription {
-        let ross_yaml = r#"
-        apiVersion: rhio.hiro.io/v1
-        kind: ReplicatedObjectStoreSubscription
-        metadata:
-          name: test-store-subscription
-        spec:
-            publicKey: b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c
-            buckets:
-                - remoteBucket: source
-                  localBucket: target            
-                    "#;
-        let ross: ReplicatedObjectStoreSubscription = serde_yaml::from_str(ross_yaml).expect("illegal test input");
-        ross
-    }
-
+    //     Ok(())
+    // }
 }

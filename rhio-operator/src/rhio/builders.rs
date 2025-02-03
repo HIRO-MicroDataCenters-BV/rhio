@@ -5,13 +5,12 @@ use crate::configuration::configmap::{
     RHIO_BIND_HTTP_PORT_DEFAULT, RHIO_BIND_PORT_DEFAULT, RHIO_CONFIG_MAP_ENTRY,
 };
 use crate::operations::graceful_shutdown::add_graceful_shutdown_config;
-use crate::rhio::controller::{
+use crate::rhio::controller::{APP_NAME, OPERATOR_NAME};
+use crate::rhio::error::{
     AddVolumeMountSnafu, AddVolumeSnafu, BuildLabelSnafu, GlobalServiceNameNotFoundSnafu,
     GracefulShutdownSnafu, InvalidAnnotationSnafu, LabelBuildSnafu,
     ObjectMissingMetadataForOwnerRefSnafu, Result,
 };
-use crate::rhio::controller::{InvalidContainerNameSnafu, ObjectMetaSnafu};
-use crate::rhio::controller::{APP_NAME, OPERATOR_NAME};
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::builder::pod::container::ContainerBuilder;
@@ -30,6 +29,8 @@ use stackable_operator::kube::ResourceExt;
 use stackable_operator::kvp::consts::STACKABLE_VENDOR_KEY;
 use stackable_operator::kvp::{Annotations, Labels, ObjectLabels};
 use stackable_operator::role_utils::RoleGroupRef;
+
+use super::error::{InvalidContainerNameSnafu, ObjectMetaSnafu};
 
 pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const RHIO_CONFIG_DIR: &str = "/etc/rhio/config.yaml";
