@@ -117,10 +117,10 @@ jobs:
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
 
-        exclude:
-          # ARM build is very slow, we build only for main branch
-          - platform: "linux/arm64"
-            isMain: false
+        # exclude:
+        #   # ARM build is very slow, we build only for main branch
+        #   - platform: "linux/arm64"
+        #     isMain: false
 
     defaults:
       run:
