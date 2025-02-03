@@ -47,6 +47,9 @@ jobs:
         with:
           channel: ${{ env.RUST_TOOLCHAIN }}
 
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
+
       - name: Run tests
         # Ensure debug output is also tested
         env:

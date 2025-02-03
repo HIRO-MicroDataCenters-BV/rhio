@@ -20,6 +20,9 @@ jobs:
         with:
           channel: ${{ env.RUST_TOOLCHAIN }}
 
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
+
       - name: Check project and dependencies
         run: cargo check
 
@@ -36,6 +39,9 @@ jobs:
           components: rustfmt
           channel: ${{ env.RUST_TOOLCHAIN }}
 
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
+
       - name: Check formatting
         run: cargo fmt -- --check
 
@@ -51,6 +57,9 @@ jobs:
         with:
           components: clippy
           channel: ${{ env.RUST_TOOLCHAIN }}
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
 
       - name: Check code with clippy
         run: cargo clippy -- -D warnings --no-deps
