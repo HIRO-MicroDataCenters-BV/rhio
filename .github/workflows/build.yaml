@@ -28,15 +28,15 @@ jobs:
         config:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: macos-latest
+          - os: ubuntu-latest-arm64
             target: aarch64-apple-darwin
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
-        exclude:
-          - config:
-              os: macos-latest
-              target: aarch64-apple-darwin
-            isMain: false
+        # exclude:
+        #   - config:
+        #       os: macos-latest
+        #       target: aarch64-apple-darwin
+        #     isMain: false
 
     steps:
       - name: Checkout repository
