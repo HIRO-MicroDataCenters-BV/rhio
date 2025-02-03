@@ -1,5 +1,5 @@
 use crate::api::service::RhioService;
-use snafu::{OptionExt, ResultExt, Snafu};
+use snafu::Snafu;
 use stackable_operator::{
     kube::{api::DynamicObject, core::error_boundary, runtime::reflector::ObjectRef},
     kvp::LabelError,

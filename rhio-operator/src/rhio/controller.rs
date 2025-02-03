@@ -79,12 +79,13 @@ pub async fn reconcile_rhio(
     let client = &ctx.client;
     let rolegroup = rhio_service.server_rolegroup_ref();
     let recommended_labels = build_recommended_labels(
-        &rhio_service,
+        rhio_service,
         RHIO_CONTROLLER_NAME,
         &resolved_product_image.app_version_label,
         &rolegroup.role,
         &rolegroup.role_group,
     );
+    // TODO service matching labels
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,

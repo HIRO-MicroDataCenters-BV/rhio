@@ -39,6 +39,7 @@ const RHIO_PRIVATE_KEY_PATH: &str = "/etc/rhio/private-key.txt";
 pub const RHIO_BIND_PORT_DEFAULT: u16 = 9102;
 pub const RHIO_BIND_HTTP_PORT_DEFAULT: u16 = 8080;
 pub const RHIO_CONFIG_MAP_ENTRY: &str = "config.yaml";
+// TODO secret key for credentials
 
 pub struct RhioConfigMapBuilder {
     rhio: RhioService,
@@ -215,13 +216,13 @@ impl RhioConfigMapBuilder {
 
     fn build_rhio_config(
         &self,
-        spec_config: &RhioConfig,
+        service_spec: &RhioConfig,
         nats_subjects: Vec<LocalNatsSubject>,
         subscribe_subjects: Vec<RemoteNatsSubject>,
         s3_buckets: Vec<String>,
         subscribe_buckets: Vec<RemoteS3Bucket>,
     ) -> Result<String> {
-        let known_nodes = spec_config
+        let known_nodes = service_spec
             .nodes
             .iter()
             .map(|n| {
@@ -237,7 +238,7 @@ impl RhioConfigMapBuilder {
             })
             .collect::<Result<Vec<KnownNode>>>()?;
 
-        let credentials = spec_config
+        let credentials = service_spec
             .nats
             .clone()
             .credentials
@@ -249,11 +250,11 @@ impl RhioConfigMapBuilder {
             });
 
         let nats = NatsConfig {
-            endpoint: spec_config.nats.endpoint.to_owned(),
+            endpoint: service_spec.nats.endpoint.to_owned(),
             credentials,
         };
 
-        let s3 = spec_config.s3.as_ref().map(|s3_conf| {
+        let s3 = service_spec.s3.as_ref().map(|s3_conf| {
             let credentials = s3_conf.credentials.as_ref().map(|cred| Credentials {
                 access_key: Some(cred.access_key.to_owned()),
                 secret_key: Some(cred.secret_key.to_owned()),
@@ -273,12 +274,12 @@ impl RhioConfigMapBuilder {
                 http_bind_port: RHIO_BIND_HTTP_PORT_DEFAULT,
                 known_nodes,
                 private_key_path: RHIO_PRIVATE_KEY_PATH.into(),
-                network_id: spec_config.network_id.to_owned(),
+                network_id: service_spec.network_id.to_owned(),
                 protocol: None,
             },
             s3,
             nats,
-            log_level: None,
+            log_level: service_spec.log_level.to_owned(),
             publish: Some(PublishConfig {
                 s3_buckets,
                 nats_subjects,
@@ -289,8 +290,7 @@ impl RhioConfigMapBuilder {
             }),
         };
         let rhio_configuration =
-            serde_json::to_string(&config)
-                .context(RhioConfigurationSerializationSnafu)?;
+            serde_json::to_string(&config).context(RhioConfigurationSerializationSnafu)?;
         Ok(rhio_configuration)
     }
 }

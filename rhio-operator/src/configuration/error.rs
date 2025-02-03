@@ -76,7 +76,7 @@ impl ReconcilerError for Error {
     fn category(&self) -> &'static str {
         ErrorDiscriminants::from(self).into()
     }
-    
+
     // TODO add secondary objects
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {

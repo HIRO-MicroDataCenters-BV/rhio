@@ -22,10 +22,18 @@ const RHIO_OPERATOR_LOCAL_PRODUCT_PROPERTIES: &str = "./config-spec/properties.y
 const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[derive(clap::Parser)]
+enum RhioCommand {
+    CreateNatsSecret,
+    CreateS3Secret,
+    #[clap(flatten)]
+    Framework(stackable_operator::cli::Command<RhioRun>),
+}
+
+#[derive(clap::Parser)]
 #[clap(about, author)]
 struct Opts {
     #[clap(subcommand)]
-    cmd: Command<RhioRun>,
+    cmd: RhioCommand,
 }
 
 #[derive(clap::Parser)]
@@ -38,14 +46,16 @@ struct RhioRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        Command::Crd => {
+        RhioCommand::CreateNatsSecret => todo!(),
+        RhioCommand::CreateS3Secret => todo!(),
+        RhioCommand::Framework(Command::Crd) => {
             RhioService::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedMessageStream::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedMessageStreamSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedObjectStore::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedObjectStoreSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
         }
-        Command::Run(RhioRun {
+        RhioCommand::Framework(Command::Run(RhioRun {
             common:
                 ProductOperatorRun {
                     product_config,
@@ -54,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
                     cluster_info_opts,
                 },
             ..
-        }) => {
+        })) => {
             stackable_operator::logging::initialize_logging(
                 RHIO_OPERATOR_LOG_ENV_VAR,
                 APP_NAME,

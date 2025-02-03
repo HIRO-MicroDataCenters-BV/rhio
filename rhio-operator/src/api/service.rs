@@ -69,11 +69,9 @@ impl RhioService {
     }
 
     pub fn resolve_product_image(&self) -> ResolvedProductImage {
-        let resolved_product_image = self
-            .spec
+        self.spec
             .image
-            .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION);
-        resolved_product_image
+            .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
     }
 }
 
@@ -123,8 +121,9 @@ pub struct RhioConfig {
     pub network_id: String,
     pub private_key_secret: String,
     pub nodes: Vec<NodePeerConfigSpec>,
-    pub s3: Option<S3ConfigSpec>,
     pub nats: NatsConfigSpec,
+    pub s3: Option<S3ConfigSpec>,
+    pub log_level: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default, Eq, PartialEq)]

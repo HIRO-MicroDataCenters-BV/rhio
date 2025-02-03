@@ -32,8 +32,8 @@ use stackable_operator::role_utils::RoleGroupRef;
 
 use super::error::{InvalidContainerNameSnafu, ObjectMetaSnafu};
 
-pub const LOG_DIRS_VOLUME_NAME: &str = "log-dirs";
 pub const RHIO_CONFIG_DIR: &str = "/etc/rhio/config.yaml";
+pub const RHIO_CONFIG_VOLUME_NAME: &str = "config";
 pub const RHIO_LOG_DIR: &str = "/var/log/rhio";
 pub const STACKABLE_VENDOR_VALUE_HIRO: &str = "HIRO";
 pub const CONTAINER: &str = "rhio";
@@ -78,7 +78,7 @@ pub fn build_rhio_statefulset(
         )
         .add_container_ports(container_ports())
         .add_volume_mounts(vec![VolumeMount {
-            name: "config".into(),
+            name: RHIO_CONFIG_VOLUME_NAME.into(),
             mount_path: RHIO_CONFIG_DIR.into(),
             sub_path: Some(RHIO_CONFIG_MAP_ENTRY.into()),
             ..VolumeMount::default()
@@ -116,7 +116,7 @@ pub fn build_rhio_statefulset(
         .image_pull_secrets_from_product_image(resolved_product_image)
         .add_container(container_rhio.build())
         .add_volume(Volume {
-            name: "config".to_string(),
+            name: RHIO_CONFIG_VOLUME_NAME.to_string(),
             config_map: Some(ConfigMapVolumeSource {
                 name: rhio.name_any(),
                 ..ConfigMapVolumeSource::default()
