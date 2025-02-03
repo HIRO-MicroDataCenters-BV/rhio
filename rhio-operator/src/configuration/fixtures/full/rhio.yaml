@@ -11,7 +11,7 @@ spec:
 
   configuration:
     networkId: test
-    privateKeySecret: secret-key
+    privateKeySecret: rhio_private_key_secret
     nodes:
       - publicKey: b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c
         endpoints:
@@ -21,15 +21,11 @@ spec:
     s3:
       endpoint: http://localhost:32000
       region: eu-west-01
-      credentials:
-        accessKey: access-key
-        secretKey: secret-key
+      credentialsSecret: rhio_s3_credentials_secret
 
     nats:
       endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
-      credentials:
-        username: username
-        password: password
+      credentialsSecret: rhio_nats_credentials_secret
 
   clusterConfig:
     listenerClass: disabled

@@ -131,7 +131,7 @@ pub struct RhioConfig {
 pub struct S3ConfigSpec {
     pub endpoint: String,
     pub region: String,
-    pub credentials: Option<S3Credentials>,
+    pub credentials_secret: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize, Default)]
@@ -145,7 +145,7 @@ pub struct S3Credentials {
 #[serde(rename_all = "camelCase")]
 pub struct NatsConfigSpec {
     pub endpoint: String,
-    pub credentials: Option<NatsCredentials>,
+    pub credentials_secret: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize, Default)]

@@ -23,6 +23,7 @@ const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[derive(clap::Parser)]
 enum RhioCommand {
+    CreatePrivateKeySecret,
     CreateNatsSecret,
     CreateS3Secret,
     #[clap(flatten)]
@@ -46,8 +47,9 @@ struct RhioRun {
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        RhioCommand::CreateNatsSecret => todo!(),
+        RhioCommand::CreatePrivateKeySecret => todo!(),
         RhioCommand::CreateS3Secret => todo!(),
+        RhioCommand::CreateNatsSecret => todo!(),
         RhioCommand::Framework(Command::Crd) => {
             RhioService::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedMessageStream::print_yaml_schema(built_info::PKG_VERSION)?;

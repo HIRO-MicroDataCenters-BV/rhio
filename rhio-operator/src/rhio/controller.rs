@@ -1,3 +1,4 @@
+use crate::configuration::secret::Secret;
 use crate::rhio::error::BuildLabelSnafu;
 use crate::{
     api::{
@@ -9,7 +10,7 @@ use crate::{
     },
     configuration::configmap::RhioConfigMapBuilder,
     rhio::{
-        builders::{build_recommended_labels, build_rhio_statefulset, build_server_role_service},
+        builders::{build_recommended_labels, build_server_role_service, build_statefulset},
         error::{
             ApplyRhioConfigSnafu, ApplyRoleBindingSnafu, ApplyRoleGroupStatefulSetSnafu,
             ApplyRoleServiceSnafu, ApplyServiceAccountSnafu, ApplyStatusSnafu, BuildConfigMapSnafu,
@@ -22,9 +23,13 @@ use crate::{
 use crate::rhio::error::Result;
 use futures::StreamExt;
 use product_config::ProductConfigManager;
+use rhio_config::configuration::NatsCredentials;
 use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
-use snafu::{OptionExt, ResultExt};
+use s3::creds::Credentials;
+use snafu::ResultExt;
+use stackable_operator::client::GetApi;
 use stackable_operator::kube::{api::ListParams, ResourceExt};
+use stackable_operator::kvp::Labels;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -50,7 +55,7 @@ use stackable_operator::{
 };
 use std::{sync::Arc, time::Duration};
 
-use super::error::{Error, GetReplicatedMessageStreamsSnafu, ObjectHasNoNamespaceSnafu};
+use super::error::{Error, GetSecretSnafu, ListResourceSnafu};
 
 pub const APP_NAME: &str = "rhio";
 pub const OPERATOR_NAME: &str = "rhio.hiro.io";
@@ -85,7 +90,13 @@ pub async fn reconcile_rhio(
         &rolegroup.role,
         &rolegroup.role_group,
     );
-    // TODO service matching labels
+    let role_group_selector = Labels::role_group_selector(
+        rhio_service,
+        APP_NAME,
+        &rolegroup.role,
+        &rolegroup.role_group,
+    )
+    .context(BuildLabelSnafu)?;
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
@@ -121,7 +132,11 @@ pub async fn reconcile_rhio(
         cluster_resources
             .add(
                 client,
-                build_server_role_service(rhio_service, &rolegroup, recommended_labels.clone())?,
+                build_server_role_service(
+                    rhio_service,
+                    recommended_labels.clone(),
+                    role_group_selector.clone(),
+                )?,
             )
             .await
             .context(ApplyRoleServiceSnafu)?;
@@ -137,11 +152,12 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRhioConfigSnafu)?;
 
-    let rhio_statefulset = build_rhio_statefulset(
+    let rhio_statefulset = build_statefulset(
         rhio_service,
         &resolved_product_image,
         &rolegroup,
         recommended_labels.clone(),
+        role_group_selector,
         &rbac_sa,
         config_map_hash,
     )?;
@@ -204,65 +220,28 @@ pub async fn make_builder(
     client: Client,
     rhio_service: &RhioService,
 ) -> Result<RhioConfigMapBuilder> {
-    let rms = client
-        .list::<ReplicatedMessageStream>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedMessageStream>>();
+    let namespace = rhio_service.get_namespace();
 
-    let ros = client
-        .list::<ReplicatedObjectStore>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|stream| stream.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedObjectStore>>();
+    let rms = list_resources::<ReplicatedMessageStream>(&client, namespace).await?;
+    let rmss = list_resources::<ReplicatedMessageStreamSubscription>(&client, namespace).await?;
+    let ros = list_resources::<ReplicatedObjectStore>(&client, namespace).await?;
+    let ross = list_resources::<ReplicatedObjectStoreSubscription>(&client, namespace).await?;
 
-    let rmss = client
-        .list::<ReplicatedMessageStreamSubscription>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedMessageStreamSubscription>>();
+    let nats_secret = get_secret::<NatsCredentials>(
+        &client,
+        &rhio_service.spec.configuration.nats.credentials_secret,
+        namespace,
+    )
+    .await?;
 
-    let ross = client
-        .list::<ReplicatedObjectStoreSubscription>(
-            rhio_service
-                .meta()
-                .namespace
-                .as_deref()
-                .context(ObjectHasNoNamespaceSnafu)?,
-            &ListParams::default(),
-        )
-        .await
-        .context(GetReplicatedMessageStreamsSnafu)?
-        .into_iter()
-        .filter(|sub| sub.metadata.namespace == rhio_service.metadata.namespace)
-        .collect::<Vec<ReplicatedObjectStoreSubscription>>();
+    let s3_secret_name: Option<String> = rhio_service
+        .spec
+        .configuration
+        .s3
+        .as_ref()
+        .and_then(|s3_conf| s3_conf.credentials_secret.clone());
+
+    let s3_secret = get_secret::<Credentials>(&client, &s3_secret_name, namespace).await?;
 
     Ok(RhioConfigMapBuilder::from(
         rhio_service.clone(),
@@ -270,7 +249,45 @@ pub async fn make_builder(
         rmss,
         ros,
         ross,
+        nats_secret,
+        s3_secret,
     ))
+}
+
+async fn list_resources<T>(client: &Client, namespace: &<T as GetApi>::Namespace) -> Result<Vec<T>>
+where
+    T: Clone
+        + std::fmt::Debug
+        + serde::de::DeserializeOwned
+        + Resource
+        + stackable_operator::client::GetApi,
+    <T as Resource>::DynamicType: Default,
+{
+    let resources = client
+        .list::<T>(namespace, &ListParams::default())
+        .await
+        .context(ListResourceSnafu)? // TODO
+        .into_iter()
+        .collect::<Vec<T>>();
+    Ok(resources)
+}
+
+async fn get_secret<T>(
+    client: &Client,
+    secret_name: &Option<String>,
+    namespace: &str,
+) -> Result<Option<Secret<T>>>
+where
+    T: serde::Serialize + for<'de> serde::Deserialize<'de>,
+{
+    if let Some(name) = secret_name.as_ref() {
+        Secret::<T>::fetch(client, name, namespace)
+            .await
+            .context(GetSecretSnafu)
+            .map(|r| r.into())
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn error_policy(

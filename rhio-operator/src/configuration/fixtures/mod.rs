@@ -10,6 +10,15 @@ pub mod full {
         env!("CARGO_MANIFEST_DIR"),
         "/src/configuration/fixtures/full/rhio.yaml"
     ));
+    pub const RHIO_NATS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/configuration/fixtures/full/rhio_nats_credentials_secret.yaml"
+    ));
+    pub const RHIO_S3: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/configuration/fixtures/full/rhio_s3_credentials_secret.yaml"
+    ));
+
     pub const RMS: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/configuration/fixtures/full/rms.yaml"

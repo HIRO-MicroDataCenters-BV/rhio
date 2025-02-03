@@ -135,7 +135,7 @@ pub enum Error {
     ObjectHasNoNamespace,
 
     #[snafu(display("failed to get associated replicated message streams"))]
-    GetReplicatedMessageStreams {
+    ListResource {
         source: stackable_operator::client::Error,
     },
 
@@ -147,6 +147,11 @@ pub enum Error {
     #[snafu(display("failed to configure graceful shutdown"))]
     GracefulShutdown {
         source: crate::operations::graceful_shutdown::Error,
+    },
+
+    #[snafu(display("Unable to fetch secret by name"))]
+    GetSecret {
+        source: crate::configuration::error::Error,
     },
 }
 

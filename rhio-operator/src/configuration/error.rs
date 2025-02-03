@@ -46,6 +46,15 @@ pub enum Error {
     #[snafu(display("failed to serialize Rhio config"))]
     RhioConfigurationSerialization { source: serde_json::Error },
 
+    #[snafu(display("failed to deserialize secret"))]
+    SecretDeserialization { source: serde_json::Error },
+
+    #[snafu(display("failed to serialize secret"))]
+    SecretSerialization { source: serde_json::Error },
+
+    #[snafu(display("secret has no string data"))]
+    SecretHasNoStringData,
+
     #[snafu(display("object {} is missing metadata to build owner reference", rhio_service))]
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::builder::meta::Error,
@@ -70,6 +79,12 @@ pub enum Error {
 
     #[snafu(display("failed to parse public key {key}"))]
     PublicKeyParsing { source: IdentityError, key: String },
+
+    #[snafu(display("failed to fetch secret {name}"))]
+    GetSecret {
+        source: stackable_operator::client::Error,
+        name: String,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -94,6 +109,10 @@ impl ReconcilerError for Error {
             Error::InvalidNatsSubject { .. } => None,
             Error::BuildConfigMap { .. } => None,
             Error::PublicKeyParsing { .. } => None,
+            Error::GetSecret { .. } => None,
+            Error::SecretDeserialization { .. } => None,
+            Error::SecretSerialization { .. } => None,
+            Error::SecretHasNoStringData => None,
         }
     }
 }

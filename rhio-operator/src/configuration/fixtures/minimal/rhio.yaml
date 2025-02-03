@@ -20,4 +20,4 @@ spec:
         s3: null
         nats:
             endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
-            credentials: null
+            credentialsSecret: null

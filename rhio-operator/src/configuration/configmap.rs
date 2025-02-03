@@ -32,6 +32,7 @@ use std::hash::{Hash, Hasher};
 use std::{collections::BTreeMap, hash::DefaultHasher, str::FromStr};
 
 use super::error::PublicKeyParsingSnafu;
+use super::secret::Secret;
 
 pub type ConfigHash = String;
 
@@ -39,7 +40,6 @@ const RHIO_PRIVATE_KEY_PATH: &str = "/etc/rhio/private-key.txt";
 pub const RHIO_BIND_PORT_DEFAULT: u16 = 9102;
 pub const RHIO_BIND_HTTP_PORT_DEFAULT: u16 = 8080;
 pub const RHIO_CONFIG_MAP_ENTRY: &str = "config.yaml";
-// TODO secret key for credentials
 
 pub struct RhioConfigMapBuilder {
     rhio: RhioService,
@@ -47,6 +47,8 @@ pub struct RhioConfigMapBuilder {
     rmss: Vec<ReplicatedMessageStreamSubscription>,
     ros: Vec<ReplicatedObjectStore>,
     ross: Vec<ReplicatedObjectStoreSubscription>,
+    nats_secret: Option<Secret<NatsCredentials>>,
+    s3_secret: Option<Secret<Credentials>>,
 }
 
 impl RhioConfigMapBuilder {
@@ -56,6 +58,8 @@ impl RhioConfigMapBuilder {
         rmss: Vec<ReplicatedMessageStreamSubscription>,
         ros: Vec<ReplicatedObjectStore>,
         ross: Vec<ReplicatedObjectStoreSubscription>,
+        nats_secret: Option<Secret<NatsCredentials>>,
+        s3_secret: Option<Secret<Credentials>>,
     ) -> RhioConfigMapBuilder {
         RhioConfigMapBuilder {
             rms,
@@ -63,6 +67,8 @@ impl RhioConfigMapBuilder {
             ros,
             ross,
             rhio,
+            nats_secret,
+            s3_secret,
         }
     }
 
@@ -71,9 +77,13 @@ impl RhioConfigMapBuilder {
         let subscribed_subjects = self.subscribed_nats_subjects()?;
         let published_buckets = self.published_buckets();
         let subscribed_buckets = self.subscribed_buckets()?;
+        let nats_credentials = self.nats_credentials();
+        let s3_credentials = self.s3_credentials();
 
         let config = self.build_rhio_config(
             &self.rhio.spec.configuration,
+            nats_credentials,
+            s3_credentials,
             published_subjects,
             subscribed_subjects,
             published_buckets,
@@ -196,6 +206,14 @@ impl RhioConfigMapBuilder {
         published_buckets
     }
 
+    fn nats_credentials(&self) -> Option<NatsCredentials> {
+        self.nats_secret.as_ref().map(|s| s.value().to_owned())
+    }
+
+    fn s3_credentials(&self) -> Option<Credentials> {
+        self.s3_secret.as_ref().map(|s| s.value().to_owned())
+    }
+
     fn build_metadata(&self, labels: ObjectLabels<'_, RhioService>) -> Result<ObjectMeta> {
         let mut metadata = ObjectMetaBuilder::new()
             .name_and_namespace(&self.rhio)
@@ -214,9 +232,12 @@ impl RhioConfigMapBuilder {
         Ok(metadata)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_rhio_config(
         &self,
         service_spec: &RhioConfig,
+        nats_credentials: Option<NatsCredentials>,
+        s3_credentials: Option<Credentials>,
         nats_subjects: Vec<LocalNatsSubject>,
         subscribe_subjects: Vec<RemoteNatsSubject>,
         s3_buckets: Vec<String>,
@@ -238,35 +259,15 @@ impl RhioConfigMapBuilder {
             })
             .collect::<Result<Vec<KnownNode>>>()?;
 
-        let credentials = service_spec
-            .nats
-            .clone()
-            .credentials
-            .map(|c| NatsCredentials {
-                nkey: None,
-                username: Some(c.username.to_owned()),
-                password: Some(c.password.to_owned()),
-                token: None,
-            });
-
         let nats = NatsConfig {
             endpoint: service_spec.nats.endpoint.to_owned(),
-            credentials,
+            credentials: nats_credentials,
         };
 
-        let s3 = service_spec.s3.as_ref().map(|s3_conf| {
-            let credentials = s3_conf.credentials.as_ref().map(|cred| Credentials {
-                access_key: Some(cred.access_key.to_owned()),
-                secret_key: Some(cred.secret_key.to_owned()),
-                security_token: None,
-                session_token: None,
-                expiration: None,
-            });
-            S3Config {
-                endpoint: s3_conf.endpoint.to_owned(),
-                region: s3_conf.region.to_owned(),
-                credentials,
-            }
+        let s3 = service_spec.s3.as_ref().map(|s3_conf| S3Config {
+            endpoint: s3_conf.endpoint.to_owned(),
+            region: s3_conf.region.to_owned(),
+            credentials: s3_credentials,
         });
         let config = Config {
             node: NodeConfig {
@@ -289,6 +290,7 @@ impl RhioConfigMapBuilder {
                 nats_subjects: subscribe_subjects,
             }),
         };
+
         let rhio_configuration =
             serde_json::to_string(&config).context(RhioConfigurationSerializationSnafu)?;
         Ok(rhio_configuration)
@@ -318,12 +320,12 @@ mod tests {
     use crate::{api::service::RhioService, rhio::builders::build_recommended_labels};
 
     #[test]
-    fn test_minimal_config() -> Result<()> {
+    fn test_minimal_config() {
         let rhio: RhioService =
             serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
         let config_resources =
-            RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![]);
+            RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![], None, None);
 
         let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
         let (cm, hash) = config_resources
@@ -360,14 +362,17 @@ mod tests {
         let config: Config = serde_yaml::from_str(&config).expect("valid config.yaml is expected");
         assert_eq!(expected_config, config);
         assert_ne!(hash, "");
-
-        Ok(())
     }
 
     #[test]
-    fn test_full_config() -> Result<()> {
+    fn test_full_config() {
         let rhio: RhioService =
             serde_yaml::from_str(fixtures::full::RHIO).expect("illegal input yaml");
+        let rhio_nats: stackable_operator::k8s_openapi::api::core::v1::Secret =
+            serde_yaml::from_str(fixtures::full::RHIO_NATS).expect("illegal input yaml");
+        let rhio_s3: stackable_operator::k8s_openapi::api::core::v1::Secret =
+            serde_yaml::from_str(fixtures::full::RHIO_S3).expect("illegal input yaml");
+
         let rms: ReplicatedMessageStream =
             serde_yaml::from_str(fixtures::full::RMS).expect("illegal input yaml");
         let rmss: ReplicatedMessageStreamSubscription =
@@ -377,8 +382,15 @@ mod tests {
         let ross: ReplicatedObjectStoreSubscription =
             serde_yaml::from_str(fixtures::full::ROSS).expect("illegal input yaml");
 
-        let config_resources =
-            RhioConfigMapBuilder::from(rhio.clone(), vec![rms], vec![rmss], vec![ros], vec![ross]);
+        let config_resources = RhioConfigMapBuilder::from(
+            rhio.clone(),
+            vec![rms],
+            vec![rmss],
+            vec![ros],
+            vec![ross],
+            Some(Secret::from(rhio_nats).expect("invalid nats secret")),
+            Some(Secret::from(rhio_s3).expect("invalid s3 secret")),
+        );
 
         let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
         let (cm, hash) = config_resources
@@ -450,27 +462,38 @@ mod tests {
             }),
         };
 
-        let config: Config = serde_yaml::from_str(&config).unwrap();
+        let config: Config = serde_yaml::from_str(&config).expect("fail to deserialize config");
         assert_eq!(config, expected_config);
         assert_ne!(hash, "");
-        Ok(())
     }
 
-    // #[test]
-    // fn test_metadata() -> Result<()> {
-    //     let rhio: RhioService =
-    //         serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
+    #[test]
+    fn test_metadata() {
+        let rhio: RhioService =
+            serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
-    //     let config_resources =
-    //         RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![]);
+        let config_resources =
+            RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![], None, None);
 
-    //     let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
-    //     let (cm, _) = config_resources
-    //         .build(labels)
-    //         .expect("unable to build rhio config");
-    //     let metadata = cm.metadata;
-    //     // assert_eq!(cm.metadata);
+        let labels = build_recommended_labels(&rhio, "controller", "1.0.1", "role", "role_group");
+        let (cm, _) = config_resources
+            .build(labels)
+            .expect("unable to build rhio config");
+        let metadata = cm.metadata;
 
-    //     Ok(())
-    // }
+        let labels = vec![
+            ("app.kubernetes.io/component", "role"),
+            ("app.kubernetes.io/instance", "test-service"),
+            ("app.kubernetes.io/managed-by", "rhio.hiro.io_controller"),
+            ("app.kubernetes.io/name", "rhio"),
+            ("app.kubernetes.io/role-group", "role_group"),
+            ("app.kubernetes.io/version", "1.0.1"),
+            ("stackable.tech/vendor", "HIRO"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect::<BTreeMap<String, String>>();
+
+        assert_eq!(metadata.labels.as_ref().unwrap(), &labels);
+    }
 }

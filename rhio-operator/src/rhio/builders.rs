@@ -7,9 +7,8 @@ use crate::configuration::configmap::{
 use crate::operations::graceful_shutdown::add_graceful_shutdown_config;
 use crate::rhio::controller::{APP_NAME, OPERATOR_NAME};
 use crate::rhio::error::{
-    AddVolumeMountSnafu, AddVolumeSnafu, BuildLabelSnafu, GlobalServiceNameNotFoundSnafu,
-    GracefulShutdownSnafu, InvalidAnnotationSnafu, LabelBuildSnafu,
-    ObjectMissingMetadataForOwnerRefSnafu, Result,
+    AddVolumeMountSnafu, AddVolumeSnafu, GlobalServiceNameNotFoundSnafu, GracefulShutdownSnafu,
+    InvalidAnnotationSnafu, ObjectMissingMetadataForOwnerRefSnafu, Result,
 };
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::meta::ObjectMetaBuilder;
@@ -41,11 +40,12 @@ pub const RHIO_POD_TEMPLATE_CONFIG_HASH: &str = "rhio.hiro.io/config-hash";
 const RHIO_BINARY: &str = "/usr/local/bin/rhio";
 const RHIO_PRIVATE_KEY_BINARY_VARIABLE: &str = "PRIVATE_KEY";
 
-pub fn build_rhio_statefulset(
+pub fn build_statefulset(
     rhio: &RhioService,
     resolved_product_image: &ResolvedProductImage,
     rolegroup_ref: &RoleGroupRef<RhioService>,
     labels: ObjectLabels<RhioService>,
+    role_group_selector: Labels,
     service_account: &ServiceAccount,
     config_hash: String,
 ) -> Result<StatefulSet> {
@@ -153,16 +153,7 @@ pub fn build_rhio_statefulset(
             pod_management_policy: Some("Parallel".to_string()),
             replicas: Some(1),
             selector: LabelSelector {
-                match_labels: Some(
-                    Labels::role_group_selector(
-                        rhio,
-                        APP_NAME,
-                        &rolegroup_ref.role,
-                        &rolegroup_ref.role_group,
-                    )
-                    .context(LabelBuildSnafu)?
-                    .into(),
-                ),
+                match_labels: Some(role_group_selector.into()),
                 ..LabelSelector::default()
             },
             service_name: rolegroup_ref.object_name(),
@@ -230,8 +221,8 @@ pub fn build_recommended_labels<'a>(
 ///
 pub fn build_server_role_service(
     rhio: &RhioService,
-    rolegroup_ref: &RoleGroupRef<RhioService>,
-    labels: ObjectLabels<RhioService>,
+    recommended_labels: ObjectLabels<RhioService>,
+    service_selector_labels: Labels,
 ) -> Result<Service> {
     let role_svc_name = rhio
         .server_role_service_name()
@@ -242,17 +233,9 @@ pub fn build_server_role_service(
         .name(&role_svc_name)
         .ownerreference_from_resource(rhio, None, Some(true))
         .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
-        .with_recommended_labels(labels)
+        .with_recommended_labels(recommended_labels)
         .context(ObjectMetaSnafu)?
         .build();
-
-    let service_selector_labels = Labels::role_group_selector(
-        rhio,
-        APP_NAME,
-        &rolegroup_ref.role,
-        &rolegroup_ref.role_group,
-    )
-    .context(BuildLabelSnafu)?;
 
     let service_spec = ServiceSpec {
         ports: Some(vec![
@@ -277,12 +260,9 @@ pub fn build_server_role_service(
     Ok(Service {
         metadata,
         spec: Some(service_spec),
-        status: None,
+        ..Service::default()
     })
 }
 
 #[cfg(test)]
-mod tests {
-
-    // use super::*;
-}
+mod tests {}
