@@ -1,4 +1,3 @@
-use crate::config::NatsConfig;
 use anyhow::bail;
 use anyhow::{Context as AnyhowContext, Result};
 use async_nats::jetstream::consumer::push::MessagesError;
@@ -8,6 +7,7 @@ use dashmap::DashMap;
 use loole::Receiver;
 use loole::Sender;
 use once_cell::sync::Lazy;
+use rhio_config::configuration::NatsConfig;
 use rhio_core::Subject;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};

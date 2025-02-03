@@ -13,8 +13,8 @@ use s3::{Bucket, Region};
 use tokio::sync::mpsc;
 use watcher::S3Event;
 
-use crate::config::Config;
 use crate::topic::Query;
+use rhio_config::configuration::Config;
 
 use crate::blobs::watcher::S3Watcher;
 use s3::error::S3Error;

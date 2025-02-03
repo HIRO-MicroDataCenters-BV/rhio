@@ -6,12 +6,12 @@ use directories::ProjectDirs;
 use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
 use p2panda_core::PublicKey;
-use rhio_blobs::BucketName;
 use rhio_core::Subject;
 use s3::creds::Credentials;
 use serde::{Deserialize, Serialize};
 
-use crate::nats::StreamName;
+type StreamName = String;
+type BucketName = String;
 
 /// Default file name of config.
 const CONFIG_FILE_NAME: &str = "config.yaml";
@@ -285,7 +285,7 @@ mod tests {
     use figment::Figment;
     use s3::creds::Credentials;
 
-    use crate::config::{
+    use crate::configuration::{
         Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig,
         ProtocolConfig, PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config,
         SubscribeConfig,

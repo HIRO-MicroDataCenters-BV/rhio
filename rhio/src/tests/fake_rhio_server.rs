@@ -1,6 +1,7 @@
-use crate::{config::Config, context::Context, context_builder::ContextBuilder};
+use crate::{context::Context, context_builder::ContextBuilder};
 use anyhow::Result;
 use p2panda_core::PrivateKey;
+use rhio_config::configuration::Config;
 
 /// A fake server for testing purposes in the Rhio project.
 ///

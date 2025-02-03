@@ -14,13 +14,13 @@ use tracing::error;
 
 use crate::blobs::watcher::S3Event;
 use crate::blobs::Blobs;
-use crate::config::Config;
 use crate::nats::Nats;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
 use crate::JoinErrToStr;
+use rhio_config::configuration::Config;
 
 #[derive(Debug, Clone, Default)]
 pub struct NodeOptions {
