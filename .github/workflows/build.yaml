@@ -45,6 +45,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
+          cache: false
           channel: ${{ env.RUST_TOOLCHAIN }}
 
       # build speedups
