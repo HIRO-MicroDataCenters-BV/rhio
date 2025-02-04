@@ -111,9 +111,6 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
-        # os:
-        #   - ubuntu-latest
-        #   - ubuntu-22.04
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
 
