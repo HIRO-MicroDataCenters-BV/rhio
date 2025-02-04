@@ -212,6 +212,16 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.57.rhio-operator.4f4391fb.tgz
     version: 0.1.3-dev.57.rhio-operator.4f4391fb
   - apiVersion: v2
+    appVersion: 0.1.3-dev.56.arm-build-fix.07434c87
+    created: "2025-02-04T09:07:48.492921108Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 7ac614458ab35a4729cf8777d81e3924937bda611e94502fa72b7557a8550f4e
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.1.3-dev.56.arm-build-fix.07434c87.tgz
+    version: 0.1.3-dev.56.arm-build-fix.07434c87
+  - apiVersion: v2
     appVersion: 0.1.3-dev.55.arm-build-fix.dc8a2c29
     created: "2025-02-03T17:42:23.090794532Z"
     description: peer-to-peer message stream and blob storage solution
@@ -815,4 +825,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-operator-0.0.0.tgz
     version: 0.0.0
-generated: "2025-02-03T17:42:23.090183678Z"
+generated: "2025-02-04T09:07:48.492353465Z"
