@@ -367,20 +367,22 @@ mod tests {
     #[test]
     fn test_full_config() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::full::RHIO).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::RHIO).expect("illegal input rhio service");
         let rhio_nats: stackable_operator::k8s_openapi::api::core::v1::Secret =
-            serde_yaml::from_str(fixtures::full::RHIO_NATS).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::RHIO_NATS)
+                .expect("illegal input nats credentials secret");
         let rhio_s3: stackable_operator::k8s_openapi::api::core::v1::Secret =
-            serde_yaml::from_str(fixtures::full::RHIO_S3).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::RHIO_S3)
+                .expect("illegal input s3 credentials secret");
 
         let rms: ReplicatedMessageStream =
-            serde_yaml::from_str(fixtures::full::RMS).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::RMS).expect("illegal input rms");
         let rmss: ReplicatedMessageStreamSubscription =
-            serde_yaml::from_str(fixtures::full::RMSS).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::RMSS).expect("illegal input rmss");
         let ros: ReplicatedObjectStore =
-            serde_yaml::from_str(fixtures::full::ROS).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::ROS).expect("illegal input ros");
         let ross: ReplicatedObjectStoreSubscription =
-            serde_yaml::from_str(fixtures::full::ROSS).expect("illegal input yaml");
+            serde_yaml::from_str(fixtures::full::ROSS).expect("illegal input ross");
 
         let config_resources = RhioConfigMapBuilder::from(
             rhio.clone(),
@@ -434,7 +436,7 @@ mod tests {
                 network_id: "test".into(),
                 protocol: None,
             },
-            log_level: None,
+            log_level: Some("=INFO".into()),
             publish: Some(PublishConfig {
                 s3_buckets: vec!["source".into()],
                 nats_subjects: vec![LocalNatsSubject {

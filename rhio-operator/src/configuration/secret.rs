@@ -6,8 +6,11 @@ use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::client::Client;
 use stackable_operator::kube::runtime::reflector::Lookup;
 use std::collections::BTreeMap;
+use std::io::Write;
 
 use super::error::SecretHasNoStringDataSnafu;
+use super::error::WriteToStdoutSnafu;
+use super::error::YamlSerializationSnafu;
 use super::error::{
     ObjectHasNoNameSnafu, ObjectHasNoNamespaceSnafu, SecretDeserializationSnafu,
     SecretSerializationSnafu,
@@ -49,6 +52,19 @@ where
     pub fn to_secret(&self) -> Result<stackable_operator::k8s_openapi::api::core::v1::Secret> {
         let data = Secret::to_data(&self.value)?;
         Ok(self.build_k8s_secret(data))
+    }
+
+    pub fn print_yaml(&self) -> Result<()> {
+        let secret = self.to_secret()?;
+
+        let serialized_secret = serde_yaml::to_string(&secret).context(YamlSerializationSnafu)?;
+
+        let mut writer = std::io::stdout();
+        writer
+            .write_all(serialized_secret.as_bytes())
+            .context(WriteToStdoutSnafu)?;
+
+        Ok(())
     }
 
     fn to_data(value: &T) -> Result<BTreeMap<String, String>> {
@@ -160,6 +176,7 @@ mod tests {
     fn test_private_key_serialization() {
         serde_object(PrivateKey {
             secret_key: "key".into(),
+            public_key: "pkey".into(),
         });
     }
 

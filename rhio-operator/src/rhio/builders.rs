@@ -265,4 +265,11 @@ pub fn build_server_role_service(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+
+    #[test]
+    fn test_build_statefulset() {}
+
+    #[test]
+    fn test_build_build_server_role_service() {}
+}

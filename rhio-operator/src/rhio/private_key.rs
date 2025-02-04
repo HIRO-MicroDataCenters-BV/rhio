@@ -4,4 +4,5 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct PrivateKey {
     pub secret_key: String,
+    pub public_key: String,
 }

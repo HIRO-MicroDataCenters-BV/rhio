@@ -5,6 +5,7 @@ use rhio_operator::api::object_store::ReplicatedObjectStore;
 use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use rhio_operator::api::service::RhioService;
 use rhio_operator::built_info;
+use rhio_operator::cli::{Opts, RhioCommand, RhioRun};
 use rhio_operator::configuration::controllers::{
     create_rms_controller, create_rmss_controller, create_ros_controller, create_ross_controller,
 };
@@ -21,35 +22,13 @@ const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =
 const RHIO_OPERATOR_LOCAL_PRODUCT_PROPERTIES: &str = "./config-spec/properties.yaml";
 const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
-#[derive(clap::Parser)]
-enum RhioCommand {
-    CreatePrivateKeySecret,
-    CreateNatsSecret,
-    CreateS3Secret,
-    #[clap(flatten)]
-    Framework(stackable_operator::cli::Command<RhioRun>),
-}
-
-#[derive(clap::Parser)]
-#[clap(about, author)]
-struct Opts {
-    #[clap(subcommand)]
-    cmd: RhioCommand,
-}
-
-#[derive(clap::Parser)]
-struct RhioRun {
-    #[clap(flatten)]
-    common: ProductOperatorRun,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
     match opts.cmd {
-        RhioCommand::CreatePrivateKeySecret => todo!(),
-        RhioCommand::CreateS3Secret => todo!(),
-        RhioCommand::CreateNatsSecret => todo!(),
+        RhioCommand::CreatePrivateKeySecret(cmd) => cmd.generate_secret()?,
+        RhioCommand::CreateS3Secret(cmd) => cmd.generate_secret()?,
+        RhioCommand::CreateNatsSecret(cmd) => cmd.generate_secret()?,
         RhioCommand::Framework(Command::Crd) => {
             RhioService::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedMessageStream::print_yaml_schema(built_info::PKG_VERSION)?;

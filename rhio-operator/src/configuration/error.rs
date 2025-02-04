@@ -52,6 +52,9 @@ pub enum Error {
     #[snafu(display("failed to serialize secret"))]
     SecretSerialization { source: serde_json::Error },
 
+    #[snafu(display("failed to serialize secret"))]
+    YamlSerialization { source: serde_yaml::Error },
+
     #[snafu(display("secret has no string data"))]
     SecretHasNoStringData,
 
@@ -85,6 +88,9 @@ pub enum Error {
         source: stackable_operator::client::Error,
         name: String,
     },
+
+    #[snafu(display("fail to write YAML to stdout"))]
+    WriteToStdout { source: std::io::Error },
 }
 
 impl ReconcilerError for Error {
@@ -113,6 +119,8 @@ impl ReconcilerError for Error {
             Error::SecretDeserialization { .. } => None,
             Error::SecretSerialization { .. } => None,
             Error::SecretHasNoStringData => None,
+            Error::WriteToStdout { .. } => todo!(),
+            Error::YamlSerialization { .. } => todo!(),
         }
     }
 }

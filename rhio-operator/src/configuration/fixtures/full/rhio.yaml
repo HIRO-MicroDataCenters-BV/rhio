@@ -27,6 +27,8 @@ spec:
       endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
       credentialsSecret: rhio_nats_credentials_secret
 
+    logLevel: =INFO
+
   clusterConfig:
     listenerClass: disabled
     gracefulShutdownTimeout: 1s
