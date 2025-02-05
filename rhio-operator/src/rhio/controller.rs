@@ -56,6 +56,7 @@ use stackable_operator::{
     logging::controller::report_controller_reconciled,
 };
 use std::{sync::Arc, time::Duration};
+use tracing::warn;
 
 use super::error::{Error, GetRhioServiceEndpointSnafu, GetSecretSnafu, ListResourceSnafu};
 
@@ -84,7 +85,6 @@ pub async fn reconcile_rhio(
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
-    let mut requeue_duration = RECONCILIATION_INTERVAL_DEFAULT;
 
     let rhio: &RhioService = rhio
         .0
@@ -180,7 +180,6 @@ pub async fn reconcile_rhio(
     ss_cond_builder.add(statefulset);
 
     let (status, maybe_duration) = build_status(rhio, cluster_info, ss_cond_builder).await?;
-    requeue_duration = maybe_duration.unwrap_or(requeue_duration);
 
     cluster_resources
         .delete_orphaned_resources(client)
@@ -192,7 +191,11 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyStatusSnafu)?;
 
-    Ok(Action::requeue(requeue_duration))
+    if let Some(duration) = maybe_duration {
+        Ok(Action::requeue(duration))
+    } else {
+        Ok(Action::await_change())
+    }
 }
 
 async fn build_status(
@@ -206,7 +209,10 @@ async fn build_status(
     let maybe_health_status = RhioApiClient::new(endpoint).health().await;
     let (health_status, requeue_duration) = match maybe_health_status {
         Ok(health_status) => (health_status, None),
-        Err(_e) => (HealthStatus::default(), Some(RECONCILIATION_INTERVAL_ERROR)),
+        Err(e) => {
+            warn!("Cannot fetch rhio service status {}", e);
+            (HealthStatus::from(e), Some(RECONCILIATION_INTERVAL_ERROR))
+        }
     };
 
     let cluster_operation_cond_builder =

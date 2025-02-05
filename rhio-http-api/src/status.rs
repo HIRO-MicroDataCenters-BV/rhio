@@ -21,8 +21,8 @@ impl From<anyhow::Error> for HealthStatus {
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub enum ServiceStatus {
-    #[default]
     Running,
+    #[default]
     Unknown,
     Error,
 }
