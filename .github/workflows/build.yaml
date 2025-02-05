@@ -78,7 +78,11 @@ jobs:
       - name: Setup Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
+          cache: false
           channel: ${{ env.RUST_TOOLCHAIN }}
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
 
       - name: Install Helm
         uses: azure/setup-helm@v3
