@@ -1,8 +1,0 @@
-apiVersion: rhio.hiro.io/v1
-kind: ReplicatedObjectStore
-metadata:
-  name: test-store
-spec:
-  buckets:
-    - source
-  

@@ -1,9 +1,0 @@
-apiVersion: rhio.hiro.io/v1
-kind: ReplicatedMessageStream
-metadata:
-  name: test-stream
-spec:
-  streamName: test-stream
-  subjects:
-    - test.integration
-  
