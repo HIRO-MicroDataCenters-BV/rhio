@@ -173,6 +173,7 @@ pub struct RhioServiceStatus {
 }
 
 impl RhioServiceStatus {
+    // TODO getters
     pub fn stream_status(&self, stream: &ReplicatedMessageStream) -> ReplicatedMessageStreamStatus {
         let mut results = vec![];
         let statuses = &self.status.streams.published;

@@ -39,6 +39,9 @@ pub const RMSS_CONTROLLER_NAME: &str = "rmss";
 pub const ROS_CONTROLLER_NAME: &str = "ros";
 pub const ROSS_CONTROLLER_NAME: &str = "ross";
 
+pub const RECONCILIATION_INTERVAL_DEFAULT: Duration = Duration::from_secs(60);
+pub const RECONCILIATION_INTERVAL_ERROR: Duration = Duration::from_secs(5);
+
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
 }
@@ -122,7 +125,7 @@ where
         .await
         .context(ApplyStatusSnafu)?;
 
-    Ok(Action::requeue(*Duration::from_secs(60)))
+    Ok(Action::requeue(*RECONCILIATION_INTERVAL_DEFAULT))
 }
 
 pub fn error_policy<R>(_obj: Arc<DeserializeGuard<R>>, error: &Error, _ctx: Arc<Ctx>) -> Action
@@ -131,7 +134,7 @@ where
 {
     match error {
         Error::InvalidReplicatedResource { .. } => Action::await_change(),
-        _ => Action::requeue(*Duration::from_secs(5)),
+        _ => Action::requeue(*RECONCILIATION_INTERVAL_ERROR),
     }
 }
 

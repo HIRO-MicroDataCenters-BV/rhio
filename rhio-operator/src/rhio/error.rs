@@ -1,7 +1,7 @@
 use crate::api::service::RhioService;
 use snafu::Snafu;
 use stackable_operator::{
-    kube::{api::DynamicObject, core::error_boundary, runtime::reflector::ObjectRef},
+    kube::{core::error_boundary, runtime::reflector::ObjectRef},
     kvp::LabelError,
     logging::controller::ReconcilerError,
     role_utils::RoleGroupRef,
@@ -137,6 +137,7 @@ pub enum Error {
     #[snafu(display("failed to get associated replicated message streams"))]
     ListResource {
         source: stackable_operator::client::Error,
+        rhio: ObjectRef<RhioService>,
     },
 
     #[snafu(display("invalid annotation"))]
@@ -161,13 +162,6 @@ pub enum Error {
 impl ReconcilerError for Error {
     fn category(&self) -> &'static str {
         ErrorDiscriminants::from(self).into()
-    }
-
-    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
-        match self {
-            Error::ObjectHasNoName => None,
-            _ => None, // TODO secondary object
-        }
     }
 }
 

@@ -28,7 +28,8 @@ use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
 use s3::creds::Credentials;
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::client::GetApi;
-use stackable_operator::kube::{api::ListParams, ResourceExt};
+use stackable_operator::kube::api::ListParams;
+use stackable_operator::kube::ResourceExt;
 use stackable_operator::kvp::Labels;
 use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
@@ -62,6 +63,8 @@ pub const APP_NAME: &str = "rhio";
 pub const OPERATOR_NAME: &str = "rhio.hiro.io";
 pub const RHIO_CONTROLLER_NAME: &str = "rhioservice";
 pub const DOCKER_IMAGE_BASE_NAME: &str = "rhio";
+pub const RECONCILIATION_INTERVAL_DEFAULT: Duration = Duration::from_secs(60);
+pub const RECONCILIATION_INTERVAL_ERROR: Duration = Duration::from_secs(5);
 
 pub struct Ctx {
     pub client: stackable_operator::client::Client,
@@ -73,7 +76,7 @@ pub async fn reconcile_rhio(
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
     tracing::info!("Starting reconcile");
-    let mut requeue_duration = Duration::from_secs(5 * 60);
+    let mut requeue_duration = RECONCILIATION_INTERVAL_DEFAULT;
 
     let rhio: &RhioService = rhio
         .0
@@ -168,7 +171,8 @@ pub async fn reconcile_rhio(
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
     ss_cond_builder.add(statefulset);
 
-    let status = build_status(&mut requeue_duration, rhio, cluster_info, ss_cond_builder).await?;
+    let (status, maybe_duration) = build_status(rhio, cluster_info, ss_cond_builder).await?;
+    requeue_duration = maybe_duration.unwrap_or(requeue_duration);
 
     cluster_resources
         .delete_orphaned_resources(client)
@@ -184,21 +188,17 @@ pub async fn reconcile_rhio(
 }
 
 async fn build_status(
-    requeue_duration: &mut Duration,
     rhio: &RhioService,
     cluster_info: &KubernetesClusterInfo,
     ss_cond_builder: StatefulSetConditionBuilder,
-) -> Result<RhioServiceStatus> {
+) -> Result<(RhioServiceStatus, Option<Duration>)> {
     let endpoint = rhio
         .service_endpoint(cluster_info)
         .context(GetRhioServiceEndpointSnafu)?;
     let maybe_health_status = RhioApiClient::new(endpoint).health().await;
-    let health_status = match maybe_health_status {
-        Ok(health_status) => health_status,
-        Err(_e) => {
-            *requeue_duration = Duration::from_secs(5);
-            HealthStatus::default()
-        }
+    let (health_status, requeue_duration) = match maybe_health_status {
+        Ok(health_status) => (health_status, None),
+        Err(_e) => (HealthStatus::default(), Some(RECONCILIATION_INTERVAL_ERROR)),
     };
 
     let cluster_operation_cond_builder =
@@ -207,28 +207,27 @@ async fn build_status(
         conditions: compute_conditions(rhio, &[&ss_cond_builder, &cluster_operation_cond_builder]),
         status: health_status,
     };
-    Ok(status)
+    Ok((status, requeue_duration))
 }
 
-pub async fn make_builder(
-    client: Client,
-    rhio_service: &RhioService,
-) -> Result<RhioConfigMapBuilder> {
-    let namespace = rhio_service.get_namespace();
+pub async fn make_builder(client: Client, rhio: &RhioService) -> Result<RhioConfigMapBuilder> {
+    let namespace = rhio.get_namespace();
 
-    let rms = list_resources::<ReplicatedMessageStream>(&client, namespace).await?;
-    let rmss = list_resources::<ReplicatedMessageStreamSubscription>(&client, namespace).await?;
-    let ros = list_resources::<ReplicatedObjectStore>(&client, namespace).await?;
-    let ross = list_resources::<ReplicatedObjectStoreSubscription>(&client, namespace).await?;
+    let rms = list_resources::<ReplicatedMessageStream>(&client, rhio, namespace).await?;
+    let rmss =
+        list_resources::<ReplicatedMessageStreamSubscription>(&client, rhio, namespace).await?;
+    let ros = list_resources::<ReplicatedObjectStore>(&client, rhio, namespace).await?;
+    let ross =
+        list_resources::<ReplicatedObjectStoreSubscription>(&client, rhio, namespace).await?;
 
     let nats_secret = get_secret::<NatsCredentials>(
         &client,
-        &rhio_service.spec.configuration.nats.credentials_secret,
+        &rhio.spec.configuration.nats.credentials_secret,
         namespace,
     )
     .await?;
 
-    let s3_secret_name: Option<String> = rhio_service
+    let s3_secret_name: Option<String> = rhio
         .spec
         .configuration
         .s3
@@ -238,7 +237,7 @@ pub async fn make_builder(
     let s3_secret = get_secret::<Credentials>(&client, &s3_secret_name, namespace).await?;
 
     Ok(RhioConfigMapBuilder::from(
-        rhio_service.clone(),
+        rhio.clone(),
         rms,
         rmss,
         ros,
@@ -248,7 +247,11 @@ pub async fn make_builder(
     ))
 }
 
-async fn list_resources<T>(client: &Client, namespace: &<T as GetApi>::Namespace) -> Result<Vec<T>>
+async fn list_resources<T>(
+    client: &Client,
+    rhio: &RhioService,
+    namespace: &<T as GetApi>::Namespace,
+) -> Result<Vec<T>>
 where
     T: Clone
         + std::fmt::Debug
@@ -258,9 +261,11 @@ where
     <T as Resource>::DynamicType: Default,
 {
     let resources = client
-        .list::<T>(namespace, &ListParams::default())
+        .list::<T>(&namespace, &ListParams::default())
         .await
-        .context(ListResourceSnafu)? // TODO
+        .context(ListResourceSnafu {
+            rhio: ObjectRef::from_obj(rhio),
+        })?
         .into_iter()
         .collect::<Vec<T>>();
     Ok(resources)
@@ -269,13 +274,13 @@ where
 async fn get_secret<T>(
     client: &Client,
     secret_name: &Option<String>,
-    namespace: &str,
+    secret_namespace: &str,
 ) -> Result<Option<Secret<T>>>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     if let Some(name) = secret_name.as_ref() {
-        Secret::<T>::fetch(client, name, namespace)
+        Secret::<T>::fetch(client, name, secret_namespace)
             .await
             .context(GetSecretSnafu)
             .map(|r| r.into())
@@ -291,7 +296,7 @@ pub fn error_policy(
 ) -> Action {
     match error {
         Error::InvalidRhioService { .. } => Action::await_change(),
-        _ => Action::requeue(Duration::from_secs(5)),
+        _ => Action::requeue(RECONCILIATION_INTERVAL_ERROR),
     }
 }
 
