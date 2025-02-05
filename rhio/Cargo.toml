@@ -22,7 +22,7 @@ async-trait.workspace = true
 axum.workspace = true
 axum-prometheus.workspace = true
 ciborium.workspace = true
-clap.workspace = true
+clap = { workspace = true, features = ["derive"] }
 directories.workspace = true
 figment.workspace = true
 futures-util.workspace = true
