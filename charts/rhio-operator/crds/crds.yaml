@@ -575,17 +575,9 @@ spec:
                     type: string
                   nats:
                     properties:
-                      credentials:
+                      credentialsSecret:
                         nullable: true
-                        properties:
-                          password:
-                            type: string
-                          username:
-                            type: string
-                        required:
-                        - password
-                        - username
-                        type: object
+                        type: string
                       endpoint:
                         type: string
                     required:
@@ -612,17 +604,9 @@ spec:
                   s3:
                     nullable: true
                     properties:
-                      credentials:
+                      credentialsSecret:
                         nullable: true
-                        properties:
-                          accessKey:
-                            type: string
-                          secretKey:
-                            type: string
-                        required:
-                        - accessKey
-                        - secretKey
-                        type: object
+                        type: string
                       endpoint:
                         type: string
                       region:
@@ -752,6 +736,7 @@ spec:
                                 status:
                                   enum:
                                   - Activated
+                                  - Unknown
                                   type: string
                               required:
                               - bucket
@@ -770,6 +755,7 @@ spec:
                                 status:
                                   enum:
                                   - Activated
+                                  - Unknown
                                   type: string
                               required:
                               - local_bucket
@@ -790,6 +776,7 @@ spec:
                                 status:
                                   enum:
                                   - Activated
+                                  - Unknown
                                   type: string
                                 stream:
                                   type: string
@@ -809,6 +796,7 @@ spec:
                                 status:
                                   enum:
                                   - Activated
+                                  - Unknown
                                   type: string
                                 stream:
                                   type: string
@@ -905,6 +893,7 @@ spec:
                             status:
                               enum:
                               - Activated
+                              - Unknown
                               type: string
                           required:
                           - bucket
@@ -923,6 +912,7 @@ spec:
                             status:
                               enum:
                               - Activated
+                              - Unknown
                               type: string
                           required:
                           - local_bucket
@@ -943,6 +933,7 @@ spec:
                             status:
                               enum:
                               - Activated
+                              - Unknown
                               type: string
                             stream:
                               type: string
@@ -962,6 +953,7 @@ spec:
                             status:
                               enum:
                               - Activated
+                              - Unknown
                               type: string
                             stream:
                               type: string
@@ -1037,6 +1029,7 @@ spec:
                     status:
                       enum:
                       - Activated
+                      - Unknown
                       type: string
                     stream:
                       type: string
@@ -1112,6 +1105,7 @@ spec:
                     status:
                       enum:
                       - Activated
+                      - Unknown
                       type: string
                     stream:
                       type: string
@@ -1177,6 +1171,7 @@ spec:
                     status:
                       enum:
                       - Activated
+                      - Unknown
                       type: string
                   required:
                   - bucket
@@ -1251,6 +1246,7 @@ spec:
                     status:
                       enum:
                       - Activated
+                      - Unknown
                       type: string
                   required:
                   - local_bucket
