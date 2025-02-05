@@ -5,7 +5,7 @@ metadata:
     uid: 1
 spec:
     clusterConfig:
-        listenerClass: disabled
+        listenerClass: cluster-internal
         gracefulShutdownTimeout: 1s
 
     image:

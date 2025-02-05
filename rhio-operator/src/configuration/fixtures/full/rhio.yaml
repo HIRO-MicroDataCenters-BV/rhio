@@ -30,6 +30,6 @@ spec:
     logLevel: =INFO
 
   clusterConfig:
-    listenerClass: disabled
+    listenerClass: cluster-internal
     gracefulShutdownTimeout: 1s
 

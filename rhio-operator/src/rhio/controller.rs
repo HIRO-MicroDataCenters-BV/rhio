@@ -6,7 +6,7 @@ use crate::{
         message_stream_subscription::ReplicatedMessageStreamSubscription,
         object_store::ReplicatedObjectStore,
         object_store_subscription::ReplicatedObjectStoreSubscription,
-        service::{CurrentlySupportedListenerClasses, RhioService, RhioServiceStatus},
+        service::{RhioService, RhioServiceStatus},
     },
     configuration::configmap::RhioConfigMapBuilder,
     rhio::{
@@ -135,19 +135,17 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    if rhio.spec.cluster_config.listener_class != CurrentlySupportedListenerClasses::Disabled {
-        cluster_resources
-            .add(
-                client,
-                build_service(
-                    rhio,
-                    recommended_labels.clone(),
-                    role_group_selector.clone(),
-                )?,
-            )
-            .await
-            .context(ApplyRoleServiceSnafu)?;
-    }
+    cluster_resources
+        .add(
+            client,
+            build_service(
+                rhio,
+                recommended_labels.clone(),
+                role_group_selector.clone(),
+            )?,
+        )
+        .await
+        .context(ApplyRoleServiceSnafu)?;
 
     let (rhio_configmap, config_map_hash) = make_builder(client.clone(), rhio)
         .await?

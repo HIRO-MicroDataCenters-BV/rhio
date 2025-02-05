@@ -1,3 +1,4 @@
+use crate::configuration::configmap::RHIO_BIND_HTTP_PORT_DEFAULT;
 use crate::rhio::controller::DOCKER_IMAGE_BASE_NAME;
 use rhio_http_api::status::HealthStatus;
 use rhio_http_api::status::MessageStreamPublishStatus;
@@ -83,7 +84,10 @@ impl RhioService {
         self.metadata.name.as_ref().map(|name| {
             let namespace = self.metadata.namespace.clone().unwrap_or("default".into());
             let domain = &cluster_info.cluster_domain;
-            format!("http://{}.{}.svc.{}", name, namespace, domain)
+            format!(
+                "http://{}.{}.svc.{}:{}",
+                name, namespace, domain, RHIO_BIND_HTTP_PORT_DEFAULT
+            )
         })
     }
 }
@@ -96,8 +100,6 @@ pub enum CurrentlySupportedListenerClasses {
     ClusterInternal,
     #[serde(rename = "external-unstable")]
     ExternalUnstable,
-    #[serde(rename = "disabled")]
-    Disabled,
 }
 
 impl CurrentlySupportedListenerClasses {
@@ -105,7 +107,6 @@ impl CurrentlySupportedListenerClasses {
         match self {
             CurrentlySupportedListenerClasses::ClusterInternal => "ClusterIP".to_string(),
             CurrentlySupportedListenerClasses::ExternalUnstable => "NodePort".to_string(),
-            CurrentlySupportedListenerClasses::Disabled => "Disabled".to_string(),
         }
     }
 }
