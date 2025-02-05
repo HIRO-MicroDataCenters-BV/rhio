@@ -1,7 +1,7 @@
 use crate::api::service::RhioService;
 use snafu::Snafu;
 use stackable_operator::{
-    kube::{core::error_boundary, runtime::reflector::ObjectRef},
+    kube::{api::DynamicObject, core::error_boundary, runtime::reflector::ObjectRef},
     kvp::LabelError,
     logging::controller::ReconcilerError,
     role_utils::RoleGroupRef,
@@ -62,18 +62,18 @@ pub enum Error {
         source: stackable_operator::builder::pod::Error,
     },
 
-    #[snafu(display("object {} is missing metadata to build owner reference", rhio_service))]
+    #[snafu(display("object {} is missing metadata to build owner reference", rhio))]
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::builder::meta::Error,
-        rhio_service: ObjectRef<RhioService>,
+        rhio: ObjectRef<RhioService>,
     },
 
-    #[snafu(display("failed to build configmap that keeps rhio config.yaml"))]
+    #[snafu(display("failed to build configmap with rhio config.yaml"))]
     BuildConfigMap {
         source: crate::configuration::error::Error,
     },
 
-    #[snafu(display("failed to apply Rhio ConfigMap"))]
+    #[snafu(display("failed to apply rhio ConfigMap"))]
     ApplyRhioConfig {
         source: stackable_operator::cluster_resources::Error,
     },
@@ -150,9 +150,11 @@ pub enum Error {
         source: crate::operations::graceful_shutdown::Error,
     },
 
-    #[snafu(display("Unable to fetch secret by name"))]
+    #[snafu(display("Unable to fetch secret {secret_name}.{secret_namespace}"))]
     GetSecret {
         source: crate::configuration::error::Error,
+        secret_name: String,
+        secret_namespace: String,
     },
 
     #[snafu(display("Unable to resolve rhio service endpoint"))]
@@ -162,6 +164,41 @@ pub enum Error {
 impl ReconcilerError for Error {
     fn category(&self) -> &'static str {
         ErrorDiscriminants::from(self).into()
+    }
+    fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
+        match self {
+            Error::ObjectHasNoName => None,
+            Error::InvalidRhioService { .. } => None,
+            Error::CreateClusterResources { .. } => None,
+            Error::DeleteOrphans { .. } => None,
+            Error::ApplyStatus { .. } => None,
+            Error::MetadataBuild { .. } => None,
+            Error::LabelBuild { .. } => None,
+            Error::InvalidContainerName { .. } => None,
+            Error::AddVolumeMount { .. } => None,
+            Error::AddVolume { .. } => None,
+            Error::ObjectMissingMetadataForOwnerRef { rhio, .. } => Some(rhio.clone().erase()),
+            Error::BuildConfigMap { .. } => None,
+            Error::ApplyRhioConfig { .. } => None,
+            Error::RhioConfigurationSerialization { .. } => None,
+            Error::BuildLabel { .. } => None,
+            Error::ApplyServiceAccount { .. } => None,
+            Error::ApplyRoleBinding { .. } => None,
+            Error::BuildRbacResources { .. } => None,
+            Error::ApplyRoleService { .. } => None,
+            Error::GlobalServiceNameNotFound => None,
+            Error::ObjectMeta { .. } => None,
+            Error::NoServerRole => None,
+            Error::GenerateProductConfig { .. } => None,
+            Error::InvalidProductConfig { .. } => None,
+            Error::ApplyRoleGroupStatefulSet { .. } => None,
+            Error::ObjectHasNoNamespace => None,
+            Error::ListResource { rhio, .. } => Some(rhio.clone().erase()),
+            Error::InvalidAnnotation { .. } => None,
+            Error::GracefulShutdown { .. } => None,
+            Error::GetSecret { .. } => None,
+            Error::GetRhioServiceEndpoint => None,
+        }
     }
 }
 

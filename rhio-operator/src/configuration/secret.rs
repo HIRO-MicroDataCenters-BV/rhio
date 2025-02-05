@@ -5,6 +5,7 @@ use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::meta::ObjectMetaBuilder;
 use stackable_operator::client::Client;
 use stackable_operator::kube::runtime::reflector::Lookup;
+use stackable_operator::kube::runtime::reflector::ObjectRef;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -108,7 +109,10 @@ where
             .namespace()
             .context(ObjectHasNoNamespaceSnafu)?
             .to_string();
-        let data = k8s_secret.string_data.context(SecretHasNoStringDataSnafu)?;
+        let obj_ref = ObjectRef::from_obj(&k8s_secret);
+        let data = k8s_secret
+            .string_data
+            .context(SecretHasNoStringDataSnafu { secret: obj_ref })?;
         let value = Secret::from_data(data)?;
         Ok(Secret {
             value,

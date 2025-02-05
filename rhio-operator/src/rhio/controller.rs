@@ -261,7 +261,7 @@ where
     <T as Resource>::DynamicType: Default,
 {
     let resources = client
-        .list::<T>(&namespace, &ListParams::default())
+        .list::<T>(namespace, &ListParams::default())
         .await
         .context(ListResourceSnafu {
             rhio: ObjectRef::from_obj(rhio),
@@ -282,7 +282,10 @@ where
     if let Some(name) = secret_name.as_ref() {
         Secret::<T>::fetch(client, name, secret_namespace)
             .await
-            .context(GetSecretSnafu)
+            .context(GetSecretSnafu {
+                secret_name: name.to_owned(),
+                secret_namespace: secret_namespace.to_string(),
+            })
             .map(|r| r.into())
     } else {
         Ok(None)

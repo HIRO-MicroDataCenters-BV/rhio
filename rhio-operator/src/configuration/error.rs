@@ -1,6 +1,7 @@
 use p2panda_core::IdentityError;
 use snafu::Snafu;
 use stackable_operator::{
+    k8s_openapi::api::core::v1::Secret,
     kube::{api::DynamicObject, core::error_boundary, runtime::reflector::ObjectRef},
     logging::controller::ReconcilerError,
 };
@@ -33,10 +34,7 @@ pub enum Error {
     RhioIsAbsent,
 
     #[snafu(display("Rhio Service has no status"))]
-    RhioServiceHasNoStatus,
-
-    #[snafu(display("Rhio Service has no status"))]
-    RhioServiceHasNoStatusForStream,
+    RhioServiceHasNoStatus { rhio: ObjectRef<RhioService> },
 
     #[snafu(display("failed to update status"))]
     ApplyStatus {
@@ -56,12 +54,12 @@ pub enum Error {
     YamlSerialization { source: serde_yaml::Error },
 
     #[snafu(display("secret has no string data"))]
-    SecretHasNoStringData,
+    SecretHasNoStringData { secret: ObjectRef<Secret> },
 
-    #[snafu(display("object {} is missing metadata to build owner reference", rhio_service))]
+    #[snafu(display("object {} is missing metadata to build owner reference", rhio))]
     ObjectMissingMetadataForOwnerRef {
         source: stackable_operator::builder::meta::Error,
-        rhio_service: ObjectRef<RhioService>,
+        rhio: ObjectRef<RhioService>,
     },
 
     #[snafu(display("failed to build Metadata"))]
@@ -91,6 +89,9 @@ pub enum Error {
 
     #[snafu(display("fail to write YAML to stdout"))]
     WriteToStdout { source: std::io::Error },
+
+    #[snafu(display("multiple rhio services in the same namespace"))]
+    MultipleServicesInTheSameNamespace { rhio: ObjectRef<RhioService> },
 }
 
 impl ReconcilerError for Error {
@@ -98,7 +99,6 @@ impl ReconcilerError for Error {
         ErrorDiscriminants::from(self).into()
     }
 
-    // TODO add secondary objects
     fn secondary_object(&self) -> Option<ObjectRef<DynamicObject>> {
         match self {
             Error::ObjectHasNoName => None,
@@ -106,11 +106,11 @@ impl ReconcilerError for Error {
             Error::ObjectHasNoNamespace => None,
             Error::GetRhioService { .. } => None,
             Error::RhioIsAbsent => None,
-            Error::RhioServiceHasNoStatus => None,
-            Error::RhioServiceHasNoStatusForStream => None,
+            Error::RhioServiceHasNoStatus { rhio } => Some(rhio.clone().erase()),
+            Error::MultipleServicesInTheSameNamespace { rhio } => Some(rhio.clone().erase()),
             Error::ApplyStatus { .. } => None,
             Error::RhioConfigurationSerialization { .. } => None,
-            Error::ObjectMissingMetadataForOwnerRef { .. } => None,
+            Error::ObjectMissingMetadataForOwnerRef { rhio, .. } => Some(rhio.clone().erase()),
             Error::MetadataBuild { .. } => None,
             Error::InvalidNatsSubject { .. } => None,
             Error::BuildConfigMap { .. } => None,
@@ -118,9 +118,9 @@ impl ReconcilerError for Error {
             Error::GetSecret { .. } => None,
             Error::SecretDeserialization { .. } => None,
             Error::SecretSerialization { .. } => None,
-            Error::SecretHasNoStringData => None,
-            Error::WriteToStdout { .. } => todo!(),
-            Error::YamlSerialization { .. } => todo!(),
+            Error::SecretHasNoStringData { secret } => Some(secret.clone().erase()),
+            Error::WriteToStdout { .. } => None,
+            Error::YamlSerialization { .. } => None,
         }
     }
 }

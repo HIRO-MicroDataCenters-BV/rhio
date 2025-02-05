@@ -32,7 +32,7 @@ use stackable_operator::{
 };
 use std::sync::Arc;
 
-use super::error::Error;
+use super::error::{Error, MultipleServicesInTheSameNamespaceSnafu};
 
 pub const RMS_CONTROLLER_NAME: &str = "rms";
 pub const RMSS_CONTROLLER_NAME: &str = "rmss";
@@ -81,7 +81,7 @@ pub async fn reconcile_ross(
 }
 
 async fn reconcile<R, S, GetStatusF>(
-    rms_object: Arc<DeserializeGuard<R>>,
+    config_object: Arc<DeserializeGuard<R>>,
     ctx: Arc<Ctx>,
     get_status: GetStatusF,
 ) -> Result<Action>
@@ -92,7 +92,7 @@ where
 {
     tracing::info!("Starting reconcile");
 
-    let rms = rms_object
+    let config_object = config_object
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
@@ -102,7 +102,8 @@ where
 
     let services = client
         .list::<RhioService>(
-            rms.namespace()
+            config_object
+                .namespace()
                 .as_deref()
                 .context(ObjectHasNoNamespaceSnafu)?,
             &ListParams::default(),
@@ -110,22 +111,33 @@ where
         .await
         .context(GetRhioServiceSnafu)?
         .into_iter()
-        .filter(|stream| stream.metadata.namespace == rms.meta().namespace)
+        .filter(|stream| stream.metadata.namespace == config_object.meta().namespace)
         .collect::<Vec<RhioService>>();
 
-    let service = services.first().context(RhioIsAbsentSnafu)?;
-    let service_status = service
-        .status
-        .as_ref()
-        .context(RhioServiceHasNoStatusSnafu)?;
-    let status = get_status(service_status, rms);
+    fail_if_multiple_services(&services)?;
+
+    let rhio = services.first().context(RhioIsAbsentSnafu)?;
+    let rhio_status = rhio.status.as_ref().context(RhioServiceHasNoStatusSnafu {
+        rhio: ObjectRef::from(rhio),
+    })?;
+    let config_object_status = get_status(rhio_status, config_object);
 
     client
-        .apply_patch_status(OPERATOR_NAME, rms, &status)
+        .apply_patch_status(OPERATOR_NAME, config_object, &config_object_status)
         .await
         .context(ApplyStatusSnafu)?;
 
     Ok(Action::requeue(*RECONCILIATION_INTERVAL_DEFAULT))
+}
+
+fn fail_if_multiple_services(services: &[RhioService]) -> Result<()> {
+    if services.len() > 1 {
+        return MultipleServicesInTheSameNamespaceSnafu {
+            rhio: services.first().unwrap(),
+        }
+        .fail();
+    }
+    Ok(())
 }
 
 pub fn error_policy<R>(_obj: Arc<DeserializeGuard<R>>, error: &Error, _ctx: Arc<Ctx>) -> Action

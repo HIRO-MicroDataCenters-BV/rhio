@@ -133,7 +133,7 @@ pub fn build_statefulset(
         .name_and_namespace(rhio)
         .name(rolegroup_ref.object_name())
         .ownerreference_from_resource(rhio, None, Some(true))
-        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
+        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio })?
         .with_recommended_labels(labels.clone())
         .context(ObjectMetaSnafu)?
         .build();
@@ -231,7 +231,7 @@ pub fn build_server_role_service(
         .name_and_namespace(rhio)
         .name(&role_svc_name)
         .ownerreference_from_resource(rhio, None, Some(true))
-        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio_service: rhio })?
+        .context(ObjectMissingMetadataForOwnerRefSnafu { rhio })?
         .with_recommended_labels(recommended_labels)
         .context(ObjectMetaSnafu)?
         .build();
