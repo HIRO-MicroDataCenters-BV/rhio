@@ -1,5 +1,4 @@
 use anyhow::Result;
-use clap::{crate_description, crate_version};
 use rhio::{built_info, context_builder::ContextBuilder};
 use tracing::info;
 
@@ -35,8 +34,8 @@ fn log_hello_rhio() {
     .split("\n")
     .for_each(|line| info!("{}", line));
     print_startup_string(
-        crate_description!(),
-        crate_version!(),
+        env!("CARGO_PKG_DESCRIPTION"),
+        env!("CARGO_PKG_VERSION"),
         built_info::GIT_VERSION,
         built_info::TARGET,
         built_info::BUILT_TIME_UTC,
