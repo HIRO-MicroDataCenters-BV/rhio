@@ -45,7 +45,12 @@ jobs:
       - name: Setup Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
+          # disabled caching in the setup-rust because aarch64-apple-darwin build takes around 1 hour to start
+          cache: false
           channel: ${{ env.RUST_TOOLCHAIN }}
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
 
       - name: Run tests
         # Ensure debug output is also tested
@@ -111,10 +116,6 @@ jobs:
           target_dir: ${{ env.HELM_CHART_TARGET_DIR }}
 
   build-docker:
-    name: Docker Build / ${{ matrix.platform }}
-    runs-on: ubuntu-latest
-    needs: [test]
-
     strategy:
       fail-fast: false
       matrix:
@@ -128,6 +129,10 @@ jobs:
           # ARM build is very slow, we build only for main branch
           - platform: "linux/arm64"
             isMain: false
+
+    name: Docker Build / ${{ matrix.platform }}
+    runs-on: ubuntu-22.04
+    needs: [test]
 
     defaults:
       run:
