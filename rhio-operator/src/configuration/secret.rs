@@ -17,6 +17,32 @@ use super::error::{
     SecretSerializationSnafu,
 };
 
+/// A struct representing a Kubernetes Secret with generic data type `T`.
+///
+/// This struct provides methods to create, fetch, serialize, and deserialize Kubernetes Secrets
+/// with the specified data type `T`. The data type `T` must implement the `serde::Serialize` and
+/// `serde::Deserialize` traits.
+///
+/// # Type Parameters
+/// - `T`: The type of the data stored in the secret. It must implement `serde::Serialize` and
+///   `for<'de> serde::Deserialize<'de>`.
+///
+/// # Fields
+/// - `value`: The value of the secret of type `T`.
+/// - `name`: The name of the secret.
+/// - `namespace`: The namespace of the secret.
+///
+/// # Methods
+/// - `new(name: String, namespace: String, value: T) -> Secret<T>`: Creates a new `Secret` instance.
+/// - `value(&self) -> &T`: Returns a reference to the value of the secret.
+/// - `fetch(client: &Client, name: &str, namespace: &str) -> Result<Secret<T>>`: Fetches a secret
+///   from the Kubernetes cluster using the provided client, name, and namespace.
+/// - `to_secret(&self) -> Result<stackable_operator::k8s_openapi::api::core::v1::Secret>`: Converts
+///   the `Secret` instance to a Kubernetes Secret object.
+/// - `print_yaml(&self) -> Result<()>`: Prints the secret as a YAML string to stdout.
+/// - `from(k8s_secret: stackable_operator::k8s_openapi::api::core::v1::Secret) -> Result<Secret<T>>`:
+///   Creates a `Secret` instance from a Kubernetes Secret object.
+///
 pub struct Secret<T>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de>,

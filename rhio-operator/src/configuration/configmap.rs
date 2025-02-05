@@ -41,6 +41,36 @@ pub const RHIO_BIND_PORT_DEFAULT: u16 = 9102;
 pub const RHIO_BIND_HTTP_PORT_DEFAULT: u16 = 8080;
 pub const RHIO_CONFIG_MAP_ENTRY: &str = "config.yaml";
 
+/// `RhioConfigMapBuilder` is a builder for creating Kubernetes ConfigMap that contains the
+/// configuration for a `RhioService`.
+///
+/// It aggregates various configuration sources such as NATS subjects, S3 buckets, and credentials,
+/// and serializes them into a YAML configuration file stored in the ConfigMap.
+///
+/// # Fields
+///
+/// - `rhio`: The `RhioService` instance containing the main configuration.
+/// - `rms`: A vector of `ReplicatedMessageStream` instances representing the message streams to be published.
+/// - `rmss`: A vector of `ReplicatedMessageStreamSubscription` instances representing the message stream subscriptions.
+/// - `ros`: A vector of `ReplicatedObjectStore` instances representing the object stores to be published.
+/// - `ross`: A vector of `ReplicatedObjectStoreSubscription` instances representing the object store subscriptions.
+/// - `nats_secret`: An optional `Secret` containing NATS credentials.
+/// - `s3_secret`: An optional `Secret` containing S3 credentials.
+///
+/// # Methods
+///
+/// - `from`: Constructs a new `RhioConfigMapBuilder` from the given parameters.
+/// - `build`: Builds the ConfigMap and returns it along with a hash of the configuration.
+///
+/// - `published_nats_subjects`: Retrieves the list of NATS subjects to be published.
+/// - `subscribed_nats_subjects`: Retrieves the list of NATS subjects to be subscribed to.
+/// - `subscribed_buckets`: Retrieves the list of S3 buckets to be subscribed to.
+/// - `published_buckets`: Retrieves the list of S3 buckets to be published.
+/// - `nats_credentials`: Retrieves the NATS credentials from the secret.
+/// - `s3_credentials`: Retrieves the S3 credentials from the secret.
+/// - `build_configmap_metadata`: Builds the metadata for the ConfigMap, including labels and owner references.
+/// - `build_config_yaml`: Constructs the YAML configuration file from the various configuration sources.
+///
 pub struct RhioConfigMapBuilder {
     rhio: RhioService,
     rms: Vec<ReplicatedMessageStream>,
@@ -80,7 +110,7 @@ impl RhioConfigMapBuilder {
         let nats_credentials = self.nats_credentials();
         let s3_credentials = self.s3_credentials();
 
-        let config = self.build_rhio_config(
+        let config = self.build_config_yaml(
             &self.rhio.spec.configuration,
             nats_credentials,
             s3_credentials,
@@ -93,7 +123,7 @@ impl RhioConfigMapBuilder {
         config.hash(&mut hasher);
         let config_hash = hasher.finish().to_string();
 
-        let metadata = self.build_metadata(labels)?;
+        let metadata = self.build_configmap_metadata(labels)?;
         let config_map = ConfigMapBuilder::new()
             .metadata(metadata)
             .add_data(RHIO_CONFIG_MAP_ENTRY, config)
@@ -214,7 +244,10 @@ impl RhioConfigMapBuilder {
         self.s3_secret.as_ref().map(|s| s.value().to_owned())
     }
 
-    fn build_metadata(&self, labels: ObjectLabels<'_, RhioService>) -> Result<ObjectMeta> {
+    fn build_configmap_metadata(
+        &self,
+        labels: ObjectLabels<'_, RhioService>,
+    ) -> Result<ObjectMeta> {
         let mut metadata = ObjectMetaBuilder::new()
             .name_and_namespace(&self.rhio)
             .ownerreference_from_resource(&self.rhio, None, Some(true))
@@ -233,7 +266,7 @@ impl RhioConfigMapBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn build_rhio_config(
+    fn build_config_yaml(
         &self,
         service_spec: &RhioConfig,
         nats_credentials: Option<NatsCredentials>,

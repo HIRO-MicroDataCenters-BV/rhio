@@ -4988,6 +4988,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-prometheus",
+ "built",
  "bytes",
  "ciborium",
  "clap",

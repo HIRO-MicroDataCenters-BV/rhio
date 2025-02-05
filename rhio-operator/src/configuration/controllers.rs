@@ -39,7 +39,14 @@ pub const RMSS_CONTROLLER_NAME: &str = "rmss";
 pub const ROS_CONTROLLER_NAME: &str = "ros";
 pub const ROSS_CONTROLLER_NAME: &str = "ross";
 
+// The default interval for reconciliation loops. This interval is used to
+// periodically requeue the reconciliation process to ensure that the state
+// of the resources is continuously monitored and updated if necessary.
 pub const RECONCILIATION_INTERVAL_DEFAULT: Duration = Duration::from_secs(60);
+
+// The interval for reconciliation loops when an error occurs. This interval
+// is used to requeue the reconciliation process more frequently in case of
+// errors, allowing for quicker recovery and resolution of issues.
 pub const RECONCILIATION_INTERVAL_ERROR: Duration = Duration::from_secs(5);
 
 pub struct Ctx {
@@ -50,36 +57,59 @@ pub async fn reconcile_rms(
     rms_object: Arc<DeserializeGuard<ReplicatedMessageStream>>,
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
-    reconcile(rms_object, ctx, |rhio, stream| rhio.stream_status(stream)).await
+    reconcile(rms_object, ctx, |rhio, stream| rhio.get_rms_status(stream)).await
 }
 
 pub async fn reconcile_rmss(
     rms_object: Arc<DeserializeGuard<ReplicatedMessageStreamSubscription>>,
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
-    reconcile(rms_object, ctx, |rhio, stream| {
-        rhio.stream_subscription_status(stream)
-    })
-    .await
+    reconcile(rms_object, ctx, |rhio, stream| rhio.get_rmss_status(stream)).await
 }
 
 pub async fn reconcile_ros(
     ros: Arc<DeserializeGuard<ReplicatedObjectStore>>,
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
-    reconcile(ros, ctx, |rhio, store| rhio.store_status(store)).await
+    reconcile(ros, ctx, |rhio, store| rhio.get_ros_status(store)).await
 }
 
 pub async fn reconcile_ross(
     ros: Arc<DeserializeGuard<ReplicatedObjectStoreSubscription>>,
     ctx: Arc<Ctx>,
 ) -> Result<Action> {
-    reconcile(ros, ctx, |rhio, store| {
-        rhio.store_subscription_status(store)
-    })
-    .await
+    reconcile(ros, ctx, |rhio, store| rhio.get_ross_status(store)).await
 }
 
+/// Reconciles the state of a given Kubernetes resource with the desired state.
+///
+/// This function is a generic reconciliation function that can be used to reconcile
+/// different types of resources. It fetches the current state of the resource, compares
+/// it with the desired state, and applies necessary changes to bring the resource to
+/// the desired state.
+///
+/// # Arguments
+///
+/// * `config_object` - An `Arc` wrapped `DeserializeGuard` containing the resource to be reconciled.
+/// * `ctx` - An `Arc` wrapped `Ctx` containing the client context.
+/// * `get_status` - A closure that takes a reference to `RhioServiceStatus` and the resource `R`,
+///   and returns the status `S` of the resource.
+///
+/// # Returns
+///
+/// A `Result` containing an `Action` that indicates the next action to be taken by the controller.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The resource is invalid.
+/// - The namespace of the resource cannot be determined.
+/// - The list of `RhioService` resources cannot be fetched.
+/// - There are multiple `RhioService` resources in the same namespace.
+/// - The `RhioService` resource is absent.
+/// - The `RhioService` resource has no status.
+/// - The status of the resource cannot be applied.
+///
 async fn reconcile<R, S, GetStatusF>(
     config_object: Arc<DeserializeGuard<R>>,
     ctx: Arc<Ctx>,

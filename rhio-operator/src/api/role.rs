@@ -22,8 +22,8 @@ pub enum RhioRole {
     Server,
 }
 
-// TODO why
-
+/// Group roles are needed for the cases when the instance may have several functional components, e.g. master and workers
+/// In Rhio we don't have multiple roles. Role is used for compatibility with stackable-operator framework.
 impl RhioRole {
     /// Metadata about a rolegroup
     pub fn rolegroup_ref(

@@ -56,3 +56,6 @@ serde_json.workspace = true
 s3-server.workspace = true
 s3s.workspace = true
 url.workspace = true
+
+[build-dependencies]
+built.workspace = true

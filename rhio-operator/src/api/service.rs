@@ -1,5 +1,9 @@
 use crate::rhio::controller::DOCKER_IMAGE_BASE_NAME;
 use rhio_http_api::status::HealthStatus;
+use rhio_http_api::status::MessageStreamPublishStatus;
+use rhio_http_api::status::MessageStreamSubscribeStatus;
+use rhio_http_api::status::ObjectStorePublishStatus;
+use rhio_http_api::status::ObjectStoreSubscribeStatus;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::affinity::StackableAffinity;
@@ -173,67 +177,91 @@ pub struct RhioServiceStatus {
 }
 
 impl RhioServiceStatus {
-    // TODO getters
-    pub fn stream_status(&self, stream: &ReplicatedMessageStream) -> ReplicatedMessageStreamStatus {
+    pub fn get_rms_status(
+        &self,
+        stream: &ReplicatedMessageStream,
+    ) -> ReplicatedMessageStreamStatus {
         let mut results = vec![];
         let statuses = &self.status.streams.published;
         for subject in stream.spec.subjects.iter() {
-            for published in statuses {
-                if published.stream == stream.spec.stream_name && subject == &published.subject {
-                    results.push(published.to_owned())
-                }
-            }
+            let found = statuses
+                .iter()
+                .find(|published| {
+                    published.stream == stream.spec.stream_name && subject == &published.subject
+                })
+                .cloned()
+                .unwrap_or_else(|| {
+                    MessageStreamPublishStatus::to_unknown(&stream.spec.stream_name, subject)
+                });
+            results.push(found);
         }
         ReplicatedMessageStreamStatus { subjects: results }
     }
 
-    pub fn stream_subscription_status(
+    pub fn get_rmss_status(
         &self,
         stream: &ReplicatedMessageStreamSubscription,
     ) -> ReplicatedMessageStreamSubscriptionStatus {
         let mut results = vec![];
         let statuses = &self.status.streams.subscribed;
         for subject in stream.spec.subscriptions.iter() {
-            for subscription in statuses {
-                if subject.stream == subscription.stream
-                    && subject.subject == subscription.subject
-                    && stream.spec.public_key == subscription.source
-                {
-                    results.push(subscription.to_owned())
-                }
-            }
+            let found = statuses
+                .iter()
+                .find(|subscription| {
+                    subject.stream == subscription.stream
+                        && subject.subject == subscription.subject
+                        && stream.spec.public_key == subscription.source
+                })
+                .cloned()
+                .unwrap_or_else(|| {
+                    MessageStreamSubscribeStatus::to_unknown(
+                        &stream.spec.public_key,
+                        &subject.stream,
+                        &subject.subject,
+                    )
+                });
+            results.push(found);
         }
         ReplicatedMessageStreamSubscriptionStatus { subjects: results }
     }
 
-    pub fn store_status(&self, store: &ReplicatedObjectStore) -> ReplicatedObjectStoreStatus {
+    pub fn get_ros_status(&self, store: &ReplicatedObjectStore) -> ReplicatedObjectStoreStatus {
         let mut results = vec![];
         let statuses = &self.status.stores.published;
         for bucket in store.spec.buckets.iter() {
-            for published in statuses {
-                if &published.bucket == bucket {
-                    results.push(published.to_owned())
-                }
-            }
+            let found = statuses
+                .iter()
+                .find(|published| &published.bucket == bucket)
+                .cloned()
+                .unwrap_or_else(|| ObjectStorePublishStatus::to_unknown(bucket));
+            results.push(found);
         }
         ReplicatedObjectStoreStatus { buckets: results }
     }
 
-    pub fn store_subscription_status(
+    pub fn get_ross_status(
         &self,
         subscription: &ReplicatedObjectStoreSubscription,
     ) -> ReplicatedObjectStoreSubscriptionStatus {
         let mut results = vec![];
         let statuses = &self.status.stores.subscribed;
         for bucket in subscription.spec.buckets.iter() {
-            for subscription_status in statuses {
-                if subscription_status.source == subscription.spec.public_key
-                    && subscription_status.local_bucket == bucket.local_bucket
-                    && subscription_status.remote_bucket == bucket.remote_bucket
-                {
-                    results.push(subscription_status.to_owned())
-                }
-            }
+            let found = statuses
+                .iter()
+                .find(|subscription_status| {
+                    subscription_status.source == subscription.spec.public_key
+                        && subscription_status.local_bucket == bucket.local_bucket
+                        && subscription_status.remote_bucket == bucket.remote_bucket
+                })
+                .cloned()
+                .unwrap_or_else(|| {
+                    ObjectStoreSubscribeStatus::to_unknown(
+                        &subscription.spec.public_key,
+                        &bucket.remote_bucket,
+                        &bucket.local_bucket,
+                    )
+                });
+            results.push(found);
         }
         ReplicatedObjectStoreSubscriptionStatus { buckets: results }
     }

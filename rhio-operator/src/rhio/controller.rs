@@ -10,7 +10,7 @@ use crate::{
     },
     configuration::configmap::RhioConfigMapBuilder,
     rhio::{
-        builders::{build_recommended_labels, build_server_role_service, build_statefulset},
+        builders::{build_recommended_labels, build_service, build_statefulset},
         error::{
             ApplyRhioConfigSnafu, ApplyRoleBindingSnafu, ApplyRoleGroupStatefulSetSnafu,
             ApplyRoleServiceSnafu, ApplyServiceAccountSnafu, ApplyStatusSnafu, BuildConfigMapSnafu,
@@ -63,7 +63,15 @@ pub const APP_NAME: &str = "rhio";
 pub const OPERATOR_NAME: &str = "rhio.hiro.io";
 pub const RHIO_CONTROLLER_NAME: &str = "rhioservice";
 pub const DOCKER_IMAGE_BASE_NAME: &str = "rhio";
+
+// The default interval for reconciliation loops. This interval is used to
+// periodically requeue the reconciliation process to ensure that the state
+// of the resources is continuously monitored and updated if necessary.
 pub const RECONCILIATION_INTERVAL_DEFAULT: Duration = Duration::from_secs(60);
+
+// The interval for reconciliation loops when an error occurs. This interval
+// is used to requeue the reconciliation process more frequently in case of
+// errors, allowing for quicker recovery and resolution of issues.
 pub const RECONCILIATION_INTERVAL_ERROR: Duration = Duration::from_secs(5);
 
 pub struct Ctx {
@@ -131,7 +139,7 @@ pub async fn reconcile_rhio(
         cluster_resources
             .add(
                 client,
-                build_server_role_service(
+                build_service(
                     rhio,
                     recommended_labels.clone(),
                     role_group_selector.clone(),
@@ -210,6 +218,28 @@ async fn build_status(
     Ok((status, requeue_duration))
 }
 
+/// Constructs a `RhioConfigMapBuilder` for the given `RhioService`.
+///
+/// This function gathers necessary resources and secrets required to build the configuration map
+/// for the `RhioService`. It fetches the following resources:
+/// - ReplicatedMessageStream
+/// - ReplicatedMessageStreamSubscription
+/// - ReplicatedObjectStore
+/// - ReplicatedObjectStoreSubscription
+///
+/// Additionally, it fetches the NATS and S3 credentials secrets if they are specified in the
+/// `RhioService` configuration.
+///
+/// # Arguments
+///
+/// * `client` - A reference to the Kubernetes client.
+/// * `rhio` - A reference to the `RhioService` instance.
+///
+/// # Returns
+///
+/// A `Result` containing the `RhioConfigMapBuilder` if successful, or an error if any of the
+/// resource or secret fetching operations fail.
+///
 pub async fn make_builder(client: Client, rhio: &RhioService) -> Result<RhioConfigMapBuilder> {
     let namespace = rhio.get_namespace();
 

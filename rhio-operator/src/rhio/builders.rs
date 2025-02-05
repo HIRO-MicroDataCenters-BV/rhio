@@ -39,6 +39,22 @@ pub const RHIO_POD_TEMPLATE_CONFIG_HASH: &str = "rhio.hiro.io/config-hash";
 const RHIO_BINARY: &str = "/usr/local/bin/rhio";
 const RHIO_PRIVATE_KEY_BINARY_VARIABLE: &str = "PRIVATE_KEY";
 
+/// Builds a Kubernetes StatefulSet for the given RhioService.
+///
+/// # Arguments
+///
+/// * `rhio` - A reference to the RhioService instance.
+/// * `resolved_product_image` - A reference to the resolved product image.
+/// * `rolegroup_ref` - A reference to the RoleGroupRef for the RhioService.
+/// * `labels` - Object labels for the RhioService.
+/// * `role_group_selector` - Labels for selecting the role group.
+/// * `service_account` - A reference to the ServiceAccount to be used by the StatefulSet.
+/// * `config_hash` - A string representing the configuration hash.
+///
+/// # Returns
+///
+/// * `Result<StatefulSet>` - A result containing the built StatefulSet or an error.
+///
 pub fn build_statefulset(
     rhio: &RhioService,
     resolved_product_image: &ResolvedProductImage,
@@ -215,10 +231,19 @@ pub fn build_recommended_labels<'a>(
     }
 }
 
-/// The server-role service is the primary endpoint that should be used by clients that do not perform internal load balancing,
-/// including targets outside of the cluster.
+/// Builds a Kubernetes Service for the given RhioService.
 ///
-pub fn build_server_role_service(
+/// # Arguments
+///
+/// * `rhio` - A reference to the RhioService instance.
+/// * `recommended_labels` - Object labels recommended for the RhioService.
+/// * `service_selector_labels` - Labels for selecting the service.
+///
+/// # Returns
+///
+/// * `Result<Service>` - A result containing the built Service or an error.
+///
+pub fn build_service(
     rhio: &RhioService,
     recommended_labels: ObjectLabels<RhioService>,
     service_selector_labels: Labels,
@@ -327,7 +352,7 @@ mod tests {
             Labels::role_group_selector(&rhio, APP_NAME, &rolegroup.role, &rolegroup.role_group)
                 .expect("role group selector");
 
-        let actual = build_server_role_service(&rhio, recommended_labels, role_group_selector)
+        let actual = build_service(&rhio, recommended_labels, role_group_selector)
             .expect("unable to create service");
 
         assert_eq!(expected, actual);

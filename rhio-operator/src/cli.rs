@@ -4,6 +4,17 @@ use stackable_operator::cli::ProductOperatorRun;
 
 use crate::{configuration::secret::Secret, rhio::private_key::PrivateKey};
 
+/// Enum representing the various commands that can be executed by the Rhio CLI.
+///
+/// The available commands are:
+///
+/// - `CreatePrivateKeySecret`: Generates a secret containing a private key.
+/// - `CreateNatsSecret`: Generates a secret containing NATS credentials.
+/// - `CreateS3Secret`: Generates a secret containing S3 credentials.
+/// - `Framework`: Executes a command from the stackable operator framework, which includes:
+///   - `Crd`: prints CRD yaml.
+///   - `Run`: runs the operator.
+///
 #[derive(clap::Parser)]
 pub enum RhioCommand {
     CreatePrivateKeySecret(PrivateKeySecretArgs),
