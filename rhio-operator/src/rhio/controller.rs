@@ -26,10 +26,11 @@ use product_config::ProductConfigManager;
 use rhio_config::configuration::NatsCredentials;
 use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
 use s3::creds::Credentials;
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use stackable_operator::client::GetApi;
 use stackable_operator::kube::{api::ListParams, ResourceExt};
 use stackable_operator::kvp::Labels;
+use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
@@ -55,7 +56,7 @@ use stackable_operator::{
 };
 use std::{sync::Arc, time::Duration};
 
-use super::error::{Error, GetSecretSnafu, ListResourceSnafu};
+use super::error::{Error, GetRhioServiceEndpointSnafu, GetSecretSnafu, ListResourceSnafu};
 
 pub const APP_NAME: &str = "rhio";
 pub const OPERATOR_NAME: &str = "rhio.hiro.io";
@@ -74,41 +75,38 @@ pub async fn reconcile_rhio(
     tracing::info!("Starting reconcile");
     let mut requeue_duration = Duration::from_secs(5 * 60);
 
-    let rhio_service: &RhioService = rhio
+    let rhio: &RhioService = rhio
         .0
         .as_ref()
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidRhioServiceSnafu)?;
 
-    let resolved_product_image = rhio_service.resolve_product_image();
+    let resolved_product_image = rhio.resolve_product_image();
     let client = &ctx.client;
-    let rolegroup = rhio_service.server_rolegroup_ref();
+    let cluster_info = &client.kubernetes_cluster_info;
+    let rolegroup = rhio.server_rolegroup_ref();
     let recommended_labels = build_recommended_labels(
-        rhio_service,
+        rhio,
         RHIO_CONTROLLER_NAME,
         &resolved_product_image.app_version_label,
         &rolegroup.role,
         &rolegroup.role_group,
     );
-    let role_group_selector = Labels::role_group_selector(
-        rhio_service,
-        APP_NAME,
-        &rolegroup.role,
-        &rolegroup.role_group,
-    )
-    .context(BuildLabelSnafu)?;
+    let role_group_selector =
+        Labels::role_group_selector(rhio, APP_NAME, &rolegroup.role, &rolegroup.role_group)
+            .context(BuildLabelSnafu)?;
 
     let mut cluster_resources = ClusterResources::new(
         APP_NAME,
         OPERATOR_NAME,
         RHIO_CONTROLLER_NAME,
-        &rhio_service.object_ref(&()),
-        ClusterResourceApplyStrategy::from(&rhio_service.spec.cluster_operation),
+        &rhio.object_ref(&()),
+        ClusterResourceApplyStrategy::from(&rhio.spec.cluster_operation),
     )
     .context(CreateClusterResourcesSnafu)?;
 
     let (rbac_sa, rbac_rolebinding) = build_rbac_resources(
-        rhio_service,
+        rhio,
         APP_NAME,
         cluster_resources
             .get_required_labels()
@@ -126,14 +124,12 @@ pub async fn reconcile_rhio(
         .await
         .context(ApplyRoleBindingSnafu)?;
 
-    if rhio_service.spec.cluster_config.listener_class
-        != CurrentlySupportedListenerClasses::Disabled
-    {
+    if rhio.spec.cluster_config.listener_class != CurrentlySupportedListenerClasses::Disabled {
         cluster_resources
             .add(
                 client,
                 build_server_role_service(
-                    rhio_service,
+                    rhio,
                     recommended_labels.clone(),
                     role_group_selector.clone(),
                 )?,
@@ -142,7 +138,7 @@ pub async fn reconcile_rhio(
             .context(ApplyRoleServiceSnafu)?;
     }
 
-    let (rhio_configmap, config_map_hash) = make_builder(client.clone(), rhio_service)
+    let (rhio_configmap, config_map_hash) = make_builder(client.clone(), rhio)
         .await?
         .build(recommended_labels.clone())
         .context(BuildConfigMapSnafu)?;
@@ -153,7 +149,7 @@ pub async fn reconcile_rhio(
         .context(ApplyRhioConfigSnafu)?;
 
     let rhio_statefulset = build_statefulset(
-        rhio_service,
+        rhio,
         &resolved_product_image,
         &rolegroup,
         recommended_labels.clone(),
@@ -172,7 +168,7 @@ pub async fn reconcile_rhio(
     let mut ss_cond_builder = StatefulSetConditionBuilder::default();
     ss_cond_builder.add(statefulset);
 
-    let status = build_status(&mut requeue_duration, rhio_service, ss_cond_builder).await?;
+    let status = build_status(&mut requeue_duration, rhio, cluster_info, ss_cond_builder).await?;
 
     cluster_resources
         .delete_orphaned_resources(client)
@@ -180,7 +176,7 @@ pub async fn reconcile_rhio(
         .context(DeleteOrphansSnafu)?;
 
     client
-        .apply_patch_status(OPERATOR_NAME, rhio_service, &status)
+        .apply_patch_status(OPERATOR_NAME, rhio, &status)
         .await
         .context(ApplyStatusSnafu)?;
 
@@ -189,15 +185,13 @@ pub async fn reconcile_rhio(
 
 async fn build_status(
     requeue_duration: &mut Duration,
-    rhio_service: &RhioService,
+    rhio: &RhioService,
+    cluster_info: &KubernetesClusterInfo,
     ss_cond_builder: StatefulSetConditionBuilder,
 ) -> Result<RhioServiceStatus> {
-    let cluster_operation_cond_builder =
-        ClusterOperationsConditionBuilder::new(&rhio_service.spec.cluster_operation);
-    let endpoint = format!(
-        "http://{}.default.svc.cluster.local:8080/health", // TODO cluster domain
-        &rhio_service.metadata.name.clone().unwrap()
-    );
+    let endpoint = rhio
+        .service_endpoint(cluster_info)
+        .context(GetRhioServiceEndpointSnafu)?;
     let maybe_health_status = RhioApiClient::new(endpoint).health().await;
     let health_status = match maybe_health_status {
         Ok(health_status) => health_status,
@@ -206,11 +200,11 @@ async fn build_status(
             HealthStatus::default()
         }
     };
+
+    let cluster_operation_cond_builder =
+        ClusterOperationsConditionBuilder::new(&rhio.spec.cluster_operation);
     let status = RhioServiceStatus {
-        conditions: compute_conditions(
-            rhio_service,
-            &[&ss_cond_builder, &cluster_operation_cond_builder],
-        ),
+        conditions: compute_conditions(rhio, &[&ss_cond_builder, &cluster_operation_cond_builder]),
         status: health_status,
     };
     Ok(status)

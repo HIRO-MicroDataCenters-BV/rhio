@@ -153,6 +153,9 @@ pub enum Error {
     GetSecret {
         source: crate::configuration::error::Error,
     },
+
+    #[snafu(display("Unable to resolve rhio service endpoint"))]
+    GetRhioServiceEndpoint,
 }
 
 impl ReconcilerError for Error {

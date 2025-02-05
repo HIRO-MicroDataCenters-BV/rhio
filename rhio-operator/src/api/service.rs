@@ -13,6 +13,7 @@ use stackable_operator::role_utils::RoleGroupRef;
 use stackable_operator::status::condition::ClusterCondition;
 use stackable_operator::status::condition::HasStatusCondition;
 use stackable_operator::time::Duration;
+use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use strum::Display;
 
 use super::message_stream::ReplicatedMessageStream;
@@ -72,6 +73,14 @@ impl RhioService {
         self.spec
             .image
             .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)
+    }
+
+    pub fn service_endpoint(&self, cluster_info: &KubernetesClusterInfo) -> Option<String> {
+        self.metadata.name.as_ref().map(|name| {
+            let namespace = self.metadata.namespace.clone().unwrap_or("default".into());
+            let domain = &cluster_info.cluster_domain;
+            format!("http://{}.{}.svc.{}", name, namespace, domain)
+        })
     }
 }
 

@@ -33,7 +33,6 @@ use super::error::{InvalidContainerNameSnafu, ObjectMetaSnafu};
 
 pub const RHIO_CONFIG_DIR: &str = "/etc/rhio/config.yaml";
 pub const RHIO_CONFIG_VOLUME_NAME: &str = "config";
-pub const RHIO_LOG_DIR: &str = "/var/log/rhio";
 pub const STACKABLE_VENDOR_VALUE_HIRO: &str = "HIRO";
 pub const CONTAINER: &str = "rhio";
 pub const RHIO_POD_TEMPLATE_CONFIG_HASH: &str = "rhio.hiro.io/config-hash";
@@ -267,9 +266,70 @@ pub fn build_server_role_service(
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn test_build_statefulset() {}
+    use crate::rhio::{controller::RHIO_CONTROLLER_NAME, fixtures};
+
+    use super::*;
 
     #[test]
-    fn test_build_build_server_role_service() {}
+    fn test_build_statefulset() {
+        let rhio: RhioService =
+            serde_yaml::from_str(fixtures::statefulset::RHIO).expect("illegal rhio.yaml");
+        let expected: StatefulSet =
+            serde_yaml::from_str(fixtures::statefulset::STS).expect("illegal statefulset.yaml");
+
+        let resolved_product_image = rhio.resolve_product_image();
+        let rolegroup = rhio.server_rolegroup_ref();
+        let recommended_labels = build_recommended_labels(
+            &rhio,
+            RHIO_CONTROLLER_NAME,
+            &resolved_product_image.app_version_label,
+            &rolegroup.role,
+            &rolegroup.role_group,
+        );
+        let role_group_selector =
+            Labels::role_group_selector(&rhio, APP_NAME, &rolegroup.role, &rolegroup.role_group)
+                .expect("role group selector");
+
+        let service_account = ServiceAccount::default();
+        let config_hash = "test_hash".to_string();
+
+        let actual = build_statefulset(
+            &rhio,
+            &resolved_product_image,
+            &rolegroup,
+            recommended_labels,
+            role_group_selector,
+            &service_account,
+            config_hash,
+        )
+        .expect("failed to build statefulset");
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_build_server_role_service() {
+        let rhio: RhioService =
+            serde_yaml::from_str(fixtures::service::RHIO).expect("illegal rhio.yaml");
+        let expected: Service =
+            serde_yaml::from_str(fixtures::service::SVC).expect("illegal service.yaml");
+
+        let resolved_product_image = rhio.resolve_product_image();
+        let rolegroup = rhio.server_rolegroup_ref();
+        let recommended_labels = build_recommended_labels(
+            &rhio,
+            RHIO_CONTROLLER_NAME,
+            &resolved_product_image.app_version_label,
+            &rolegroup.role,
+            &rolegroup.role_group,
+        );
+        let role_group_selector =
+            Labels::role_group_selector(&rhio, APP_NAME, &rolegroup.role, &rolegroup.role_group)
+                .expect("role group selector");
+
+        let actual = build_server_role_service(&rhio, recommended_labels, role_group_selector)
+            .expect("unable to create service");
+
+        assert_eq!(expected, actual);
+    }
 }
