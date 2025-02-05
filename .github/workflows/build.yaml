@@ -32,11 +32,11 @@ jobs:
             target: aarch64-apple-darwin
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
-        # exclude:
-        #   - config:
-        #       os: macos-latest
-        #       target: aarch64-apple-darwin
-        #     isMain: false
+        exclude:
+          - config:
+              os: macos-latest
+              target: aarch64-apple-darwin
+            isMain: false
 
     steps:
       - name: Checkout repository
@@ -45,6 +45,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
+          # disabled caching in the setup-rust because aarch64-apple-darwin build takes around 1 hour to start
           cache: false
           channel: ${{ env.RUST_TOOLCHAIN }}
 
@@ -114,11 +115,10 @@ jobs:
         isMain:
           - ${{ github.ref == 'refs/heads/main' }}
 
-        # exclude:
-
-          # # ARM build is very slow, we build only for main branch
-          # - platform: "linux/arm64"
-          #   isMain: false
+        exclude:
+          # ARM build is very slow, we build only for main branch
+          - platform: "linux/arm64"
+            isMain: false
 
     name: Docker Build / ${{ matrix.platform }}
     runs-on: ubuntu-22.04
