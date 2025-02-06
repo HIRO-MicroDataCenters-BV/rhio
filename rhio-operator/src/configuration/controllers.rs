@@ -1,3 +1,4 @@
+use super::error::{Error, GetRhioServiceEndpointSnafu, MultipleServicesInTheSameNamespaceSnafu};
 use crate::configuration::error::Result;
 use crate::{
     api::{
@@ -9,12 +10,16 @@ use crate::{
     },
     configuration::error::{
         ApplyStatusSnafu, GetRhioServiceSnafu, InvalidReplicatedResourceSnafu,
-        ObjectHasNoNamespaceSnafu, RhioIsAbsentSnafu, RhioServiceHasNoStatusSnafu,
+        ObjectHasNoNamespaceSnafu, RhioIsAbsentSnafu,
     },
     rhio::controller::OPERATOR_NAME,
 };
 use futures::StreamExt;
+use rhio_http_api::api::RhioApi;
+use rhio_http_api::client::RhioApiClient;
+use rhio_http_api::status::HealthStatus;
 use snafu::{OptionExt, ResultExt};
+use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
     client::GetApi,
@@ -24,15 +29,14 @@ use stackable_operator::{
         runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
     },
-    time::Duration,
 };
 use stackable_operator::{
     k8s_openapi::api::core::v1::ConfigMap, kube::runtime::watcher,
     logging::controller::report_controller_reconciled,
 };
 use std::sync::Arc;
-
-use super::error::{Error, MultipleServicesInTheSameNamespaceSnafu};
+use std::time::Duration;
+use tracing::warn;
 
 pub const RMS_CONTROLLER_NAME: &str = "rms";
 pub const RMSS_CONTROLLER_NAME: &str = "rmss";
@@ -129,6 +133,7 @@ where
         .context(InvalidReplicatedResourceSnafu)?;
 
     let client = &ctx.client;
+    let cluster_info = &client.kubernetes_cluster_info;
 
     let services = client
         .list::<RhioService>(
@@ -147,17 +152,20 @@ where
     fail_if_multiple_services(&services)?;
 
     let rhio = services.first().context(RhioIsAbsentSnafu)?;
-    let rhio_status = rhio.status.as_ref().context(RhioServiceHasNoStatusSnafu {
-        rhio: ObjectRef::from(rhio),
-    })?;
-    let config_object_status = get_status(rhio_status, config_object);
+
+    let (rhio_status, maybe_requeue_duration) = get_rhio_status(rhio, cluster_info).await?;
+    let config_object_status = get_status(&rhio_status, config_object);
 
     client
         .apply_patch_status(OPERATOR_NAME, config_object, &config_object_status)
         .await
         .context(ApplyStatusSnafu)?;
 
-    Ok(Action::requeue(*RECONCILIATION_INTERVAL_DEFAULT))
+    if let Some(requeue_duration) = maybe_requeue_duration {
+        Ok(Action::requeue(requeue_duration))
+    } else {
+        Ok(Action::requeue(RECONCILIATION_INTERVAL_DEFAULT))
+    }
 }
 
 fn fail_if_multiple_services(services: &[RhioService]) -> Result<()> {
@@ -170,13 +178,35 @@ fn fail_if_multiple_services(services: &[RhioService]) -> Result<()> {
     Ok(())
 }
 
+async fn get_rhio_status(
+    rhio: &RhioService,
+    cluster_info: &KubernetesClusterInfo,
+) -> Result<(RhioServiceStatus, Option<Duration>)> {
+    let endpoint = rhio
+        .service_endpoint(cluster_info)
+        .context(GetRhioServiceEndpointSnafu)?;
+    let maybe_health_status = RhioApiClient::new(endpoint).health().await;
+    let (status, requeue_duration) = match maybe_health_status {
+        Ok(health_status) => (health_status, None),
+        Err(e) => {
+            warn!("Cannot fetch rhio service status {}", e);
+            (HealthStatus::from(e), Some(RECONCILIATION_INTERVAL_ERROR))
+        }
+    };
+    let rhio_status = RhioServiceStatus {
+        conditions: vec![],
+        status,
+    };
+    Ok((rhio_status, requeue_duration))
+}
+
 pub fn error_policy<R>(_obj: Arc<DeserializeGuard<R>>, error: &Error, _ctx: Arc<Ctx>) -> Action
 where
     R: Clone + std::fmt::Debug + serde::de::DeserializeOwned + Resource<DynamicType = ()> + GetApi,
 {
     match error {
         Error::InvalidReplicatedResource { .. } => Action::await_change(),
-        _ => Action::requeue(*RECONCILIATION_INTERVAL_ERROR),
+        _ => Action::requeue(RECONCILIATION_INTERVAL_ERROR),
     }
 }
 

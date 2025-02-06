@@ -33,9 +33,6 @@ pub enum Error {
     #[snafu(display("failed to get rhio services"))]
     RhioIsAbsent,
 
-    #[snafu(display("Rhio Service has no status"))]
-    RhioServiceHasNoStatus { rhio: ObjectRef<RhioService> },
-
     #[snafu(display("failed to update status"))]
     ApplyStatus {
         source: stackable_operator::client::Error,
@@ -92,6 +89,9 @@ pub enum Error {
 
     #[snafu(display("multiple rhio services in the same namespace"))]
     MultipleServicesInTheSameNamespace { rhio: ObjectRef<RhioService> },
+
+    #[snafu(display("Unable to resolve rhio service endpoint"))]
+    GetRhioServiceEndpoint,
 }
 
 impl ReconcilerError for Error {
@@ -106,7 +106,6 @@ impl ReconcilerError for Error {
             Error::ObjectHasNoNamespace => None,
             Error::GetRhioService { .. } => None,
             Error::RhioIsAbsent => None,
-            Error::RhioServiceHasNoStatus { rhio } => Some(rhio.clone().erase()),
             Error::MultipleServicesInTheSameNamespace { rhio } => Some(rhio.clone().erase()),
             Error::ApplyStatus { .. } => None,
             Error::RhioConfigurationSerialization { .. } => None,
@@ -121,6 +120,7 @@ impl ReconcilerError for Error {
             Error::SecretHasNoStringData { secret } => Some(secret.clone().erase()),
             Error::WriteToStdout { .. } => None,
             Error::YamlSerialization { .. } => None,
+            Error::GetRhioServiceEndpoint => None,
         }
     }
 }
