@@ -22,6 +22,9 @@ serviceAccount:
 labels:
   stackable.tech/vendor: Hiro
 
+# stackable-operator framework depends on listeners crds.
+# We are not using Listeners (at least at the moment), but we have to deploy crds so that the framework functioning as expected.
+# This is the switch to enable/disable Listeners crds.
 enableListeners: true
 
 podAnnotations: {}
