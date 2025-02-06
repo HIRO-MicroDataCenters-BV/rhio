@@ -1,0 +1,10 @@
+apiVersion: rhio.hiro.io/v1
+kind: ReplicatedMessageStreamSubscription
+metadata:
+  name: test-stream-subscription
+spec:
+  publicKey: b2030d8df6c0a8bc53513e1c1746446ff00424e39f0ba25441f76b3d68752b8c
+  subscriptions:
+    - subject: test.subject
+      stream: test-stream
+  
