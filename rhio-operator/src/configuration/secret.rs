@@ -1,21 +1,22 @@
-use crate::configuration::error::GetSecretSnafu;
-use crate::configuration::error::Result;
-use serde_json::Value;
-use snafu::{OptionExt, ResultExt};
-use stackable_operator::builder::meta::ObjectMetaBuilder;
-use stackable_operator::client::Client;
-use stackable_operator::kube::runtime::reflector::Lookup;
-use stackable_operator::kube::runtime::reflector::ObjectRef;
-use std::collections::BTreeMap;
-use std::io::Write;
-
-use super::error::SecretHasNoStringDataSnafu;
+use super::error::SecretHasNoDataSnafu;
+use super::error::StringConversionSnafu;
 use super::error::WriteToStdoutSnafu;
 use super::error::YamlSerializationSnafu;
 use super::error::{
     ObjectHasNoNameSnafu, ObjectHasNoNamespaceSnafu, SecretDeserializationSnafu,
     SecretSerializationSnafu,
 };
+use crate::configuration::error::GetSecretSnafu;
+use crate::configuration::error::Result;
+use serde_json::Value;
+use snafu::{OptionExt, ResultExt};
+use stackable_operator::builder::meta::ObjectMetaBuilder;
+use stackable_operator::client::Client;
+use stackable_operator::k8s_openapi::ByteString;
+use stackable_operator::kube::runtime::reflector::Lookup;
+use stackable_operator::kube::runtime::reflector::ObjectRef;
+use std::collections::BTreeMap;
+use std::io::Write;
 
 /// A struct representing a Kubernetes Secret with generic data type `T`.
 ///
@@ -94,19 +95,22 @@ where
         Ok(())
     }
 
-    fn to_data(value: &T) -> Result<BTreeMap<String, String>> {
+    fn to_data(value: &T) -> Result<BTreeMap<String, ByteString>> {
         let json_value = serde_json::to_value(value).context(SecretSerializationSnafu)?;
 
         let result = match json_value {
             Value::Object(map) => map
                 .into_iter()
-                .flat_map(|(k, v)| match v {
-                    Value::String(s) => Some((k, s.to_string())),
-                    Value::Bool(b) => Some((k, b.to_string())),
-                    Value::Number(n) => Some((k, n.to_string())),
-                    _ => None,
+                .flat_map(|(k, v)| {
+                    let maybe_value = match v {
+                        Value::String(s) => Some(s),
+                        Value::Bool(b) => Some(b.to_string()),
+                        Value::Number(n) => Some(n.to_string()),
+                        _ => None,
+                    };
+                    maybe_value.map(|v| (k, ByteString(v.into_bytes())))
                 })
-                .collect::<BTreeMap<String, String>>(),
+                .collect::<BTreeMap<String, ByteString>>(),
             _ => BTreeMap::new(),
         };
         Ok(result)
@@ -114,7 +118,7 @@ where
 
     fn build_k8s_secret(
         &self,
-        data: BTreeMap<String, String>,
+        data: BTreeMap<String, ByteString>,
     ) -> stackable_operator::k8s_openapi::api::core::v1::Secret {
         stackable_operator::k8s_openapi::api::core::v1::Secret {
             immutable: Some(true),
@@ -122,7 +126,7 @@ where
                 .name(&self.name)
                 .namespace_opt(Some(self.namespace.clone()))
                 .build(),
-            string_data: Some(data),
+            data: Some(data),
             ..stackable_operator::k8s_openapi::api::core::v1::Secret::default()
         }
     }
@@ -137,8 +141,8 @@ where
             .to_string();
         let obj_ref = ObjectRef::from_obj(&k8s_secret);
         let data = k8s_secret
-            .string_data
-            .context(SecretHasNoStringDataSnafu { secret: obj_ref })?;
+            .data
+            .context(SecretHasNoDataSnafu { secret: obj_ref })?;
         let value = Secret::from_data(data)?;
         Ok(Secret {
             value,
@@ -147,11 +151,14 @@ where
         })
     }
 
-    fn from_data(data: BTreeMap<String, String>) -> Result<T> {
+    fn from_data(data: BTreeMap<String, ByteString>) -> Result<T> {
         let value_data = data
             .into_iter()
-            .map(|(k, v)| (k, Value::String(v)))
-            .collect::<serde_json::Map<String, Value>>();
+            .map(|(k, v)| {
+                let value = String::from_utf8(v.0).context(StringConversionSnafu)?;
+                Ok((k, Value::String(value)))
+            })
+            .collect::<Result<serde_json::Map<String, Value>>>()?;
         let json_value = Value::Object(value_data);
         serde_json::from_value(json_value).context(SecretDeserializationSnafu)
     }
@@ -219,6 +226,7 @@ mod tests {
             + std::fmt::Debug,
     {
         let serialized = serialize(&value);
+        println!("{}", serialized);
         let deserialized_value = deserialize::<T>(serialized);
 
         assert_eq!(deserialized_value, value);

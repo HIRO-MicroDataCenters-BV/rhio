@@ -5,6 +5,7 @@ use stackable_operator::{
     kube::{api::DynamicObject, core::error_boundary, runtime::reflector::ObjectRef},
     logging::controller::ReconcilerError,
 };
+use std::string::FromUtf8Error;
 use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::api::service::RhioService;
@@ -50,8 +51,11 @@ pub enum Error {
     #[snafu(display("failed to serialize secret"))]
     YamlSerialization { source: serde_yaml::Error },
 
+    #[snafu(display("Unable to make string from bytes"))]
+    StringConversion { source: FromUtf8Error },
+
     #[snafu(display("secret has no string data"))]
-    SecretHasNoStringData { secret: ObjectRef<Secret> },
+    SecretHasNoData { secret: ObjectRef<Secret> },
 
     #[snafu(display("object {} is missing metadata to build owner reference", rhio))]
     ObjectMissingMetadataForOwnerRef {
@@ -117,10 +121,11 @@ impl ReconcilerError for Error {
             Error::GetSecret { .. } => None,
             Error::SecretDeserialization { .. } => None,
             Error::SecretSerialization { .. } => None,
-            Error::SecretHasNoStringData { secret } => Some(secret.clone().erase()),
+            Error::SecretHasNoData { secret } => Some(secret.clone().erase()),
             Error::WriteToStdout { .. } => None,
             Error::YamlSerialization { .. } => None,
             Error::GetRhioServiceEndpoint => None,
+            Error::StringConversion { .. } => None,
         }
     }
 }
