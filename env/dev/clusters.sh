@@ -1,5 +1,31 @@
 #!/bin/bash
-
+#
+# This script manages the creation, deletion, and configuration of Kubernetes clusters using kind (Kubernetes IN Docker).
+# It sets up multiple clusters with Calico for inter-cluster networking and configures BGP for routing between clusters.
+#
+# Usage:
+#   ./clusters.sh {create|delete|cloudprovider}
+#
+# Commands:
+#   create         - Creates the clusters, installs and configures Calico, and sets up BGP and DNS.
+#   delete         - Deletes all the clusters.
+#   cloudprovider  - Runs the cloud-provider-kind.
+#
+# Prerequisites:
+#   - jq
+#   - kind
+#   - kubectl
+#   - cloud-provider-kind
+#
+# Environment Variables:
+#   CLUSTERS        - Array of cluster names.
+#   POD_SUBNETS     - Array of pod subnets for each cluster.
+#   SVC_SUBNETS     - Array of service subnets for each cluster.
+#   AS_NUMBERS      - Array of BGP Autonomous System (AS) numbers for each cluster.
+#   DNS_DOMAINS     - Array of DNS domains for each cluster.
+#   DEFAULT_DNS_IPS - Array of default DNS IPs for each cluster.
+#   NODES           - Array of node roles for each cluster.
+#
 CLUSTERS=("kind-cluster1" "kind-cluster2")
 POD_SUBNETS=("192.168.0.0" "192.169.0.0" "192.170.0.0")
 SVC_SUBNETS=("10.96.0.0" "10.97.0.0" "10.98.0.0")
@@ -8,6 +34,47 @@ DNS_DOMAINS=("cluster1.local" "cluster2.local" "cluster3.local")
 DEFAULT_DNS_IPS=("10.96.0.10" "10.97.0.10" "10.98.0.10")
 
 NODES=("control-plane" "worker" "worker2")
+
+usage() {
+    echo "Usage: $0 {create|delete|cloudprovider}"
+    exit 1
+}
+
+main () {
+  if [ $# -ne 1 ]; then
+      usage
+  fi
+
+  case "$1" in
+      create)
+          create_clusters
+          ;;
+      delete)
+          delete_clusters
+          ;;
+      cloudprovider)
+          run_cloud_provider_kind
+          ;;
+      *)
+          echo "Error: Invalid command '$1'"
+          usage
+          ;;
+  esac
+}
+
+create_clusters() {
+  validate
+  create_clusters_all
+  merge_kubeconfig
+  install_calico_all
+  configure_calico_all
+  wait_pods_ready_all
+  configure_dns_all
+  configure_bgp_all
+  configure_bgp_peers_all
+
+  echo "Clusters with Calico with inter-cluster networking are now set up!"
+}
 
 validate() {
   if ! command -v jq &> /dev/null; then
@@ -20,9 +87,20 @@ validate() {
     exit 1
   fi
 
+  if ! command -v kubectl &> /dev/null; then
+    echo "kubectl is not installed. Please install it before running this script."
+    exit 1
+  fi
+
+  if ! command -v cloud-provider-kind &> /dev/null; then
+    echo "cloud-provider-kind is not installed. Please install it before running this script."
+    exit 1
+  fi
+
+  mkdir -p target
 }
 
-create_clusters() {
+create_clusters_all() {
   echo "### Creating clusters... ###"
   
   for i in "${!CLUSTERS[@]}"; do
@@ -66,7 +144,7 @@ EOF
 }
 
 merge_kubeconfig() {
-  # Merge kubeconfig for all clusters
+
   echo "### Merging kubeconfig for all clusters... ###"
   KUBECONFIG=""
   for cluster in "${CLUSTERS[@]}"; do
@@ -95,9 +173,8 @@ install_calico() {
   local cluster=$1
 
   echo "Installing Calico on $cluster..."    
-  kubectl config use-context kind-${cluster}
-  kubectl create ns calico-system
-  kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/tigera-operator.yaml
+  kubectl --context kind-${cluster} create ns calico-system
+  kubectl --context kind-${cluster} create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/tigera-operator.yaml
 }
 
 configure_calico_all() {
@@ -116,8 +193,7 @@ configure_calico() {
   local pod_subnet=$2
   echo "Configuring Calico on $cluster..."    
 
-  kubectl config use-context kind-${cluster}
-  kubectl create -f -<<EOF
+  kubectl --context kind-${cluster} create -f -<<EOF
 apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
@@ -144,8 +220,7 @@ wait_pods_ready_all() {
   for i in "${!CLUSTERS[@]}"; do
     cluster="${CLUSTERS[$i]}"
     echo "### Waiting till cluster is up $cluster... ###"    
-    kubectl config use-context kind-${cluster}
-    kubectl wait --for=condition=Ready pods --all --timeout=300s -A
+    kubectl --context kind-${cluster} wait --for=condition=Ready pods --all --timeout=300s -A
   done
   echo ""
 }
@@ -175,12 +250,11 @@ configure_dns() {
   local domain=$2
   local dns_default_ip=$3
 
-  echo "Configuring dns domain '${domain}' resolvable via '${dns_default_ip}' on cluster $cluster..."    
-  kubectl config use-context kind-${cluster}
-  kubectl get cm coredns -n kube-system -o json | \
+  echo "Configuring dns domain '${domain}' resolvable via '${dns_default_ip}' on cluster $cluster..."
+  kubectl --context kind-${cluster} get cm coredns -n kube-system -o json | \
     jq '.data.Corefile += "\n'${domain}':53 {\n	forward . '${dns_default_ip}'\n}\n"' | \
-    kubectl apply -f -
-  kubectl rollout restart deployment coredns -n kube-system
+    kubectl --context kind-${cluster} apply -f -
+  kubectl --context kind-${cluster} rollout restart deployment coredns -n kube-system
 }
 
 configure_bgp_all() {
@@ -210,8 +284,7 @@ create_bgp_configuration() {
   local svc_subnet=$3
 
   echo "Setting up BGP configuration on $cluster..."    
-  kubectl config use-context kind-${cluster}
-  kubectl create -f -<<EOF
+  kubectl --context kind-${cluster} create -f -<<EOF
 apiVersion: projectcalico.org/v3
 kind: BGPConfiguration
 metadata:
@@ -229,8 +302,7 @@ create_calico_node_status() {
   local node=$2
 
   echo "Creating calico node status on $cluster..."    
-  kubectl config use-context kind-${cluster}
-  kubectl create -f -<<EOF
+  kubectl --context kind-${cluster} create -f -<<EOF
 apiVersion: projectcalico.org/v3
 kind: CalicoNodeStatus
 metadata:
@@ -270,14 +342,13 @@ configure_bgp_peers_all() {
 }
 
 configure_bgp_peer() {
-  local target_cluster=$1
+  local cluster=$1
   local node=$2
   local node_ip=$3
   local as_number=$4
 
-  echo "Setting up BGP peer $node on target cluster $target_cluster..."    
-  kubectl config use-context kind-${target_cluster}
-  kubectl create  -f -<<EOF
+  echo "Setting up BGP peer $node on target cluster $cluster..."    
+  kubectl --context kind-${cluster} create  -f -<<EOF
 apiVersion: projectcalico.org/v3
 kind: BGPPeer
 metadata:
@@ -288,18 +359,24 @@ spec:
 EOF
 }
 
-main() {
+delete_clusters() {
   validate
-  create_clusters
-  merge_kubeconfig
-  install_calico_all
-  configure_calico_all
-  wait_pods_ready_all
-  configure_dns_all
-  configure_bgp_all
-  configure_bgp_peers_all
-
-  echo "Calico with inter-cluster networking is now set up!"
+  delete_clusters_all
 }
 
-main
+delete_clusters_all() {
+  echo "### Deleting Clusters ..."
+  for i in "${!CLUSTERS[@]}"; do
+      cluster="${CLUSTERS[$i]}"
+      echo "### Deleting Cluster ${cluster} ..."
+      kind delete clusters ${cluster}
+  done
+  echo ""
+}
+
+run_cloud_provider_kind() {
+  echo "### Running cloud provider kind"
+  sudo cloud-provider-kind
+}
+
+main "$@"

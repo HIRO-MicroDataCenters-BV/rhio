@@ -4,4 +4,5 @@ resources:
   - nats.crds.yml
   - nats.nack.yaml
   - nats.nats.yaml
+  - nats.balancer.yaml
   - nats.stream.yaml

@@ -58,20 +58,10 @@ spec:
         ingress:
           api:
             enabled: false
-            ingressClassName: "nginx"
-            annotations:
-              nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-            host: minio-tenant.cluster1.local
-            path: /
-            pathType: Prefix
           console:
             enabled: false
-            ingressClassName: "nginx"
-            annotations:
-              nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-            host: minio-tenant-console.cluster1.local
-            path: /
-            pathType: Prefix
+        exposeServices:
+          console: true
   destination:
     namespace: minio
     server: https://kubernetes.default.svc

@@ -1,0 +1,29 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats-service-external
+  namespace: nats
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/component: nats
+    app.kubernetes.io/instance: nats-jetstream
+    app.kubernetes.io/name: nats
+  ports:
+    - appProtocol: tcp
+      name: nats
+      port: 4222
+      protocol: TCP
+      targetPort: nats
+    - appProtocol: http
+      name: websocket
+      port: 8080
+      protocol: TCP
+      targetPort: websocket
+    - appProtocol: tcp
+      name: mqtt
+      port: 1883
+      protocol: TCP
+      targetPort: mqtt
