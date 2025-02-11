@@ -4,3 +4,7 @@ description: peer-to-peer message stream and blob storage solution
 type: application
 version: "0.0.0"
 appVersion: "0.0.0"
+home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+maintainers:
+  - name: HIRO-Microdatacenters
+    url: https://hiro-microdatacenters.nl

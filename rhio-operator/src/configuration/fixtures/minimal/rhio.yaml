@@ -1,0 +1,23 @@
+apiVersion: rhio.hiro.io/v1
+kind: RhioService
+metadata:
+    name: test-service
+    uid: 1
+spec:
+    clusterConfig:
+        listenerClass: cluster-internal
+        gracefulShutdownTimeout: 1s
+
+    image:
+        custom: ghcr.io/hiro-microdatacenters-bv/rhio-dev:1.0.1
+        productVersion: 1.0.1
+        pullPolicy: IfNotPresent      
+
+    configuration:
+        networkId: test
+        privateKeySecret: secret-key
+        nodes: []
+        s3: null
+        nats:
+            endpoint: nats://nats-jetstream.dkg-engine.svc.cluster.local:4222
+            credentialsSecret: null

@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: test-service
+    app.kubernetes.io/managed-by: rhio.hiro.io_rhioservice
+    app.kubernetes.io/name: rhio
+    app.kubernetes.io/role-group: default
+    app.kubernetes.io/version: 1.0.1-1.0.1
+    stackable.tech/vendor: HIRO
+  name: test-service-server-default
+  ownerReferences:
+  - apiVersion: rhio.hiro.io/v1
+    controller: true
+    kind: RhioService
+    name: test-service
+    uid: '1'
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/instance: test-service
+      app.kubernetes.io/name: rhio
+      app.kubernetes.io/role-group: default
+  serviceName: test-service-server-default
+  template:
+    metadata:
+      annotations:
+        rhio.hiro.io/config-hash: test_hash
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: test-service
+        app.kubernetes.io/managed-by: rhio.hiro.io_rhioservice
+        app.kubernetes.io/name: rhio
+        app.kubernetes.io/role-group: default
+        app.kubernetes.io/version: 1.0.1-1.0.1
+        stackable.tech/vendor: HIRO
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - /usr/local/bin/rhio
+        - -c
+        - /etc/rhio/config.yaml
+        env:
+        - name: PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              key: secretKey
+              name: rhio_private_key_secret
+        image: ghcr.io/hiro-microdatacenters-bv/rhio-dev:1.0.1
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        name: rhio
+        ports:
+        - containerPort: 8080
+          name: health
+          protocol: TCP
+        - containerPort: 9102
+          name: rhio
+          protocol: UDP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: '1'
+            memory: 128Mi
+          requests:
+            cpu: 250m
+            memory: 128Mi
+        volumeMounts:
+        - mountPath: /etc/rhio/config.yaml
+          name: config
+          subPath: config.yaml
+      enableServiceLinks: false
+      serviceAccountName: ''
+      terminationGracePeriodSeconds: 1
+      volumes:
+      - configMap:
+          name: test-service
+        name: config

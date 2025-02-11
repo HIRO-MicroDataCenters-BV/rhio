@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rhio::context_builder::ContextBuilder;
+use rhio::{built_info, context_builder::ContextBuilder};
 use tracing::info;
 
 fn main() -> Result<()> {
@@ -33,5 +33,31 @@ fn log_hello_rhio() {
     "#
     .split("\n")
     .for_each(|line| info!("{}", line));
+    print_startup_string(
+        env!("CARGO_PKG_DESCRIPTION"),
+        env!("CARGO_PKG_VERSION"),
+        built_info::GIT_VERSION,
+        built_info::TARGET,
+        built_info::BUILT_TIME_UTC,
+        built_info::RUSTC_VERSION,
+    );
     info!("");
+}
+
+pub fn print_startup_string(
+    pkg_description: &str,
+    pkg_version: &str,
+    git_version: Option<&str>,
+    target: &str,
+    built_time: &str,
+    rustc_version: &str,
+) {
+    let git = match git_version {
+        None => "".to_string(),
+        Some(git) => format!(" (Git information: {git})"),
+    };
+    info!("Starting {pkg_description}");
+    info!(
+        "This is version {pkg_version}{git}, built for {target} by {rustc_version} at {built_time}",
+    )
 }

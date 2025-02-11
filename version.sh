@@ -4,7 +4,6 @@ set -o errexit
 set -o nounset
 
 ROOT="${GITHUB_WORKSPACE:?Github workspace is not set.}"
-CHART_NAME="rhio"
 
 VERSION_APP_PATH="${ROOT}/VERSION"
 VERSION_CHART_PATH="${ROOT}/VERSION_CHART"
@@ -103,17 +102,24 @@ make_docker_images_with_tags() {
 }
 
 patch_versions_in_project_files() {
-  DOCKER_IMAGE_NAME="$1"
-
-  CHART_PATH="${ROOT}/charts/${CHART_NAME}"
-
   VERSION_APP=$(cat "${VERSION_APP_PATH}")
-  DOCKER_IMAGE_TAG=$(rev "${VERSION_DOCKER_PATH}" | cut -d ',' -f 1 | rev)
-  VERSION_CHART=$(cat "${VERSION_CHART_PATH}")
 
   sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/rhio/Cargo.toml"
   sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/rhio-core/Cargo.toml"
   sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/rhio-blobs/Cargo.toml"
+  sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/rhio-config/Cargo.toml"
+  sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/rhio-operator/Cargo.toml"
+  sed -i "s#^version = \"[0-9a-zA-Z\.-_\+]*\"#version = \"$VERSION_APP\"#" "${ROOT}/s3-server/Cargo.toml"
+}
+
+patch_versions_in_helm_chart() {
+  DOCKER_IMAGE_NAME="$1"
+  CHART_NAME="$2"
+
+  CHART_PATH="${ROOT}/charts/${CHART_NAME}"
+
+  DOCKER_IMAGE_TAG=$(rev "${VERSION_DOCKER_PATH}" | cut -d ',' -f 1 | rev)
+  VERSION_CHART=$(cat "${VERSION_CHART_PATH}")
 
   sed -i "s#repository: \"\"#repository: \"$DOCKER_IMAGE_NAME\"#" "${CHART_PATH}/values.yaml"
   sed -i "s#tag: \"\"#tag: \"$DOCKER_IMAGE_TAG\"#" "${CHART_PATH}/values.yaml"
@@ -128,6 +134,8 @@ main() {
   make_version "$GIT_SHA"
   make_docker_images_with_tags "$DOCKER_IMAGE_NAME"
   patch_versions_in_project_files "$DOCKER_IMAGE_NAME"
+  patch_versions_in_helm_chart "$DOCKER_IMAGE_NAME" "rhio"
+  patch_versions_in_helm_chart "$DOCKER_IMAGE_NAME" "rhio-operator"
 }
 
 main "$@"

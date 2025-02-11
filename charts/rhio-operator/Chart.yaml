@@ -1,0 +1,10 @@
+---
+apiVersion: v2
+name: rhio-operator
+version: "0.0.0"
+appVersion: "0.0.0"
+description: The Stackable Operator for Rhio Service
+home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+maintainers:
+  - name: Hiro
+    url: https://hiro-microdatacenters.nl/

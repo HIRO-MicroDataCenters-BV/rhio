@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
@@ -10,7 +10,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::error;
+use tracing::{error, warn};
 
 use crate::blobs::watcher::S3Event;
 use crate::blobs::Blobs;
@@ -93,8 +93,18 @@ impl Node {
             // Resolve FQDN strings into IP addresses.
             let mut direct_addresses = Vec::new();
             for addr in &node.direct_addresses {
-                for resolved in tokio::net::lookup_host(addr).await? {
-                    direct_addresses.push(resolved);
+                let maybe_peers = tokio::net::lookup_host(addr)
+                    .await
+                    .context(format!("Unable to lookup host {:?}, skipping", addr));
+                match maybe_peers {
+                    Ok(peers) => {
+                        for resolved in peers {
+                            direct_addresses.push(resolved);
+                        }
+                    }
+                    Err(err) => {
+                        warn!("{:?}", err);
+                    }
                 }
             }
             network_config

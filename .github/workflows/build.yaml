@@ -75,6 +75,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Rust toolchain
+        uses: moonrepo/setup-rust@v1
+        with:
+          cache: false
+          channel: ${{ env.RUST_TOOLCHAIN }}
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
+
       - name: Install Helm
         uses: azure/setup-helm@v3
 
@@ -91,6 +100,11 @@ jobs:
         run: |
           git config user.name "$GITHUB_ACTOR"
           git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Generate CRDs
+        env:
+          RUST_LOG: debug
+        run: cargo run --bin rhio-operator crd > ${{ github.workspace }}/charts/rhio-operator/crds/crds.yaml          
 
       - name: Create a github release
         if: ${{ github.ref == 'refs/heads/main' }}

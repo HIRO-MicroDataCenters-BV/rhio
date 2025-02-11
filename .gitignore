@@ -3,4 +3,6 @@ target-docker
 ./blobs
 config*.yaml
 !config.example.yaml
+!configmap.yaml
 private-key*
+!private-key-secret.yaml

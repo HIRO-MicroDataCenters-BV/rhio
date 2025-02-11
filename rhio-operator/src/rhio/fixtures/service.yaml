@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: test-service
+    app.kubernetes.io/managed-by: rhio.hiro.io_rhioservice
+    app.kubernetes.io/name: rhio
+    app.kubernetes.io/role-group: default
+    app.kubernetes.io/version: 1.0.1-1.0.1
+    stackable.tech/vendor: Stackable
+  name: test-service
+  ownerReferences:
+  - apiVersion: rhio.hiro.io/v1
+    controller: true
+    kind: RhioService
+    name: test-service
+    uid: '1'
+spec:
+  ports:
+  - name: rhio
+    port: 9102
+    protocol: UDP
+  - name: health
+    port: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: test-service
+    app.kubernetes.io/name: rhio
+    app.kubernetes.io/role-group: default
+  type: ClusterIP

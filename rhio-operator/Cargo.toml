@@ -1,0 +1,45 @@
+[package]
+name = "rhio-operator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "rhio-operator"
+
+[[bin]]
+doc = false
+name = "rhio-operator"
+path = "src/main.rs"
+
+[dependencies]
+# stackable operator framework
+stackable-operator.workspace = true
+product-config.workspace = true
+
+# rhio configuration generation
+rhio-config.workspace = true
+
+# due to rhio-config
+rhio-core.workspace = true
+rust-s3.workspace = true
+p2panda-core.workspace = true
+anyhow.workspace = true
+
+rhio-http-api.workspace = true
+
+clap.workspace = true
+futures.workspace = true
+tokio.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+snafu.workspace = true
+strum.workspace = true
+rustls.workspace = true
+
+[dev-dependencies]
+
+[build-dependencies]
+built.workspace = true

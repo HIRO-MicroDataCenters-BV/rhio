@@ -1,0 +1,59 @@
+# Default values for rhio-operator.
+---
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Provide additional labels which get attached to all deployed resources
+labels:
+  stackable.tech/vendor: Hiro
+
+# stackable-operator framework depends on listeners crds.
+# We are not using Listeners (at least at the moment), but we have to deploy crds so that the framework functioning as expected.
+# This is the switch to enable/disable Listeners crds.
+enableListeners: true
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# When running on a non-default Kubernetes cluster domain, the cluster domain can be configured here.
+# See the https://docs.stackable.tech/home/stable/guides/kubernetes-cluster-domain guide for details.
+# kubernetesClusterDomain: my-cluster.local

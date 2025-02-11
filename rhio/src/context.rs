@@ -194,7 +194,6 @@ impl Context {
             .iter()
             .map(|addr| addr.to_string())
             .collect();
-        info!("‣ version: {}", env!("CARGO_PKG_VERSION").to_string());
         info!("‣ network id:");
         info!("  - {}", self.config.node.network_id);
         info!("‣ node public key:");

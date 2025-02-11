@@ -14,6 +14,7 @@ name = "rhio"
 
 [[bin]]
 name = "rhio"
+path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
@@ -22,7 +23,7 @@ async-trait.workspace = true
 axum.workspace = true
 axum-prometheus.workspace = true
 ciborium.workspace = true
-clap.workspace = true
+clap = { workspace = true, features = ["derive"] }
 directories.workspace = true
 figment.workspace = true
 futures-util.workspace = true
@@ -56,3 +57,6 @@ serde_json.workspace = true
 s3-server.workspace = true
 s3s.workspace = true
 url.workspace = true
+
+[build-dependencies]
+built.workspace = true
