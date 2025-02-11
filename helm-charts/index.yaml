@@ -12,6 +12,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.3.tgz
     version: 0.1.3
   - apiVersion: v2
+    appVersion: 0.1.3-dev.116.main.a4aa22ff
+    created: "2025-02-11T13:11:42.685595822Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 9127ff68e481bda63c504e3b76cf55bb65335ec3f45278020b0ae3b6115fd000
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.3-dev.116.main.a4aa22ff.tgz
+    version: 0.1.3-dev.116.main.a4aa22ff
+  - apiVersion: v2
     appVersion: 0.1.3-dev.60.main.c942ce69
     created: "2025-02-05T09:35:36.534014711Z"
     description: peer-to-peer message stream and blob storage solution
@@ -261,4 +275,18 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.0.tgz
     version: 0.1.0
-generated: "2025-02-05T09:35:36.533257709Z"
+  rhio-operator:
+  - apiVersion: v2
+    appVersion: 0.1.3-dev.116.main.a4aa22ff
+    created: "2025-02-11T13:11:42.686188138Z"
+    description: The Stackable Operator for Rhio Service
+    digest: 1471d1d8734e844030dacfb6a6d4c5299f39fb7d2543475206a8a49f09cc9f38
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
+    version: 0.1.3-dev.116.main.a4aa22ff
+generated: "2025-02-11T13:11:42.684978821Z"
