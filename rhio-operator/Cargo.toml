@@ -37,7 +37,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 snafu.workspace = true
 strum.workspace = true
-base64.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 

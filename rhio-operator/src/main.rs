@@ -24,6 +24,12 @@ const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // We have to initialize default rustls crypto provider
+    // because it is used from inside of stackable-operator -> kube-rs -> tokio-tls
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to setup rustls default crypto provider [aws_lc_rs]");
+
     let opts = Opts::parse();
     match opts.cmd {
         RhioCommand::CreatePrivateKeySecret(cmd) => cmd.generate_secret()?,
