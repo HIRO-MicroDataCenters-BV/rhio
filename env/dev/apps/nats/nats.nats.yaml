@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nats-jetstream
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    argocd.argoproj.io/sync-wave: "-30"
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io    
+spec:
+  destination:
+    namespace: nats
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://nats-io.github.io/k8s/helm/charts
+    chart: nats
+    targetRevision: 1.2.6
+    helm:
+      valuesObject:
+        config:
+          serverNamePrefix: cluster.local
+        
+          cluster:
+            enabled: true
+            replicas: 2
+
+          jetstream:
+            enabled: true
+
+            fileStore:
+              enabled: true
+              dir: /data
+
+              ############################################################
+              # stateful set -> volume claim templates -> jetstream pvc
+              ############################################################
+              pvc:
+                enabled: true
+                size: 10Mi
+                storageClassName: standard
+
+            memoryStore:
+              enabled: false
+              # ensure that container has a sufficient memory limit greater than maxSize
+              maxSize: 10Mi
+
+            # merge:
+            #   server_tags: az:integration
+
+          mqtt:
+            enabled: true
+
+          websocket:
+            enabled: true
+            port: 8080
+            noTLS: true
+
+            sameOrigin: false
+            allowedOrigins: []
+            ingress:
+              className: nginx
+              path: /
+              pathType: Prefix
+              hosts:            
+                - nats-websocket.cluster1.local
+
+            # This will optionally specify what host:port for websocket
+            # connections to be advertised in the cluster.
+            # advertise: "host:port"
+
+            # Set the handshake timeout for websocket connections
+            # handshakeTimeout: 5s
+
+  ignoreDifferences:
+  - group: apps
+    kind: StatefulSet
+    jqPathExpressions:
+      - '.spec.volumeClaimTemplates[]?'
+  syncPolicy:
+    automated:
+     prune: true
+     selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

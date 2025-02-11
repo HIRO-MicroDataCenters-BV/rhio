@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nats-nack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    argocd.argoproj.io/sync-wave: "-20"
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: nats
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://nats-io.github.io/k8s/helm/charts
+    chart: nack
+    targetRevision: 0.27.0
+    helm:
+      valuesObject:
+        jetstream:
+          nats:
+            url: nats://nats-jetstream:4222
+  syncPolicy:
+    automated:
+     prune: true
+     selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

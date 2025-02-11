@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-tenant
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+  - repoURL: https://operator.min.io
+    chart: tenant
+    targetRevision: 5.0.14
+    helm:
+      valuesObject:
+        # Secret for configuring the root MinIO user
+        secrets:
+          name: minio-env-configuration
+          accessKey: minio
+          secretKey: minio123
+
+        tenant:
+          name: minio-tenant
+          # Kubernetes secret name that contains MinIO environment variable
+          # configurations
+          configuration:
+            name: minio-env-configuration
+          pools:
+            - name: minio-pool
+              # Number of MinIO Tenant pods
+              servers: 1
+              # Number of volumes per MinIO Tenant pod
+              volumesPerServer: 2
+              # Size of each volume
+              size: 10Mi
+              # Storage class of the volumes
+              storageClassName: standard
+              # Minimum and maximum resources requested for each pod
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 500Mi
+                limits:
+                  cpu: 1
+                  memory: 500Mi
+          # Enable automatic certificate generation and signing
+          certificate:
+            requestAutoCert: false
+          # Buckets to create during Tenant provisioning
+          buckets: 
+            - name: source
+            - name: cluster1
+            - name: cluster2
+            - name: cluster3
+        ingress:
+          api:
+            enabled: false
+            ingressClassName: "nginx"
+            annotations:
+              nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+            host: minio-tenant.cluster1.local
+            path: /
+            pathType: Prefix
+          console:
+            enabled: false
+            ingressClassName: "nginx"
+            annotations:
+              nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+            host: minio-tenant-console.cluster1.local
+            path: /
+            pathType: Prefix
+  destination:
+    namespace: minio
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true

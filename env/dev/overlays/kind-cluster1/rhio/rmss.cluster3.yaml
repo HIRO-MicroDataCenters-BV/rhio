@@ -1,0 +1,13 @@
+apiVersion: rhio.hiro.io/v1
+kind: ReplicatedMessageStreamSubscription
+metadata:
+  name: cluster3-stream-subscription
+  namespace: rhio
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  publicKey: 43b2bb39061bc3267e869303268a81734fb8767d3a17ee490813955bd734fd3a
+  subscriptions:
+    - stream: stream
+      subject: cluster3
