@@ -7,8 +7,7 @@ AS_NUMBERS=("65001" "65002" "65003")
 DNS_DOMAINS=("cluster1.local" "cluster2.local" "cluster3.local")
 DEFAULT_DNS_IPS=("10.96.0.10" "10.97.0.10" "10.98.0.10")
 
-# NODES=("control-plane" "worker" "worker2")
-NODES=("control-plane" "worker")
+NODES=("control-plane" "worker" "worker2")
 
 validate() {
   if ! command -v jq &> /dev/null; then
@@ -61,6 +60,7 @@ nodes:
         kind: ClusterConfiguration
         networking:
           dnsDomain: "${dns_domain}"
+  - role: worker
   - role: worker
 EOF
 }
