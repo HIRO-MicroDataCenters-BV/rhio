@@ -26,7 +26,7 @@
 #   DEFAULT_DNS_IPS - Array of default DNS IPs for each cluster.
 #   NODES           - Array of node roles for each cluster.
 #
-CLUSTERS=("kind-cluster1" "kind-cluster2")
+CLUSTERS=("kind-cluster1" "kind-cluster2" "kind-cluster3")
 POD_SUBNETS=("192.168.0.0" "192.169.0.0" "192.170.0.0")
 SVC_SUBNETS=("10.96.0.0" "10.97.0.0" "10.98.0.0")
 AS_NUMBERS=("65001" "65002" "65003")

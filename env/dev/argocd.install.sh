@@ -8,9 +8,16 @@
 # 4. Retrieves and displays the initial admin password for ArgoCD on all specified clusters.
 #
 #
-CLUSTERS=("kind-cluster1" "kind-cluster2")
+CLUSTERS=("kind-cluster1" "kind-cluster2" "kind-cluster3")
 
 export KUBECONFIG=$(pwd)/target/merged-kubeconfig.yaml
+
+main() {  
+  install_argo_all
+  install_balancer_all
+  wait_pods_ready_all
+  list_argo_credentials_all
+}
 
 install_argo_all() {
   echo "### Installing ArgoCD... ###"
@@ -86,13 +93,6 @@ list_argo_credentials() {
   local cluster=$1
   ARGOCD_PWD=$(kubectl --context kind-${cluster} -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 --decode)
   echo "Argo CD password for cluster ${cluster} is ${ARGOCD_PWD}"
-}
-
-main() {  
-  install_argo_all
-  install_balancer_all
-  wait_pods_ready_all
-  list_argo_credentials_all
 }
 
 main

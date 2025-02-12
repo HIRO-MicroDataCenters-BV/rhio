@@ -21,7 +21,7 @@
 # - KUBECONFIG: Path to the merged kubeconfig file.
 #
 
-CLUSTERS=("kind-cluster1" "kind-cluster2")
+CLUSTERS=("kind-cluster1" "kind-cluster2" "kind-cluster3")
 
 export KUBECONFIG=$(pwd)/target/merged-kubeconfig.yaml
 
@@ -50,6 +50,13 @@ main() {
           usage
           ;;
   esac
+}
+
+applications_install() {
+  validate
+  generate_secrets
+  kustomize_bundle_all
+  install_applications_all
 }
 
 validate() {
@@ -121,13 +128,6 @@ install_applications() {
   kubectl --context kind-${cluster} create -f ./target/${cluster}.bundle.yaml
 }
 
-applications_install() {
-  validate
-  generate_secrets
-  kustomize_bundle_all
-  install_applications_all
-}
-
 applications_uninstall() {
   validate
   delete_applications_all
@@ -164,7 +164,11 @@ services_list() {
   local cluster=$1
 
   echo "### List Services in cluster $cluster ..."
-  kubectl --context kind-kind-cluster1 get svc -A --field-selector spec.type=LoadBalancer -o json \
+  echo "-----------------------------------------------"
+  echo "SERVICE | EXTERNAL-IP:PORT"
+  echo "-----------------------------------------------"  
+
+  kubectl --context kind-$cluster get svc -A --field-selector spec.type=LoadBalancer -o json \
     | jq -r '.items[] | select(.status.loadBalancer.ingress) | "\(.metadata.name) \(.status.loadBalancer.ingress[0].ip):\(.spec.ports[].port)"' \
     | column -t -s' '
 }
