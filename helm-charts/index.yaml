@@ -12,6 +12,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.3.tgz
     version: 0.1.3
   - apiVersion: v2
+    appVersion: 0.1.3-dev.118.main.27419b73
+    created: "2025-02-13T11:58:10.230156018Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 605279f82c29a5d113d464bc4034be5ad5f1d38a44e9aa033dbfbe6ce18e69df
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.1.3-dev.118.main.27419b73.tgz
+    version: 0.1.3-dev.118.main.27419b73
+  - apiVersion: v2
     appVersion: 0.1.3-dev.116.main.a4aa22ff
     created: "2025-02-11T13:11:42.685595822Z"
     description: peer-to-peer message stream and blob storage solution
@@ -277,6 +291,19 @@ entries:
     version: 0.1.0
   rhio-operator:
   - apiVersion: v2
+    appVersion: 0.1.3-dev.118.main.27419b73
+    created: "2025-02-13T11:58:10.230745684Z"
+    description: The Stackable Operator for Rhio Service
+    digest: e15f7b045340d5fb46ced98c7dd4fbd5e412c9ac51c99c798804d85b7dff5022
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.118.main.27419b73.tgz
+    version: 0.1.3-dev.118.main.27419b73
+  - apiVersion: v2
     appVersion: 0.1.3-dev.116.main.a4aa22ff
     created: "2025-02-11T13:11:42.686188138Z"
     description: The Stackable Operator for Rhio Service
@@ -289,4 +316,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2025-02-11T13:11:42.684978821Z"
+generated: "2025-02-13T11:58:10.229557485Z"
