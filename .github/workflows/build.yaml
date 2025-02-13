@@ -194,7 +194,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name='${{ env.DOCKER_TAGS }},0.1.3-test',push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name='${{ env.DOCKER_TAGS }}\,0.1.3-test',push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=build-${{ env.PLATFORM_PAIR }}
           github-token: ${{ github.token }}
