@@ -171,6 +171,7 @@ jobs:
           echo "VERSION_APP=$(cat "./VERSION")" >> $GITHUB_ENV
           echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
           echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
+          echo "DOCKER_TAG_ARGS=$(cat "./VERSION_DOCKER" | sed 's/,/,name=/g; s/^/name=/')" >> $GITHUB_ENV
 
       - name: Log into registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
@@ -194,7 +195,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.DOCKER_TAGS }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,${{ env.DOCKER_TAG_ARGS }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=build-${{ env.PLATFORM_PAIR }}
           github-token: ${{ github.token }}
