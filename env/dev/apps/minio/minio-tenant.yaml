@@ -33,19 +33,19 @@ spec:
               # Number of MinIO Tenant pods
               servers: 1
               # Number of volumes per MinIO Tenant pod
-              volumesPerServer: 2
+              volumesPerServer: 4
               # Size of each volume
-              size: 10Mi
+              size: 500Mi
               # Storage class of the volumes
               storageClassName: standard
               # Minimum and maximum resources requested for each pod
               resources:
                 requests:
                   cpu: 250m
-                  memory: 500Mi
+                  memory: 1Gi
                 limits:
                   cpu: 1
-                  memory: 500Mi
+                  memory: 1Gi
           # Enable automatic certificate generation and signing
           certificate:
             requestAutoCert: false

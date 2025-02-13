@@ -38,13 +38,13 @@ spec:
               ############################################################
               pvc:
                 enabled: true
-                size: 10Mi
+                size: 30Mi
                 storageClassName: standard
 
             memoryStore:
               enabled: false
               # ensure that container has a sufficient memory limit greater than maxSize
-              maxSize: 10Mi
+              maxSize: 30Mi
 
             # merge:
             #   server_tags: az:integration
