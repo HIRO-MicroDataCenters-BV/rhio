@@ -258,7 +258,7 @@ jobs:
           {
             echo "DOCKER_TAGS_META<<EOF" >> $GITHUB_ENV
             cat ./VERSION_DOCKER | tr ',' '\n' >> $GITHUB_ENV
-            echo "EOF" 
+            echo " EOF" 
           } >> $GITHUB_ENV
           echo "Environment"
           echo $(cat $GITHUB_ENV)
