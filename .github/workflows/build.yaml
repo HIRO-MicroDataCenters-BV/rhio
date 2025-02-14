@@ -258,7 +258,6 @@ jobs:
           echo "DOCKER_TAGS_META<<EOF" >> $GITHUB_ENV
           cat VERSION_DOCKER | tr ',' '\n' >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
