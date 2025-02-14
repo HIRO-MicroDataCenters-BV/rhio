@@ -255,13 +255,11 @@ jobs:
           echo "VERSION_APP=$(cat "./VERSION")" >> $GITHUB_ENV
           echo "DOCKER_IMAGES=$(cat "./DOCKER_IMAGES")" >> $GITHUB_ENV
           echo "DOCKER_TAGS=$(cat "./VERSION_DOCKER")" >> $GITHUB_ENV
-          {
-            echo "DOCKER_TAGS_META<<EOF" >> $GITHUB_ENV
-            cat ./VERSION_DOCKER | tr ',' '\n' >> $GITHUB_ENV
-            echo " EOF" 
-          } >> $GITHUB_ENV
+          echo "DOCKER_TAGS_META<<DOCKER_TAGS_META_EOF" >> $GITHUB_ENV
+          (cat ./VERSION_DOCKER | tr ',' '\n') >> $GITHUB_ENV
+          echo -e "\nDOCKER_TAGS_META_EOF" >> $GITHUB_ENV
           echo "Environment"
-          echo $(cat $GITHUB_ENV)
+          echo -e $(cat $GITHUB_ENV)
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
