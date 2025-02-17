@@ -1,0 +1,35 @@
+apiVersion: rhio.hiro.io/v1
+kind: RhioService
+metadata:
+  name: rhio-service
+  namespace: rhio
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  clusterConfig:
+    listenerClass: cluster-internal
+    gracefulShutdownTimeout: 1s
+
+  image:
+    custom: ghcr.io/hiro-microdatacenters-bv/rhio:0.1.3-dev.116.main.a4aa22ff
+    productVersion: 0.1.3
+    pullPolicy: IfNotPresent      
+
+  configuration:
+    networkId: test
+    privateKeySecret: private-key-secret
+    nodes:
+      - publicKey: b01854865341ac6db10b6aa9646045d65ddc2ac8e5e198ffd2d04ceca045ddf9
+        endpoints: 
+          - rhio-service.rhio.svc.cluster2.local:9102
+      - publicKey: 43b2bb39061bc3267e869303268a81734fb8767d3a17ee490813955bd734fd3a
+        endpoints: 
+          - rhio-service.rhio.svc.cluster3.local:9102
+    s3:
+      endpoint: http://minio-tenant-hl.minio.svc.cluster1.local:9000
+      region: custom
+      credentialsSecret: s3-credentials
+    nats:
+      endpoint: nats://nats-jetstream.nats.svc.cluster1.local:4222
+      credentialsSecret: null        

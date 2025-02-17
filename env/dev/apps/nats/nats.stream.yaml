@@ -1,0 +1,14 @@
+---
+apiVersion: jetstream.nats.io/v1beta2
+kind: Stream
+metadata:
+  name: nats-stream
+  namespace: nats
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  name: stream
+  subjects: ["cluster1", "cluster2", "cluster3"]
+  storage: file
+  replicas: 1
