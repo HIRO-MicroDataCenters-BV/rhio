@@ -1,3 +1,5 @@
+use anyhow::Context;
+use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use p2panda_core::{PrivateKey, PublicKey};
 use rhio_config::configuration::{
@@ -5,11 +7,19 @@ use rhio_config::configuration::{
     RemoteNatsSubject, RemoteS3Bucket, S3Config, SubscribeConfig,
 };
 use rhio_core::Subject;
+use s3_server::FakeS3Server;
+use s3s::auth::SimpleAuth;
 use std::{
     path::PathBuf,
     str::FromStr,
-    sync::atomic::{AtomicU16, Ordering},
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc,
+    },
 };
+use tokio::runtime::Runtime;
+use tracing::debug;
+use url::Url;
 static TEST_INSTANCE_HTTP_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(8080));
 static TEST_INSTANCE_RHIO_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(31000));
 static TEST_INSTANCE_NATS_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(4222));
@@ -178,22 +188,39 @@ pub fn configure_blob_subscription(
     publisher_bucket: &str,
     subscriber_bucket: &str,
 ) {
+    configure_publish_bucket(publisher, publisher_bucket);
+    configure_subscribe_bucket(
+        subscriber,
+        publisher_pub_key,
+        publisher_bucket,
+        subscriber_bucket,
+    );
+}
+
+pub fn configure_publish_bucket(publisher: &mut Config, bucket: &str) {
     if publisher.publish.is_none() {
         publisher.publish = Some(PublishConfig {
             s3_buckets: vec![],
             nats_subjects: vec![],
         });
     }
+    if let Some(publish_config) = &mut publisher.publish {
+        publish_config.s3_buckets.push(bucket.into());
+    }
+}
+
+pub fn configure_subscribe_bucket(
+    subscriber: &mut Config,
+    publisher_pub_key: &PublicKey,
+    publisher_bucket: &str,
+    subscriber_bucket: &str,
+) {
     if subscriber.subscribe.is_none() {
         subscriber.subscribe = Some(SubscribeConfig {
             s3_buckets: vec![],
             nats_subjects: vec![],
         });
     }
-    if let Some(publish_config) = &mut publisher.publish {
-        publish_config.s3_buckets.push(publisher_bucket.into());
-    }
-
     if let Some(subscriber_config) = &mut subscriber.subscribe {
         subscriber_config.s3_buckets.push(RemoteS3Bucket {
             remote_bucket_name: publisher_bucket.into(),
@@ -201,4 +228,36 @@ pub fn configure_blob_subscription(
             public_key: publisher_pub_key.clone(),
         });
     }
+}
+
+pub fn new_s3_server(s3_config: &S3Config, runtime: Arc<Runtime>) -> Result<FakeS3Server> {
+    let maybe_auth = if let Some(credentials) = &s3_config.credentials {
+        match (&credentials.access_key, &credentials.secret_key) {
+            (Some(access_key), Some(secret_key)) => {
+                Some(SimpleAuth::from_single(access_key, secret_key.as_str()))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    debug!("s3 server {} has auth {:?}", s3_config.endpoint, maybe_auth);
+
+    let url: Url = s3_config
+        .endpoint
+        .parse()
+        .context(format!("Invalid endpoint address {}", s3_config.endpoint))?;
+
+    let host = url
+        .host()
+        .ok_or(anyhow!("s3 url does not have host"))?
+        .to_string();
+    let port = url
+        .port()
+        .ok_or(anyhow!("s3 url does not have port specified"))?;
+
+    let s3 = FakeS3Server::new(host, port, maybe_auth, runtime.clone())
+        .context(format!("Creating FakeS3Server {}", s3_config.endpoint))?;
+    Ok(s3)
 }

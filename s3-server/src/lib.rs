@@ -165,7 +165,26 @@ impl FakeS3Server {
         std::fs::create_dir(path).context("Create bucket path")?;
         Ok(())
     }
-
+    /// Deletes a bucket from the fake S3 server.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to delete.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
+    ///
+    pub fn delete_bucket<P: AsRef<str>>(&self, bucket: P) -> Result<()> {
+        let path = self.root.path().join(bucket.as_ref());
+        debug!(
+            "FakeS3Server: deleting bucket {}, fs path {}",
+            bucket.as_ref(),
+            path.to_str().unwrap()
+        );
+        std::fs::remove_dir(path).context("Delete bucket path")?;
+        Ok(())
+    }
     /// Checks if a file exists in the specified bucket.
     ///
     /// # Arguments
