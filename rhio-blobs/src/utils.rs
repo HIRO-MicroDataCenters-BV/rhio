@@ -59,3 +59,23 @@ pub async fn get_outboard(bucket: &Bucket, paths: &Paths) -> Result<SparseMemFil
     outboard.write_all_at(0, response.as_slice())?;
     Ok(outboard)
 }
+
+/// Remove meta file from S3 bucket.
+pub async fn remove_meta(bucket: &Bucket, paths: &Paths) -> Result<()> {
+    let response = bucket.delete_object(paths.meta()).await?;
+    if response.status_code() != 200 {
+        return Err(anyhow!("failed to remove blob meta file from s3 bucket"));
+    }
+    Ok(())
+}
+
+/// Remove outboard file from S3 bucket.
+pub async fn remove_outboard(bucket: &Bucket, paths: &Paths) -> Result<()> {
+    let response = bucket.delete_object(paths.outboard()).await?;
+    if response.status_code() != 200 {
+        return Err(anyhow!(
+            "failed to remove blob outboard file from s3 bucket"
+        ));
+    }
+    Ok(())
+}

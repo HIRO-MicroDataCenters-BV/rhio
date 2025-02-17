@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Result;
 use rhio_blobs::{
     BlobHash, BucketName, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
     S3Store, SignedBlobInfo, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
@@ -9,9 +10,22 @@ use rhio_blobs::{
 use s3::error::S3Error;
 use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
-use tracing::debug;
+use tracing::{debug, warn};
 
-const POLL_FREQUENCY: Duration = Duration::from_secs(1);
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Debug)]
+pub struct S3WatcherOptions {
+    pub poll_interval: Duration,
+}
+
+impl Default for S3WatcherOptions {
+    fn default() -> Self {
+        Self {
+            poll_interval: DEFAULT_POLL_INTERVAL,
+        }
+    }
+}
 
 /// Service watching the S3 buckets and p2p blob interface to inform us on newly detected objects
 /// and their import status.
@@ -103,7 +117,11 @@ struct Inner {
 }
 
 impl S3Watcher {
-    pub fn new(store: S3Store, event_tx: mpsc::Sender<Result<S3Event, S3Error>>) -> Self {
+    pub fn new(
+        store: S3Store,
+        event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
+        options: S3WatcherOptions,
+    ) -> Self {
         let inner = Arc::new(RwLock::new(Inner {
             s3_objects: HashSet::new(),
             completed: HashSet::new(),
@@ -119,10 +137,14 @@ impl S3Watcher {
             let mut first_run = true;
 
             loop {
+                // 1. Reloading the S3 Store
+                store.reload().await;
+
                 for bucket in store.buckets() {
-                    // 1. List of _all_ S3 objects in this bucket.
+                    // 2. List of _all_ S3 objects in this bucket.
                     let mut maybe_to_be_imported = Vec::new();
-                    match bucket.list(NO_PREFIX, None).await {
+                    let maybe_bucket_list = bucket.list(NO_PREFIX, None).await;
+                    match maybe_bucket_list {
                         Ok(pages) => {
                             let mut inner = inner.write().await;
                             for page in pages {
@@ -154,12 +176,11 @@ impl S3Watcher {
                             }
                         }
                         Err(err) => {
-                            event_tx.send(Err(err)).await.expect("send event");
-                            return Err(());
+                            warn!("failed to list bucket objects: {:?}, skipping...", err);
                         }
                     }
 
-                    // 2. List of S3 objects which have been encoded / completed already and are
+                    // 3. List of S3 objects which have been encoded / completed already and are
                     //    ready for p2p sync.
                     {
                         let list = store.complete_blobs().await;
@@ -219,12 +240,13 @@ impl S3Watcher {
                         }
                     }
 
-                    // 3. List of S3 objects which were started to be downloaded, but did not
+                    // 4. List of S3 objects which were started to be downloaded, but did not
                     //    finish yet.
                     {
                         // Only run this when the app starts.
+                        // TODO turn this code into idempotent, e.g. run periodically
                         if first_run {
-                            let list = store.incomplete_blobs().await;
+                            let list = store.incomplete_blobs();
                             let mut inner = inner.write().await;
                             for incomplete_blob in list {
                                 let watched = WatchedObject::from(incomplete_blob.clone());
@@ -253,7 +275,7 @@ impl S3Watcher {
                     }
                 }
 
-                tokio::time::sleep(POLL_FREQUENCY).await;
+                tokio::time::sleep(options.poll_interval).await;
 
                 first_run = false;
             }
@@ -268,4 +290,116 @@ pub enum S3Event {
     DetectedS3Object(NotImportedObject),
     BlobImportFinished(CompletedBlob),
     DetectedIncompleteBlob(IncompleteBlob),
+}
+
+#[cfg(test)]
+pub mod tests {
+
+    use super::*;
+    use crate::{
+        blobs::store_from_config,
+        tests::{
+            configuration::{
+                configure_publish_bucket, generate_nats_config, generate_rhio_config,
+                generate_s3_config, new_s3_server,
+            },
+            utils::wait_for_condition,
+        },
+    };
+    use anyhow::Context;
+    use rhio_blobs::BucketState;
+    use s3_server::FakeS3Server;
+    use tokio::runtime::Builder;
+    use tracing::info;
+
+    #[test]
+    pub fn test_bucket_watcher_resilience() -> Result<()> {
+        let TestSetup {
+            s3_source,
+            store,
+            watcher: _watcher,
+        } = create_test_setup()?;
+
+        wait_for_condition(Duration::from_secs(10), || {
+            if let Some(status) = store.status("source-bucket".into()) {
+                if status.state == BucketState::NotInitialized {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })?;
+
+        s3_source.create_bucket("source-bucket")?;
+
+        wait_for_condition(Duration::from_secs(10), || {
+            if let Some(status) = store.status("source-bucket".into()) {
+                if status.state == BucketState::Active {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })?;
+
+        s3_source.delete_bucket("source-bucket")?;
+
+        wait_for_condition(Duration::from_secs(10), || {
+            if let Some(status) = store.status("source-bucket".into()) {
+                if status.state == BucketState::Inactive {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })?;
+
+        Ok(())
+    }
+
+    struct TestSetup {
+        s3_source: FakeS3Server,
+        store: S3Store,
+        watcher: S3Watcher,
+    }
+
+    fn create_test_setup() -> Result<TestSetup> {
+        let nats_source_config = generate_nats_config();
+        let s3_source_config = generate_s3_config();
+        info!("s3 source config {:?}", s3_source_config);
+
+        let mut rhio_source_config =
+            generate_rhio_config(&nats_source_config, &Some(s3_source_config.clone()));
+
+        configure_publish_bucket(&mut rhio_source_config, "source-bucket");
+
+        let test_runtime = Arc::new(
+            Builder::new_multi_thread()
+                .enable_io()
+                .enable_time()
+                .thread_name("test-runtime")
+                .worker_threads(3)
+                .build()
+                .expect("test tokio runtime"),
+        );
+
+        let s3_source = new_s3_server(&s3_source_config, test_runtime.clone())?;
+
+        let store_and_watcher: Result<(S3Store, S3Watcher), anyhow::Error> =
+            test_runtime.block_on(async {
+                let store = store_from_config(&rhio_source_config).context("store from config")?;
+                store.reload().await;
+                let (tx, _rx) = mpsc::channel(1);
+                let options = S3WatcherOptions {
+                    poll_interval: Duration::from_millis(100),
+                };
+                let watcher = S3Watcher::new(store.clone(), tx, options);
+                Ok((store, watcher))
+            });
+
+        let (store, watcher) = store_and_watcher?;
+
+        Ok(TestSetup {
+            s3_source,
+            store,
+            watcher,
+        })
+    }
 }

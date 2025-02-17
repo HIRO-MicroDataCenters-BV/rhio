@@ -10,7 +10,7 @@ where
         if condition()? {
             return Ok(());
         }
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(100));
     }
     bail!("timeout waiting condition")
 }

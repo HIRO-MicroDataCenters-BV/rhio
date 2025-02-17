@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use std::time::Duration;
 
+use crate::blobs::watcher::S3WatcherOptions;
 use crate::context::Context;
 use crate::http::api::RhioApiImpl;
 use crate::node::rhio::NodeOptions;
@@ -11,6 +13,7 @@ use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::SyncConfiguration;
 use p2panda_net::{NetworkBuilder, ResyncConfiguration};
+use rhio_blobs::S3Store;
 use rhio_http_api::server::RhioHTTPServer;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
@@ -96,7 +99,7 @@ impl ContextBuilder {
             .build()
             .expect("Rhio tokio runtime");
 
-        let node = rhio_runtime.block_on(async move {
+        let (node, store) = rhio_runtime.block_on(async move {
             ContextBuilder::init_rhio_node(self.config.clone(), self.private_key.clone())
                 .await
                 .context("failed to initialize Rhio node")
@@ -109,7 +112,8 @@ impl ContextBuilder {
             .build()
             .expect("http server tokio runtime");
         let cancellation_token = CancellationToken::new();
-        let http_handle = self.start_http_server(&http_runtime, cancellation_token.clone())?;
+        let http_handle =
+            self.start_http_server(&http_runtime, store, cancellation_token.clone())?;
 
         Ok(Context::new(
             node,
@@ -122,7 +126,7 @@ impl ContextBuilder {
         ))
     }
 
-    async fn init_rhio_node(config: Config, private_key: PrivateKey) -> Result<Node> {
+    async fn init_rhio_node(config: Config, private_key: PrivateKey) -> Result<(Node, S3Store)> {
         // 1. Depends on the context - tests or prod, we configure corresponding nats client.
         #[cfg(not(test))]
         let nats_client = NatsClientImpl::new(config.nats.clone()).await?;
@@ -135,7 +139,8 @@ impl ContextBuilder {
         // 3. Configure rhio peer-to-peer network.
         let (node_config, p2p_network_config) = Node::configure_p2p_network(&config).await?;
 
-        let blob_store = store_from_config(&config).await?;
+        let blob_store = store_from_config(&config)?;
+        blob_store.reload().await;
 
         let sync_protocol = RhioSyncProtocol::new(
             node_config.clone(),
@@ -144,16 +149,7 @@ impl ContextBuilder {
             private_key.clone(),
         );
 
-        let resync_config = config
-            .node
-            .protocol
-            .map(|c| {
-                ResyncConfiguration::new()
-                    .poll_interval(c.poll_interval_seconds)
-                    .interval(c.resync_interval_seconds)
-            })
-            .unwrap_or_default();
-
+        let resync_config = ContextBuilder::to_resync_config(&config);
         let sync_config = SyncConfiguration::new(sync_protocol).resync(resync_config);
 
         let builder = NetworkBuilder::from_config(p2p_network_config)
@@ -167,7 +163,13 @@ impl ContextBuilder {
                 BlobsHandler::from_builder_with_config(builder, blob_store.clone(), blobs_config())
                     .await?;
             // 4.1. we also start a service which watches the S3 buckets for changes.
-            let blobs = Blobs::new(blob_store.clone(), blobs_handler, watcher_tx);
+            let watcher_options = ContextBuilder::to_s3_watcher_options(&config);
+            let blobs = Blobs::new(
+                blob_store.clone(),
+                blobs_handler,
+                watcher_tx,
+                watcher_options,
+            );
             (network, Some(blobs), watcher_rx)
         } else {
             let network = builder.build().await?;
@@ -191,18 +193,22 @@ impl ContextBuilder {
             direct_addresses,
         };
 
-        Node::new(nats, blobs, watcher_rx, panda, options).await
+        let node = Node::new(nats, blobs, watcher_rx, panda, options)
+            .await
+            .context("Node creation failure")?;
+        Ok((node, blob_store))
     }
 
     /// Starts the HTTP server with health endpoint.
     fn start_http_server(
         &self,
         runtime: &Runtime,
+        store: S3Store,
         cancellation_token: CancellationToken,
     ) -> Result<JoinHandle<Result<()>>> {
         let config = self.config.clone();
         let http_bind_port = self.config.node.http_bind_port;
-        let api = Arc::new(RhioApiImpl::new(config).context("RhioAPIImpl initialization")?);
+        let api = Arc::new(RhioApiImpl::new(config, store).context("RhioAPIImpl initialization")?);
         let http_server = RhioHTTPServer::new(http_bind_port, api);
         Ok(runtime.spawn(async move {
             let result = http_server
@@ -213,5 +219,30 @@ impl ContextBuilder {
             cancellation_token.cancel();
             result
         }))
+    }
+
+    fn to_s3_watcher_options(config: &Config) -> S3WatcherOptions {
+        config
+            .s3
+            .as_ref()
+            .unwrap()
+            .watcher_poll_interval_millis
+            .map(|interval_millis| S3WatcherOptions {
+                poll_interval: Duration::from_millis(interval_millis),
+            })
+            .unwrap_or_default()
+    }
+
+    fn to_resync_config(config: &Config) -> ResyncConfiguration {
+        config
+            .node
+            .protocol
+            .as_ref()
+            .map(|c| {
+                ResyncConfiguration::new()
+                    .poll_interval(c.poll_interval_seconds)
+                    .interval(c.resync_interval_seconds)
+            })
+            .unwrap_or_default()
     }
 }

@@ -1,10 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
-use std::io;
-use std::sync::Arc;
-
 use anyhow::Result;
 use bytes::Bytes;
+use chrono::Utc;
+use dashmap::DashMap;
 use futures_lite::Stream;
 use iroh_blobs::store::bao_tree::io::{fsm::Outboard, outboard::PreOrderOutboard};
 use iroh_blobs::store::bao_tree::BaoTree;
@@ -16,16 +13,21 @@ use iroh_blobs::util::progress::{BoxedProgressSender, IdGenerator, ProgressSende
 use iroh_blobs::util::SparseMemFile;
 use iroh_blobs::{BlobFormat, HashAndFormat, Tag, TempTag, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;
+use s3::serde_types::ListBucketResult;
 use s3::Bucket;
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use tracing::{trace, warn};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::future::Future;
+use std::io;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, trace, warn};
 
 use crate::bao_file::{BaoFileHandle, BaoMeta};
 use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
-use crate::utils::{get_meta, get_outboard, put_meta};
+use crate::utils::{get_meta, get_outboard, put_meta, remove_meta, remove_outboard};
 use crate::{
-    BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectSize, SignedBlobInfo,
-    UnsignedBlobInfo,
+    BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
+    SignedBlobInfo, UnsignedBlobInfo,
 };
 
 /// An S3 backed iroh blobs store.
@@ -39,18 +41,16 @@ pub struct S3Store {
 
 impl S3Store {
     /// Create a new S3 blob store interface for p2panda.
-    pub async fn new(buckets: Vec<Bucket>) -> Result<Self> {
-        let mut store = Self {
+    pub fn new(buckets: Vec<Bucket>) -> S3Store {
+        Self {
             buckets,
             inner: Default::default(),
-        };
-        store.init().await?;
-        Ok(store)
+        }
     }
 
     /// Create an empty store
-    pub async fn empty() -> Result<Self> {
-        S3Store::new(Vec::new()).await
+    pub fn empty() -> Self {
+        S3Store::new(Vec::new())
     }
 
     /// Returns a list of all buckets managed by this store.
@@ -58,35 +58,120 @@ impl S3Store {
         self.buckets.as_ref()
     }
 
-    /// Initiate the blob store from the contents of given S3 buckets.
+    /// Returns a status of the bucket.
+    pub fn status(&self, bucket: String) -> Option<BucketStatus> {
+        self.inner.buckets.get(&bucket).map(|b| b.status.to_owned())
+    }
+
+    /// Returns a list of statues of all buckets managed by this store.
+    pub fn statuses(&self) -> HashMap<String, BucketStatus> {
+        self.inner
+            .buckets
+            .iter()
+            .map(|b| (b.name.to_owned(), b.status.to_owned()))
+            .collect()
+    }
+
+    /// Sync the blob store from the contents of given S3 buckets.
     ///
     /// This method looks at all meta files present on the configured S3 buckets and establishes an
     /// index.
-    async fn init(&mut self) -> Result<()> {
+    pub async fn reload(&self) {
+        trace!("reloading buckets");
+        let now = Utc::now().timestamp_millis() as u64;
         for bucket in &self.buckets {
-            let results = bucket.list(NO_PREFIX, None).await?;
-            for list in results {
-                for object in list.contents {
-                    if object.key.ends_with(META_SUFFIX) {
-                        let paths = Paths::from_meta(&object.key);
-                        let meta = get_meta(bucket, &paths).await?;
-                        let outboard = match get_outboard(bucket, &paths).await {
-                            Ok(outboard) => outboard,
-                            Err(_) => {
-                                trace!("no outboard file found for blob {}", meta.hash);
-                                SparseMemFile::new()
-                            }
-                        };
-                        let bao_file =
-                            BaoFileHandle::new(bucket.clone(), paths, outboard, meta.size);
-                        let entry = Entry::new(bao_file, meta);
-                        self.write_lock().await.entries.insert(entry.hash(), entry);
-                    };
+            let maybe_results = bucket.list(NO_PREFIX, None).await;
+            self.inner.ensure_bucket(&bucket.name, now);
+
+            match maybe_results {
+                Ok(results) => {
+                    self.inner.set_success_status(&bucket.name, now);
+                    self.reload_bucket(&self.inner, results, bucket).await;
                 }
+                Err(err) => {
+                    debug!("error listing bucket contents: {err}");
+                    self.inner
+                        .set_error_status(&bucket.name, now, err.to_string());
+                    continue;
+                }
+            };
+        }
+    }
+
+    async fn reload_bucket(
+        &self,
+        state: &S3StoreInner,
+        results: Vec<ListBucketResult>,
+        bucket: &Bucket,
+    ) {
+        let mut detected_hashes = HashSet::new();
+
+        for list in results {
+            for object in list.contents {
+                if object.key.ends_with(META_SUFFIX) {
+                    let maybe_entry = S3Store::new_entry(bucket, object).await;
+                    let entry = match maybe_entry {
+                        Ok(entry) => entry,
+                        Err(e) => {
+                            trace!("cannot make entry: {e}");
+                            continue;
+                        }
+                    };
+                    detected_hashes.insert(entry.hash());
+                    state.entries.entry(entry.hash()).or_insert_with(|| {
+                        debug!("loaded blob {} from meta file", entry.hash());
+                        entry
+                    });
+                };
             }
         }
 
-        Ok(())
+        // Remove all entries from the in-memory store and meta files from the S3 bucket when
+        // there's no equivalent S3 object in the bucket anymore. This can happen if a user
+        // manually just removes or edits that file.
+
+        let mut dangling_entries = Vec::new();
+        for entry in state.entries.iter() {
+            let hash = entry.key();
+            let value = entry.value();
+            if !detected_hashes.contains(hash) {
+                dangling_entries.push((*hash, value.clone()));
+            }
+        }
+
+        for (hash, entry) in dangling_entries {
+            trace!(%hash, key = %entry.meta.key, bucket_name = %entry.bucket_name, "detected dangling blob entry");
+
+            // Remove files from S3 bucket.
+            let paths = Paths::from_meta(&entry.meta.key);
+            if let Err(err) = remove_outboard(bucket, &paths).await {
+                warn!(key = %entry.meta.key, "failed removing outboard file: {err}");
+            }
+            if let Err(err) = remove_meta(bucket, &paths).await {
+                warn!(key = %entry.meta.key, "failed removing meta file: {err}");
+            }
+        }
+    }
+
+    async fn new_entry(bucket: &Bucket, object: s3::serde_types::Object) -> Result<Entry> {
+        let paths = Paths::from_meta(&object.key);
+        let meta = match get_meta(bucket, &paths).await {
+            Ok(meta) => meta,
+            Err(e) => {
+                trace!("cannot load meta file {}", object.key);
+                return Err(e);
+            }
+        };
+        let outboard = match get_outboard(bucket, &paths).await {
+            Ok(outboard) => outboard,
+            Err(_) => {
+                trace!("no outboard file found for blob {}", meta.hash);
+                SparseMemFile::new()
+            }
+        };
+        let bao_file = BaoFileHandle::new(bucket.clone(), paths, outboard, meta.size);
+        let entry = Entry::new(bao_file, meta);
+        Ok(entry)
     }
 
     /// Import a new blob from S3 bucket.
@@ -104,7 +189,7 @@ impl S3Store {
         let (bao_file, meta) =
             BaoFileHandle::from_local_object(bucket, object.key, object.size).await?;
         let entry = Entry::new(bao_file, meta);
-        self.write_lock().await.entries.insert(entry.hash(), entry);
+        self.inner.entries.insert(entry.hash(), entry);
         Ok(())
     }
 
@@ -119,7 +204,7 @@ impl S3Store {
     /// handled before.
     pub async fn blob_discovered(&mut self, blob: SignedBlobInfo) -> Result<()> {
         // If we already "discovered" this blob then we don't need to do anything.
-        if self.read_lock().await.entries.contains_key(&blob.hash) {
+        if self.inner.entries.contains_key(&blob.hash) {
             return Ok(());
         };
 
@@ -137,23 +222,23 @@ impl S3Store {
         put_meta(&bucket, &paths, &meta).await?;
         let bao_file = BaoFileHandle::new(bucket, paths, SparseMemFile::new(), blob.size);
         let entry = Entry::new(bao_file, meta);
-        self.write_lock().await.entries.insert(blob.hash, entry);
+        self.inner.entries.insert(blob.hash, entry);
 
         Ok(())
     }
 
     /// Query the store for all complete blobs.
     pub async fn complete_blobs(&self) -> Vec<CompletedBlob> {
-        let entries = self.read_lock().await.entries.clone();
-        entries
-            .into_values()
+        self.inner
+            .entries
+            .iter()
             .filter(|entry| entry.meta.complete)
             .map(|entry| match entry.meta.public_key {
                 Some(public_key) => CompletedBlob::Signed(SignedBlobInfo {
                     hash: entry.hash(),
-                    remote_bucket_name: entry.meta.remote_bucket_name,
-                    local_bucket_name: entry.bucket_name,
-                    key: entry.meta.key,
+                    remote_bucket_name: entry.meta.remote_bucket_name.to_owned(),
+                    local_bucket_name: entry.bucket_name.to_owned(),
+                    key: entry.meta.key.to_owned(),
                     size: entry.meta.size,
                     public_key,
                     signature: entry
@@ -163,8 +248,8 @@ impl S3Store {
                 }),
                 None => CompletedBlob::Unsigned(UnsignedBlobInfo {
                     hash: entry.hash(),
-                    local_bucket_name: entry.bucket_name,
-                    key: entry.meta.key,
+                    local_bucket_name: entry.bucket_name.to_owned(),
+                    key: entry.meta.key.to_owned(),
                     size: entry.meta.size,
                 }),
             })
@@ -172,16 +257,16 @@ impl S3Store {
     }
 
     /// Query the store for all incomplete blobs.
-    pub async fn incomplete_blobs(&self) -> Vec<IncompleteBlob> {
-        let entries = self.read_lock().await.entries.clone();
-        entries
-            .into_values()
+    pub fn incomplete_blobs(&self) -> Vec<IncompleteBlob> {
+        self.inner
+            .entries
+            .iter()
             .filter(|x| !x.meta.complete)
             .map(|entry| IncompleteBlob {
                 hash: entry.hash(),
-                local_bucket_name: entry.bucket_name,
-                remote_bucket_name: entry.meta.remote_bucket_name,
-                key: entry.meta.key,
+                local_bucket_name: entry.bucket_name.to_owned(),
+                remote_bucket_name: entry.meta.remote_bucket_name.to_owned(),
+                key: entry.meta.key.to_owned(),
                 size: entry.meta.size,
                 public_key: entry
                     .meta
@@ -193,14 +278,6 @@ impl S3Store {
                     .expect("incomplete blobs from remote peers need to be signed"),
             })
             .collect()
-    }
-
-    async fn write_lock(&self) -> RwLockWriteGuard<'_, StateInner> {
-        self.inner.0.write().await
-    }
-
-    async fn read_lock(&self) -> RwLockReadGuard<'_, StateInner> {
-        self.inner.0.read().await
     }
 
     fn bucket(&self, bucket_name: &str) -> Bucket {
@@ -267,12 +344,69 @@ impl Store for S3Store {
     }
 }
 
-#[derive(Debug, Default)]
-struct S3StoreInner(RwLock<StateInner>);
+#[derive(Debug, Clone)]
+struct BucketEntry {
+    name: ObjectKey,
+    status: BucketStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub enum BucketState {
+    NotInitialized,
+    Active,
+    Inactive,
+}
+
+#[derive(Debug, Clone)]
+pub struct BucketStatus {
+    pub state: BucketState,
+    pub last_error: Option<String>,
+    pub last_check_time: Option<u64>,
+}
 
 #[derive(Debug, Default)]
-struct StateInner {
-    entries: BTreeMap<BlobHash, Entry>,
+struct S3StoreInner {
+    buckets: DashMap<String, BucketEntry>,
+    entries: DashMap<BlobHash, Entry>,
+}
+
+impl S3StoreInner {
+    fn ensure_bucket(&self, key: &ObjectKey, now: u64) {
+        if !self.buckets.contains_key(key) {
+            self.buckets.insert(
+                key.clone(),
+                BucketEntry {
+                    name: key.clone(),
+                    status: BucketStatus {
+                        state: BucketState::NotInitialized,
+                        last_error: None,
+                        last_check_time: Some(now),
+                    },
+                },
+            );
+        }
+    }
+
+    fn set_error_status(&self, key: &ObjectKey, now: u64, err_msg: String) {
+        if let Some(mut entry) = self.buckets.get_mut(key) {
+            let status = &mut entry.value_mut().status;
+            if status.state == BucketState::Active {
+                status.state = BucketState::Inactive;
+            }
+            status.last_error = Some(err_msg);
+            status.last_check_time = Some(now);
+        }
+    }
+
+    fn set_success_status(&self, key: &ObjectKey, now: u64) {
+        if let Some(mut entry) = self.buckets.get_mut(key) {
+            entry.value_mut().status = BucketStatus {
+                state: BucketState::Active,
+                last_error: None,
+                last_check_time: Some(now),
+            };
+        }
+    }
 }
 
 /// An in-memory entry.
@@ -406,7 +540,7 @@ impl Map for S3Store {
     type Entry = Entry;
 
     async fn get(&self, hash: &BlobHash) -> std::io::Result<Option<Self::Entry>> {
-        Ok(self.read_lock().await.entries.get(hash).cloned())
+        Ok(self.inner.entries.get(hash).map(|e| e.value().to_owned()))
     }
 }
 
@@ -450,8 +584,7 @@ impl MapMut for S3Store {
             .map_err(io::Error::other)?;
 
         let hash = entry.hash();
-        let mut inner = self.write_lock().await;
-        inner.entries.insert(hash, entry);
+        self.inner.entries.insert(hash, entry);
 
         Ok(())
     }
@@ -459,23 +592,25 @@ impl MapMut for S3Store {
 
 impl ReadableStore for S3Store {
     async fn blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BlobHash>> {
-        let entries = self.read_lock().await.entries.clone();
-        Ok(Box::new(
-            entries
-                .into_values()
-                .filter(|x| x.meta.complete)
-                .map(|x| Ok(x.hash())),
-        ))
+        let completed_blobs = self
+            .inner
+            .entries
+            .iter()
+            .filter(|x| x.meta.complete)
+            .map(|x| Ok(x.hash()))
+            .collect::<Vec<io::Result<BlobHash>>>();
+        Ok(Box::new(completed_blobs.into_iter()))
     }
 
     async fn partial_blobs(&self) -> io::Result<iroh_blobs::store::DbIter<BlobHash>> {
-        let entries = self.read_lock().await.entries.clone();
-        Ok(Box::new(
-            entries
-                .into_values()
-                .filter(|x| !x.meta.complete)
-                .map(|x| Ok(x.hash())),
-        ))
+        let incompleted_blobs = self
+            .inner
+            .entries
+            .iter()
+            .filter(|x| !x.meta.complete)
+            .map(|x| Ok(x.hash()))
+            .collect::<Vec<io::Result<BlobHash>>>();
+        Ok(Box::new(incompleted_blobs.into_iter()))
     }
 
     async fn tags(&self) -> io::Result<iroh_blobs::store::DbIter<(Tag, HashAndFormat)>> {

@@ -11,7 +11,7 @@ use proxy::BlobsActorProxy;
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};
 use s3::{Bucket, Region};
 use tokio::sync::mpsc;
-use watcher::S3Event;
+use watcher::{S3Event, S3WatcherOptions};
 
 use crate::topic::Query;
 use rhio_config::configuration::Config;
@@ -31,9 +31,10 @@ impl Blobs {
         blob_store: S3Store,
         blobs_handler: BlobsHandler<Query, S3Store>,
         watcher_tx: mpsc::Sender<Result<S3Event, S3Error>>,
+        options: S3WatcherOptions,
     ) -> Blobs {
         let blobs = BlobsActorProxy::new(blob_store.clone(), blobs_handler);
-        let watcher = S3Watcher::new(blob_store, watcher_tx);
+        let watcher = S3Watcher::new(blob_store, watcher_tx, options);
         Blobs { blobs, watcher }
     }
 
@@ -71,7 +72,7 @@ pub fn blobs_config() -> BlobsConfig {
 ///
 /// This method fails when we couldn't connect to the S3 buckets due to invalid configuration
 /// values, authentication or connection errors.
-pub async fn store_from_config(config: &Config) -> Result<S3Store> {
+pub fn store_from_config(config: &Config) -> Result<S3Store> {
     if let Some(s3_config) = config.s3.as_ref() {
         let mut buckets: HashMap<String, Bucket> = HashMap::new();
 
@@ -108,11 +109,9 @@ pub async fn store_from_config(config: &Config) -> Result<S3Store> {
         }
 
         let buckets: Vec<Bucket> = buckets.values().cloned().collect();
-        let store = S3Store::new(buckets)
-            .await
-            .context("could not initialize s3 interface")?;
+        let store = S3Store::new(buckets);
         Ok(store)
     } else {
-        S3Store::empty().await
+        Ok(S3Store::empty())
     }
 }

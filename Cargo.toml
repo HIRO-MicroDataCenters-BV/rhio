@@ -73,3 +73,4 @@ strum = { version = "0.26", features = ["derive"] }
 reqwest = { version = "0.11", features = ["json"] }
 # pinned version of rusttls due to iroh-net and stackable-operator/kube-rs
 rustls = { version = "0.23" }
+chrono = { version = "0.4.19" }

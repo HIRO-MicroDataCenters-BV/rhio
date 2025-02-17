@@ -5153,6 +5153,8 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
+ "chrono",
+ "dashmap 6.1.0",
  "futures-lite 2.5.0",
  "iroh-blobs",
  "iroh-io",

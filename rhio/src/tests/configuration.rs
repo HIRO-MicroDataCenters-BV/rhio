@@ -65,6 +65,7 @@ pub fn generate_s3_config() -> S3Config {
             session_token: None,
             expiration: None,
         }),
+        watcher_poll_interval_millis: Some(300),
     }
 }
 

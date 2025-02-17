@@ -44,6 +44,8 @@ pub struct MessageStreamPublishStatus {
     pub stream: String,
     pub subject: String,
     pub status: ObjectStatus,
+    pub last_error: Option<String>,
+    pub last_check_time: Option<u64>,
 }
 
 impl MessageStreamPublishStatus {
@@ -52,6 +54,8 @@ impl MessageStreamPublishStatus {
             status: ObjectStatus::Unknown,
             stream: stream.to_owned(),
             subject: subject.to_owned(),
+            last_error: None,
+            last_check_time: None,
         }
     }
 }
@@ -62,6 +66,8 @@ pub struct MessageStreamSubscribeStatus {
     pub stream: String,
     pub subject: String,
     pub status: ObjectStatus,
+    pub last_error: Option<String>,
+    pub last_check_time: Option<u64>,
 }
 
 impl MessageStreamSubscribeStatus {
@@ -75,6 +81,8 @@ impl MessageStreamSubscribeStatus {
             source: source.to_owned(),
             stream: stream.to_owned(),
             subject: subject.to_owned(),
+            last_error: None,
+            last_check_time: None,
         }
     }
 }
@@ -83,6 +91,8 @@ impl MessageStreamSubscribeStatus {
 pub struct ObjectStorePublishStatus {
     pub bucket: String,
     pub status: ObjectStatus,
+    pub last_error: Option<String>,
+    pub last_check_time: Option<u64>,
 }
 
 impl ObjectStorePublishStatus {
@@ -90,6 +100,8 @@ impl ObjectStorePublishStatus {
         ObjectStorePublishStatus {
             status: ObjectStatus::Unknown,
             bucket: bucket.to_owned(),
+            last_error: None,
+            last_check_time: None,
         }
     }
 }
@@ -100,6 +112,8 @@ pub struct ObjectStoreSubscribeStatus {
     pub remote_bucket: String,
     pub local_bucket: String,
     pub status: ObjectStatus,
+    pub last_error: Option<String>,
+    pub last_check_time: Option<u64>,
 }
 
 impl ObjectStoreSubscribeStatus {
@@ -113,13 +127,17 @@ impl ObjectStoreSubscribeStatus {
             source: source.to_owned(),
             remote_bucket: remote_bucket.to_owned(),
             local_bucket: local_bucket.to_owned(),
+            last_error: None,
+            last_check_time: None,
         }
     }
 }
 
 #[derive(Deserialize, Serialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub enum ObjectStatus {
+    New,
     #[default]
-    Activated,
+    Active,
+    Inactive,
     Unknown,
 }
