@@ -183,7 +183,7 @@ impl S3Watcher {
                     // 3. List of S3 objects which have been encoded / completed already and are
                     //    ready for p2p sync.
                     {
-                        let list = store.complete_blobs().await;
+                        let list = store.complete_blobs();
                         let mut inner = inner.write().await;
                         for completed_blob in list {
                             let watched = WatchedObject::from(completed_blob.clone());

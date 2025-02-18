@@ -27,7 +27,7 @@ use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
 use crate::utils::{get_meta, get_outboard, put_meta, remove_meta, remove_outboard};
 use crate::{
     BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
-    SignedBlobInfo, UnsignedBlobInfo,
+    SignedBlobInfo, UnsignedBlobInfo, OUTBOARD_SUFFIX,
 };
 
 /// An S3 backed iroh blobs store.
@@ -105,6 +105,17 @@ impl S3Store {
         bucket: &Bucket,
     ) {
         let mut detected_hashes = HashSet::new();
+        let mut blobs_without_meta = HashMap::new();
+        let mut all_blobs = HashSet::new();
+
+        for list in &results {
+            for object in &list.contents {
+                if !object.key.ends_with(META_SUFFIX) && !object.key.ends_with(OUTBOARD_SUFFIX) {
+                    blobs_without_meta.insert(object.key.clone(), object.clone());
+                    all_blobs.insert(object.key.clone());
+                }
+            }
+        }
 
         for list in results {
             for object in list.contents {
@@ -118,6 +129,7 @@ impl S3Store {
                         }
                     };
                     detected_hashes.insert(entry.hash());
+                    blobs_without_meta.remove(&entry.meta.key);
                     state.entries.entry(entry.hash()).or_insert_with(|| {
                         debug!("loaded blob {} from meta file", entry.hash());
                         entry
@@ -129,13 +141,15 @@ impl S3Store {
         // Remove all entries from the in-memory store and meta files from the S3 bucket when
         // there's no equivalent S3 object in the bucket anymore. This can happen if a user
         // manually just removes or edits that file.
-
         let mut dangling_entries = Vec::new();
         for entry in state.entries.iter() {
             let hash = entry.key();
             let value = entry.value();
-            if !detected_hashes.contains(hash) {
-                dangling_entries.push((*hash, value.clone()));
+            if value.bucket_name == bucket.name() {
+                // there is no meta in memory or no blob in the bucket
+                if !detected_hashes.contains(hash) || !all_blobs.contains(&value.meta.key) {
+                    dangling_entries.push((*hash, value.clone()));
+                }
             }
         }
 
@@ -143,12 +157,26 @@ impl S3Store {
             trace!(%hash, key = %entry.meta.key, bucket_name = %entry.bucket_name, "detected dangling blob entry");
 
             // Remove files from S3 bucket.
-            let paths = Paths::from_meta(&entry.meta.key);
-            if let Err(err) = remove_outboard(bucket, &paths).await {
+            if let Err(err) = remove_outboard(bucket, &entry.paths).await {
                 warn!(key = %entry.meta.key, "failed removing outboard file: {err}");
             }
-            if let Err(err) = remove_meta(bucket, &paths).await {
+            if let Err(err) = remove_meta(bucket, &entry.paths).await {
                 warn!(key = %entry.meta.key, "failed removing meta file: {err}");
+            }
+            state.entries.remove(&hash);
+        }
+
+        // Recreate meta for files that don't have a corresponding meta file.
+        for (key, object) in blobs_without_meta {
+            let not_imported_object = NotImportedObject {
+                local_bucket_name: bucket.name(),
+                key,
+                size: object.size,
+            };
+            println!("not_imported_object: {:?}", not_imported_object);
+            let import_result = self.import_object(not_imported_object).await;
+            if let Err(err) = import_result {
+                warn!(key = %object.key, "failed importing object: {err}");
             }
         }
     }
@@ -228,7 +256,7 @@ impl S3Store {
     }
 
     /// Query the store for all complete blobs.
-    pub async fn complete_blobs(&self) -> Vec<CompletedBlob> {
+    pub fn complete_blobs(&self) -> Vec<CompletedBlob> {
         self.inner
             .entries
             .iter()
@@ -637,5 +665,157 @@ impl ReadableStore for S3Store {
         _progress: ExportProgressCb,
     ) -> io::Result<()> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+
+    use rand::Rng;
+    use s3_server::{generate_s3_config, new_s3_server, FakeS3Server};
+    use tokio::runtime::{Builder, Runtime};
+
+    use super::*;
+
+    #[test]
+    fn test_import_object() -> Result<()> {
+        let TestSetup {
+            s3_source,
+            store,
+            test_runtime,
+            ..
+        } = create_test_setup()?;
+
+        let mut rng = rand::thread_rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+
+        s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
+
+        let object = NotImportedObject {
+            local_bucket_name: "test-bucket".to_string(),
+            key: "file.bin".to_string(),
+            size: 1024,
+        };
+
+        assert!(test_runtime
+            .block_on(async { store.import_object(object).await })
+            .is_ok());
+
+        let complete_blobs = store.complete_blobs();
+        assert_eq!(complete_blobs.len(), 1);
+
+        let incomplete_blobs = store.incomplete_blobs();
+        assert_eq!(incomplete_blobs.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_blob_and_reload() -> Result<()> {
+        let TestSetup {
+            s3_source,
+            store,
+            test_runtime,
+            ..
+        } = create_test_setup()?;
+
+        // Importing object and creating meta
+        let mut rng = rand::thread_rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+        s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
+        test_runtime.block_on(async { store.reload().await });
+
+        assert_eq!(store.complete_blobs().len(), 1);
+        assert_eq!(store.incomplete_blobs().len(), 0);
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.bao4")?);
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.json")?);
+
+        // Deleting the file and reload
+        s3_source.delete_bytes("test-bucket", "file.bin")?;
+        test_runtime.block_on(async { store.reload().await });
+
+        // Meta must be removed as well
+        assert!(!s3_source.exists("test-bucket", ".rhio/file.bin.rhio.bao4")?);
+        assert!(!s3_source.exists("test-bucket", ".rhio/file.bin.rhio.json")?);
+
+        // Object must be removed from the store
+        assert_eq!(store.complete_blobs().len(), 0);
+        assert_eq!(store.incomplete_blobs().len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_no_meta_and_reload() -> Result<()> {
+        let TestSetup {
+            s3_source,
+            store,
+            test_runtime,
+            ..
+        } = create_test_setup()?;
+
+        // Importing object and creating meta
+        let mut rng = rand::thread_rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+        s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
+        test_runtime.block_on(async { store.reload().await });
+
+        assert_eq!(store.complete_blobs().len(), 1);
+        assert_eq!(store.incomplete_blobs().len(), 0);
+
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.bao4")?);
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.json")?);
+
+        // Deleting the meta and reloading
+        s3_source.delete_bytes("test-bucket", ".rhio/file.bin.rhio.bao4")?;
+        s3_source.delete_bytes("test-bucket", ".rhio/file.bin.rhio.json")?;
+        test_runtime.block_on(async { store.reload().await });
+
+        // Meta must be recreated
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.bao4")?);
+        assert!(s3_source.exists("test-bucket", ".rhio/file.bin.rhio.json")?);
+
+        // Object must remain in the store
+        assert_eq!(store.complete_blobs().len(), 1);
+        assert_eq!(store.incomplete_blobs().len(), 0);
+
+        Ok(())
+    }
+
+    struct TestSetup {
+        s3_source: FakeS3Server,
+        store: S3Store,
+        test_runtime: Arc<Runtime>,
+    }
+
+    fn create_test_setup() -> Result<TestSetup> {
+        let test_runtime = Arc::new(
+            Builder::new_multi_thread()
+                .enable_io()
+                .enable_time()
+                .thread_name("test-runtime")
+                .worker_threads(3)
+                .build()
+                .expect("test tokio runtime"),
+        );
+
+        let (region, credentials) = generate_s3_config();
+
+        let s3_source = new_s3_server(
+            region.clone(),
+            Some(credentials.clone()),
+            test_runtime.clone(),
+        )?;
+        s3_source.create_bucket("test-bucket")?;
+
+        let bucket =
+            *Bucket::new("test-bucket", region.clone(), credentials.clone())?.with_path_style();
+        let store = S3Store::new(vec![bucket.clone()]);
+
+        Ok(TestSetup {
+            s3_source,
+            store,
+            test_runtime,
+        })
     }
 }

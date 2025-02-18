@@ -23,3 +23,9 @@ tracing.workspace = true
 url.workspace = true
 chrono.workspace = true
 dashmap.workspace = true
+
+[dev-dependencies]
+s3-server.workspace = true
+s3s.workspace = true
+url.workspace = true
+rand.workspace = true
