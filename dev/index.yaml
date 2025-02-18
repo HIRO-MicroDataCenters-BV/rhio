@@ -30,6 +30,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.2.1-dev.6.docker-multiple.bf5d6bf8.tgz
     version: 0.2.1-dev.6.docker-multiple.bf5d6bf8
   - apiVersion: v2
+    appVersion: 0.2.1-dev.5.s3-watcher-failu.c28c12aa
+    created: "2025-02-18T09:28:02.834922852Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 294b37f9e244784dc5bba0de43dd3b4ab622c8e18587c20c7314993f6e6e6bd7
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-0.2.1-dev.5.s3-watcher-failu.c28c12aa.tgz
+    version: 0.2.1-dev.5.s3-watcher-failu.c28c12aa
+  - apiVersion: v2
     appVersion: 0.2.1-dev.5.docker-multiple.59c4a13e
     created: "2025-02-14T16:59:54.978928566Z"
     description: peer-to-peer message stream and blob storage solution
@@ -1289,6 +1303,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-operator-0.2.1-dev.6.docker-multiple.bf5d6bf8.tgz
     version: 0.2.1-dev.6.docker-multiple.bf5d6bf8
   - apiVersion: v2
+    appVersion: 0.2.1-dev.5.s3-watcher-failu.c28c12aa
+    created: "2025-02-18T09:28:02.835532552Z"
+    description: The Stackable Operator for Rhio Service
+    digest: 7fcf7b366d6f116a959dcdc0adeb0b2d0faa599a1c5e8692d60bc9b1559ee5a0
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-operator-0.2.1-dev.5.s3-watcher-failu.c28c12aa.tgz
+    version: 0.2.1-dev.5.s3-watcher-failu.c28c12aa
+  - apiVersion: v2
     appVersion: 0.2.1-dev.5.docker-multiple.59c4a13e
     created: "2025-02-14T16:59:54.979904857Z"
     description: The Stackable Operator for Rhio Service
@@ -2016,4 +2043,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/dev/rhio-operator-0.0.0.tgz
     version: 0.0.0
-generated: "2025-02-14T17:21:33.502932786Z"
+generated: "2025-02-18T09:28:02.834289778Z"
