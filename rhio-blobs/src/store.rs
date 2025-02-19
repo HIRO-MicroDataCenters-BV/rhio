@@ -98,6 +98,27 @@ impl S3Store {
         }
     }
 
+    /// Reloads the contents of a specific bucket.
+    ///
+    /// This method processes the list of objects in the bucket, identifies and loads metadata
+    /// files, and updates the in-memory store accordingly. It also handles the removal of
+    /// dangling entries and the creation of metadata for objects that don't have corresponding
+    /// metadata files.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - A reference to the inner state of the S3 store.
+    /// * `results` - A vector of `ListBucketResult` containing the objects in the bucket.
+    /// * `bucket` - A reference to the `Bucket` being reloaded.
+    ///
+    /// This method performs the following steps:
+    /// 1. Identifies objects without metadata and collects all blobs.
+    /// 2. Processes metadata files to create or update entries in the in-memory store.
+    /// 3. Removes entries from the in-memory store and metadata files from the S3 bucket if the
+    ///    corresponding S3 object no longer exists.
+    /// 4. Recreates metadata for objects that don't have corresponding metadata files.
+    ///
+    /// This method is asynchronous and should be awaited.
     async fn reload_bucket(
         &self,
         state: &S3StoreInner,
@@ -398,6 +419,15 @@ struct S3StoreInner {
 }
 
 impl S3StoreInner {
+    /// Ensures that a bucket entry exists for the given `key`.
+    ///
+    /// If the bucket entry does not exist, it creates a new one with the
+    /// `NotInitialized` state and sets the `last_check_time` to the provided `now` timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A reference to the `ObjectKey` for which the bucket entry should be ensured.
+    /// * `now` - A timestamp representing the current time.
     fn ensure_bucket(&self, key: &ObjectKey, now: u64) {
         if !self.buckets.contains_key(key) {
             self.buckets.insert(
@@ -414,6 +444,16 @@ impl S3StoreInner {
         }
     }
 
+    /// Sets the error status for the bucket entry corresponding to the given `key`.
+    ///
+    /// If the bucket entry exists and its state is `Active`, it changes the state to `Inactive`.
+    /// It also updates the `last_error` with the provided error message and sets the `last_check_time` to the provided `now` timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A reference to the `ObjectKey` for which the error status should be set.
+    /// * `now` - A timestamp representing the current time.
+    /// * `err_msg` - A string containing the error message to be recorded.
     fn set_error_status(&self, key: &ObjectKey, now: u64, err_msg: String) {
         if let Some(mut entry) = self.buckets.get_mut(key) {
             let status = &mut entry.value_mut().status;
@@ -425,6 +465,15 @@ impl S3StoreInner {
         }
     }
 
+    /// Sets the success status for the bucket entry corresponding to the given `key`.
+    ///
+    /// If the bucket entry exists, it changes the state to `Active`, clears any previous error,
+    /// and updates the `last_check_time` to the provided `now` timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A reference to the `ObjectKey` for which the success status should be set.
+    /// * `now` - A timestamp representing the current time.
     fn set_success_status(&self, key: &ObjectKey, now: u64) {
         if let Some(mut entry) = self.buckets.get_mut(key) {
             entry.value_mut().status = BucketStatus {
