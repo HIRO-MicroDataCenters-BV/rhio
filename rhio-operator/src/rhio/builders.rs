@@ -106,7 +106,7 @@ pub fn build_statefulset(
                 .with_cpu_request("250m")
                 .with_cpu_limit("1")
                 .with_memory_request("128Mi")
-                .with_memory_limit("128Mi")
+                .with_memory_limit("1Gi")
                 .build(),
         );
 

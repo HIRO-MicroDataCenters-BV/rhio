@@ -41,11 +41,11 @@ spec:
               # Minimum and maximum resources requested for each pod
               resources:
                 requests:
-                  cpu: 250m
-                  memory: 1Gi
+                  cpu: 500m
+                  memory: 2Gi
                 limits:
                   cpu: 1
-                  memory: 1Gi
+                  memory: 2Gi
           # Enable automatic certificate generation and signing
           certificate:
             requestAutoCert: false

@@ -156,7 +156,6 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
                 // 3. Send over a list of blob hashes we have already to remote peer.
                 let blob_hashes: Vec<BlobHash> = self
                     .complete_blobs()
-                    .await
                     .iter()
                     .filter_map(|blob| {
                         // We're only interested in remote peer's blobs when initiating a sync
@@ -441,7 +440,7 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                 // 6. Send back delta data to other peer.
                 let mut counter = 0;
-                for blob in self.complete_blobs().await {
+                for blob in self.complete_blobs() {
                     match blob {
                         CompletedBlob::Unsigned(ref blob) => {
                             // Remote peer did not ask for our data.
@@ -680,8 +679,8 @@ impl RhioSyncProtocol {
     }
 
     /// Get a list of blobs we have ourselves in the blob store.
-    async fn complete_blobs(&self) -> Vec<CompletedBlob> {
-        self.blob_store.complete_blobs().await.into_iter().collect()
+    fn complete_blobs(&self) -> Vec<CompletedBlob> {
+        self.blob_store.complete_blobs()
     }
 
     /// Finds out which subjects for this public key can be hooked into which NATS stream based on

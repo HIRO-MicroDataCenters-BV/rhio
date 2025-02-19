@@ -127,7 +127,7 @@ impl NodeActor {
                     match event {
                         Ok(event) => {
                             if let Err(err) = self.on_watcher_event(event).await {
-                                break Err(err);
+                                warn!("error during watcher event handling: {}", err);
                             }
                         },
                         Err(err) => break Err(anyhow!(err)),

@@ -4,6 +4,7 @@ use axum_prometheus::{
     metrics::set_global_recorder,
     metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle},
 };
+use rhio_blobs::{BucketState, BucketStatus, S3Store};
 use rhio_config::configuration::Config;
 use rhio_http_api::{
     api::RhioApi,
@@ -31,16 +32,54 @@ use tracing::warn;
 ///
 pub struct RhioApiImpl {
     config: Config,
+    store: S3Store,
     recorder_handle: PrometheusHandle,
 }
 
 impl RhioApiImpl {
-    pub fn new(config: Config) -> Result<RhioApiImpl> {
+    pub fn new(config: Config, store: S3Store) -> Result<RhioApiImpl> {
         let recorder_handle = setup_metrics_recorder()?;
         Ok(RhioApiImpl {
             config,
             recorder_handle,
+            store,
         })
+    }
+
+    fn to_object_state(state: &BucketState) -> ObjectStatus {
+        match state {
+            BucketState::Active => ObjectStatus::Active,
+            BucketState::NotInitialized => ObjectStatus::New,
+            BucketState::Inactive => ObjectStatus::Inactive,
+        }
+    }
+
+    fn to_bucket_publish_status(
+        bucket: &String,
+        status: &BucketStatus,
+    ) -> ObjectStorePublishStatus {
+        ObjectStorePublishStatus {
+            status: RhioApiImpl::to_object_state(&status.state),
+            bucket: bucket.to_owned(),
+            last_error: status.last_error.clone(),
+            last_check_time: status.last_check_time,
+        }
+    }
+
+    fn to_bucket_subscribe_status(
+        source: &String,
+        remote_bucket: &String,
+        local_bucket: &String,
+        status: &BucketStatus,
+    ) -> ObjectStoreSubscribeStatus {
+        ObjectStoreSubscribeStatus {
+            status: RhioApiImpl::to_object_state(&status.state),
+            remote_bucket: remote_bucket.to_owned(),
+            local_bucket: local_bucket.to_owned(),
+            source: source.to_owned(),
+            last_error: status.last_error.clone(),
+            last_check_time: status.last_check_time,
+        }
     }
 }
 
@@ -55,40 +94,58 @@ impl RhioApi for RhioApiImpl {
             published: vec![],
             subscribed: vec![],
         };
+        let statuses = self.store.statuses();
         if let Some(publish) = &self.config.publish {
             for subject in &publish.nats_subjects {
                 let status = MessageStreamPublishStatus {
-                    status: ObjectStatus::Activated,
+                    status: ObjectStatus::Active,
                     stream: subject.stream_name.to_owned(),
                     subject: subject.subject.to_string(),
+                    last_error: None,
+                    last_check_time: None,
                 };
                 streams.published.push(status);
             }
             for bucket in &publish.s3_buckets {
-                let status = ObjectStorePublishStatus {
-                    status: ObjectStatus::Activated,
-                    bucket: bucket.to_owned(),
-                };
+                let status = statuses
+                    .get(bucket)
+                    .map(|status| RhioApiImpl::to_bucket_publish_status(bucket, status))
+                    .unwrap_or_else(|| ObjectStorePublishStatus::to_unknown(bucket));
                 stores.published.push(status);
             }
         }
+
         if let Some(subscribe) = &self.config.subscribe {
             for subject in &subscribe.nats_subjects {
                 let status = MessageStreamSubscribeStatus {
-                    status: ObjectStatus::Activated,
+                    status: ObjectStatus::Active,
                     stream: subject.stream_name.to_owned(),
                     subject: subject.subject.to_string(),
                     source: subject.public_key.to_hex(),
+                    last_error: None,
+                    last_check_time: None,
                 };
                 streams.subscribed.push(status);
             }
             for bucket in &subscribe.s3_buckets {
-                let status = ObjectStoreSubscribeStatus {
-                    status: ObjectStatus::Activated,
-                    remote_bucket: bucket.remote_bucket_name.to_owned(),
-                    local_bucket: bucket.local_bucket_name.to_owned(),
-                    source: bucket.public_key.to_hex(),
-                };
+                let status = statuses
+                    .get(&bucket.local_bucket_name)
+                    .map(|status| {
+                        RhioApiImpl::to_bucket_subscribe_status(
+                            &bucket.public_key.to_hex(),
+                            &bucket.remote_bucket_name,
+                            &bucket.local_bucket_name,
+                            status,
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        ObjectStoreSubscribeStatus::to_unknown(
+                            &bucket.public_key.to_hex(),
+                            &bucket.remote_bucket_name,
+                            &bucket.local_bucket_name,
+                        )
+                    });
+
                 stores.subscribed.push(status);
             }
         }

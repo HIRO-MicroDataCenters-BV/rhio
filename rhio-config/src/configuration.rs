@@ -154,6 +154,7 @@ pub struct S3Config {
     pub credentials: Option<Credentials>,
     pub endpoint: String,
     pub region: String,
+    pub watcher_poll_interval_millis: Option<u64>,
 }
 
 impl Default for S3Config {
@@ -162,6 +163,7 @@ impl Default for S3Config {
             credentials: None,
             endpoint: S3_ENDPOINT.to_string(),
             region: S3_REGION.to_string(),
+            watcher_poll_interval_millis: None,
         }
     }
 }
@@ -362,6 +364,7 @@ protocol:
 s3:
     endpoint: "http://minio.svc.kubernetes.local"
     region: "eu-central-1"
+    watcher_poll_interval_millis: 1000
     credentials:
         access_key: "access_key_test"
         secret_key: "secret_key_test"
@@ -425,6 +428,7 @@ subscribe:
                         }),
                         endpoint: "http://minio.svc.kubernetes.local".into(),
                         region: "eu-central-1".into(),
+                        watcher_poll_interval_millis: Some(1000)
                     }),
                     nats: NatsConfig {
                         endpoint: "http://nats.svc.kubernetes.local".into(),

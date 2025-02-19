@@ -18,7 +18,7 @@ impl Paths {
     }
 
     pub fn from_meta(path: &str) -> Self {
-        Self::new(&path[0..path.len() - META_SUFFIX.len()])
+        Self::new(&path[0..path.len().saturating_sub(META_SUFFIX.len())])
     }
 
     pub fn data(&self) -> String {

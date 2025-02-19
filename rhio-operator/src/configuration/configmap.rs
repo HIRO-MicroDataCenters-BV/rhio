@@ -301,6 +301,7 @@ impl RhioConfigMapBuilder {
             endpoint: s3_conf.endpoint.to_owned(),
             region: s3_conf.region.to_owned(),
             credentials: s3_credentials,
+            watcher_poll_interval_millis: None,
         });
         let config = Config {
             node: NodeConfig {
@@ -445,6 +446,7 @@ mod tests {
                     session_token: None,
                     expiration: None,
                 }),
+                watcher_poll_interval_millis: None,
             }),
             nats: NatsConfig {
                 endpoint: "nats://nats-jetstream.dkg-engine.svc.cluster.local:4222".into(),

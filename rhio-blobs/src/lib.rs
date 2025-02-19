@@ -14,6 +14,8 @@ use p2panda_core::{PublicKey, Signature};
 
 pub use paths::{Paths, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX};
 use serde::{Deserialize, Serialize};
+pub use store::BucketState;
+pub use store::BucketStatus;
 pub use store::S3Store;
 
 /// Name of the S3 bucket which can contain S3 objects stored under keys.
