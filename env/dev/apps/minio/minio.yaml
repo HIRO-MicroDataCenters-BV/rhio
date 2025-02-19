@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    argocd.argoproj.io/sync-wave: "-30"
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: minio
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    repoURL: https://operator.min.io
+    chart: operator
+    targetRevision: 5.0.14
+    helm:
+      valuesObject:
+        operator:
+          env:
+            - name: OPERATOR_STS_ENABLED
+              value: "on"      
+            - name: CLUSTER_DOMAIN
+              value: cluster.local
+        console:
+          ingress:
+            enabled: false
+        tenants: []
+  syncPolicy:
+    automated:
+     prune: true
+     selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

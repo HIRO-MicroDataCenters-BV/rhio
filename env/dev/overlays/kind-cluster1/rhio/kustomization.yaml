@@ -1,0 +1,76 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../apps/rhio
+  - private-key-secret.yaml
+  - rmss.cluster2.yaml
+  - rmss.cluster3.yaml
+  - ross.cluster2.yaml
+  - ross.cluster3.yaml
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/configuration/s3/endpoint
+        value: http://minio-tenant-hl.minio.svc.cluster1.local:9000
+    target: 
+      group: rhio.hiro.io
+      version: v1
+      kind: RhioService
+      name: rhio-service
+      namespace: rhio
+  - patch: |-
+      - op: replace
+        path: /spec/configuration/nats/endpoint
+        value: nats://nats-jetstream.nats.svc.cluster1.local:4222
+    target: 
+      group: rhio.hiro.io
+      version: v1
+      kind: RhioService
+      name: rhio-service
+      namespace: rhio
+  - patch: |-
+      - op: replace
+        path: /spec/source/helm/valuesObject/kubernetesClusterDomain
+        value: cluster1.local
+    target: 
+      group: argoproj.io
+      version: v1alpha1
+      kind: Application
+      name: rhio-operator
+      namespace: argocd
+  - patch: |-
+      - op: replace
+        path: /spec/configuration/nodes/0
+        value:
+          publicKey: b01854865341ac6db10b6aa9646045d65ddc2ac8e5e198ffd2d04ceca045ddf9
+          endpoints: 
+          - rhio-service.rhio.svc.cluster2.local:9102
+    target: 
+      group: rhio.hiro.io
+      version: v1
+      kind: RhioService
+      name: rhio-service
+      namespace: rhio
+  - patch: |-
+      - op: replace
+        path: /spec/configuration/nodes/1
+        value:
+          publicKey: 43b2bb39061bc3267e869303268a81734fb8767d3a17ee490813955bd734fd3a
+          endpoints:
+          - rhio-service.rhio.svc.cluster3.local:9102
+    target: 
+      group: rhio.hiro.io
+      version: v1
+      kind: RhioService
+      name: rhio-service
+      namespace: rhio
+  - patch: |-
+      - op: replace
+        path: /spec/subjects/0
+        value: cluster1
+    target: 
+      group: rhio.hiro.io
+      version: v1
+      kind: ReplicatedMessageStream
+      name: test-stream
+      namespace: rhio
