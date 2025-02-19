@@ -173,7 +173,6 @@ impl S3Store {
                 key,
                 size: object.size,
             };
-            println!("not_imported_object: {:?}", not_imported_object);
             let import_result = self.import_object(not_imported_object).await;
             if let Err(err) = import_result {
                 warn!(key = %object.key, "failed importing object: {err}");

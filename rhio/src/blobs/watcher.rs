@@ -32,8 +32,50 @@ impl Default for S3WatcherOptions {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct S3Watcher {
-    event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
     inner: Arc<RwLock<Inner>>,
+    handle: Arc<JoinHandle<Result<()>>>,
+}
+
+impl S3Watcher {
+    pub fn new(
+        store: S3Store,
+        event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
+        options: S3WatcherOptions,
+    ) -> Self {
+        let inner = Arc::new(RwLock::new(Inner {
+            s3_objects: HashSet::new(),
+            completed: HashSet::new(),
+            incomplete: HashSet::new(),
+            event_tx: event_tx.clone(),
+            store: store.clone(),
+        }));
+
+        let local_inner = inner.clone();
+
+        let handle: JoinHandle<Result<(), _>> = tokio::spawn(async move {
+            let mut first_run = true;
+
+            loop {
+                store.reload().await;
+                {
+                    let mut inner = local_inner.write().await;
+                    for bucket in store.buckets() {
+                        inner.detect_updates(bucket, first_run).await;
+                    }
+                    drop(inner);
+                }
+
+                tokio::time::sleep(options.poll_interval).await;
+
+                first_run = false;
+            }
+        });
+
+        Self {
+            inner,
+            handle: Arc::new(handle),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -114,174 +156,170 @@ struct Inner {
 
     /// List of S3 objects which should be downloaded from remote peers but did not finish yet.
     incomplete: HashSet<WatchedObject>,
+
+    /// Blob store
+    store: S3Store,
+
+    /// Blob Update Events
+    event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
 }
 
-impl S3Watcher {
-    pub fn new(
-        store: S3Store,
-        event_tx: mpsc::Sender<Result<S3Event, S3Error>>,
-        options: S3WatcherOptions,
-    ) -> Self {
-        let inner = Arc::new(RwLock::new(Inner {
-            s3_objects: HashSet::new(),
-            completed: HashSet::new(),
-            incomplete: HashSet::new(),
-        }));
+impl Inner {
+    async fn detect_updates(&mut self, bucket: &s3::Bucket, first_run: bool) {
+        // 1 List of _all_ S3 objects in this bucket.
+        let new_watched = self.get_new_blobs(bucket).await;
 
-        let watcher = Self {
-            event_tx: event_tx.clone(),
-            inner: inner.clone(),
-        };
+        // 2 List of S3 objects which have been encoded / completed already and are
+        //    ready for p2p sync.
+        self.complete_blobs(first_run).await;
+        self.announce_detected_objects(new_watched).await;
 
-        let _result: JoinHandle<Result<(), _>> = tokio::spawn(async move {
-            let mut first_run = true;
+        // 3 List of S3 objects which were started to be downloaded, but did not
+        //    finish yet.
+        {
+            // Only run this when the app starts.
+            if first_run {
+                self.detecting_incomplete_blobs().await;
+            }
+        }
+    }
 
-            loop {
-                // 1. Reloading the S3 Store
-                store.reload().await;
-
-                for bucket in store.buckets() {
-                    // 2. List of _all_ S3 objects in this bucket.
-                    let mut maybe_to_be_imported = Vec::new();
-                    let maybe_bucket_list = bucket.list(NO_PREFIX, None).await;
-                    match maybe_bucket_list {
-                        Ok(pages) => {
-                            let mut inner = inner.write().await;
-                            for page in pages {
-                                for object in page.contents {
-                                    // Filter out objects in database which are related to rhio
-                                    // blob syncing. They live right next to the actual blobs in
-                                    // the same S3 bucket.
-                                    if object.key.ends_with(META_SUFFIX)
-                                        || object.key.ends_with(OUTBOARD_SUFFIX)
-                                    {
-                                        continue;
-                                    }
-
-                                    let watched = WatchedObject {
-                                        size: object.size,
-                                        local_bucket_name: bucket.name(),
-                                        key: object.key,
-                                        import_state: ImportState::NotImported,
-                                    };
-
-                                    // If object was observed for the first time, earmark it so we
-                                    // can check later if it's download or import was already
-                                    // completed.
-                                    let is_new = inner.s3_objects.insert(watched.clone());
-                                    if is_new {
-                                        maybe_to_be_imported.push(watched);
-                                    }
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            warn!("failed to list bucket objects: {:?}, skipping...", err);
-                        }
-                    }
-
-                    // 3. List of S3 objects which have been encoded / completed already and are
-                    //    ready for p2p sync.
-                    {
-                        let list = store.complete_blobs();
-                        let mut inner = inner.write().await;
-                        for completed_blob in list {
-                            let watched = WatchedObject::from(completed_blob.clone());
-
-                            // Remove object from "incomplete" list and add it to "completed".
-                            inner.incomplete.remove(&watched);
-                            let is_new = inner.completed.insert(watched.clone());
-
-                            // During the first iteration we're only establishing the initial state
-                            // of completed items. For all further iterations we're sending events
-                            // as soon as a new object was completed.
-                            if is_new && !first_run {
-                                debug!(
-                                    key = %completed_blob.key(),
-                                    size = %completed_blob.size(),
-                                    hash = %completed_blob.hash(),
-                                    local_bucket_name = %completed_blob.local_bucket_name(),
-                                    "detected finished blob import"
-                                );
-
-                                if event_tx
-                                    .send(Ok(S3Event::BlobImportFinished(completed_blob)))
-                                    .await
-                                    .is_err()
-                                {
-                                    return Err(());
-                                }
-                            }
+    async fn get_new_blobs(&mut self, bucket: &s3::Bucket) -> Vec<WatchedObject> {
+        let mut maybe_to_be_imported = Vec::new();
+        let maybe_bucket_list = bucket.list(NO_PREFIX, None).await;
+        match maybe_bucket_list {
+            Ok(pages) => {
+                for page in pages {
+                    for object in page.contents {
+                        // Filter out objects in database which are related to rhio
+                        // blob syncing. They live right next to the actual blobs in
+                        // the same S3 bucket.
+                        if object.key.ends_with(META_SUFFIX)
+                            || object.key.ends_with(OUTBOARD_SUFFIX)
+                        {
+                            continue;
                         }
 
-                        // Compare item from S3 database with completed ones, so we can identify
-                        // which object has not yet been imported.
-                        for object in maybe_to_be_imported {
-                            if !inner.completed.contains(&object) {
-                                debug!(
-                                    key = %object.key,
-                                    size = %object.size,
-                                    local_bucket_name = %object.local_bucket_name,
-                                    "detected new S3 object to be imported"
-                                );
+                        let watched = WatchedObject {
+                            size: object.size,
+                            local_bucket_name: bucket.name(),
+                            key: object.key,
+                            import_state: ImportState::NotImported,
+                        };
 
-                                if event_tx
-                                    .send(Ok(S3Event::DetectedS3Object(NotImportedObject {
-                                        local_bucket_name: object.local_bucket_name,
-                                        key: object.key,
-                                        size: object.size,
-                                    })))
-                                    .await
-                                    .is_err()
-                                {
-                                    return Err(());
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. List of S3 objects which were started to be downloaded, but did not
-                    //    finish yet.
-                    {
-                        // Only run this when the app starts.
-                        // TODO turn this code into idempotent, e.g. run periodically
-                        if first_run {
-                            let list = store.incomplete_blobs();
-                            let mut inner = inner.write().await;
-                            for incomplete_blob in list {
-                                let watched = WatchedObject::from(incomplete_blob.clone());
-                                let is_new = inner.incomplete.insert(watched);
-
-                                if is_new {
-                                    debug!(
-                                        key = %incomplete_blob.key,
-                                        size = %incomplete_blob.size,
-                                        hash = %incomplete_blob.hash,
-                                        local_bucket_name = %incomplete_blob.local_bucket_name,
-                                        remote_bucket_name = %incomplete_blob.remote_bucket_name,
-                                        "detected incomplete blob download"
-                                    );
-
-                                    if event_tx
-                                        .send(Ok(S3Event::DetectedIncompleteBlob(incomplete_blob)))
-                                        .await
-                                        .is_err()
-                                    {
-                                        return Err(());
-                                    }
-                                }
-                            }
+                        // If object was observed for the first time, earmark it so we
+                        // can check later if it's download or import was already
+                        // completed.
+                        let is_new = self.s3_objects.insert(watched.clone());
+                        if is_new {
+                            maybe_to_be_imported.push(watched);
                         }
                     }
                 }
-
-                tokio::time::sleep(options.poll_interval).await;
-
-                first_run = false;
             }
-        });
+            Err(err) => {
+                warn!("failed to list bucket objects: {:?}, skipping...", err);
+            }
+        }
+        maybe_to_be_imported
+    }
 
-        watcher
+    async fn complete_blobs(&mut self, first_run: bool) {
+        let list = self.store.complete_blobs();
+
+        for completed_blob in list {
+            let watched = WatchedObject::from(completed_blob.clone());
+
+            // Remove object from "incomplete" list and add it to "completed".
+            self.incomplete.remove(&watched);
+            let is_new = self.completed.insert(watched.clone());
+
+            // During the first iteration we're only establishing the initial state
+            // of completed items. For all further iterations we're sending events
+            // as soon as a new object was completed.
+            if is_new && !first_run {
+                debug!(
+                    key = %completed_blob.key(),
+                    size = %completed_blob.size(),
+                    hash = %completed_blob.hash(),
+                    local_bucket_name = %completed_blob.local_bucket_name(),
+                    "detected finished blob import"
+                );
+
+                if self
+                    .event_tx
+                    .send(Ok(S3Event::BlobImportFinished(completed_blob)))
+                    .await
+                    .is_err()
+                {
+                    warn!("failed to send S3Event::BlobImportFinished");
+                    self.completed.remove(&watched);
+                    self.incomplete.insert(watched);
+                }
+            }
+        }
+    }
+
+    async fn announce_detected_objects(&mut self, new_watched: Vec<WatchedObject>) {
+        // Compare item from S3 database with completed ones, so we can identify
+        // which object has not yet been imported.
+        for object in new_watched {
+            if !self.completed.contains(&object) {
+                debug!(
+                    key = %object.key,
+                    size = %object.size,
+                    local_bucket_name = %object.local_bucket_name,
+                    "detected new S3 object to be imported"
+                );
+
+                if self
+                    .event_tx
+                    .send(Ok(S3Event::DetectedS3Object(NotImportedObject {
+                        local_bucket_name: object.local_bucket_name.to_owned(),
+                        key: object.key.to_owned(),
+                        size: object.size,
+                    })))
+                    .await
+                    .is_err()
+                {
+                    warn!(
+                        key = %object.key,
+                        size = %object.size,
+                        local_bucket_name = %object.local_bucket_name,
+                        "failed to send S3Event::DetectedS3Object event"
+                    );
+                }
+            }
+        }
+    }
+
+    async fn detecting_incomplete_blobs(&mut self) {
+        let incomplete_blobs = self.store.incomplete_blobs();
+        for incomplete_blob in incomplete_blobs {
+            let watched = WatchedObject::from(incomplete_blob.clone());
+            let is_new = self.incomplete.insert(watched.clone());
+
+            if is_new {
+                debug!(
+                    key = %incomplete_blob.key,
+                    size = %incomplete_blob.size,
+                    hash = %incomplete_blob.hash,
+                    local_bucket_name = %incomplete_blob.local_bucket_name,
+                    remote_bucket_name = %incomplete_blob.remote_bucket_name,
+                    "detected incomplete blob download"
+                );
+
+                if self
+                    .event_tx
+                    .send(Ok(S3Event::DetectedIncompleteBlob(incomplete_blob)))
+                    .await
+                    .is_err()
+                {
+                    warn!("failed to send S3Event::DetectedIncompleteBlob");
+                    self.incomplete.remove(&watched);
+                }
+            }
+        }
     }
 }
 
