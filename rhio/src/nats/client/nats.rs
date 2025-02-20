@@ -1,3 +1,4 @@
+use super::types::{NatsClient, NatsMessageStream};
 use crate::StreamName;
 use anyhow::{bail, Context as AnyhowContext, Result};
 use async_nats::jetstream::consumer::push::MessagesError;
@@ -13,9 +14,8 @@ use bytes::Bytes;
 use pin_project::pin_project;
 use rhio_config::configuration::{NatsConfig, NatsCredentials};
 use rhio_core::{subjects_to_str, Subject};
-use tracing::{span, trace, Level};
-
-use super::types::{NatsClient, NatsMessageStream};
+use std::time::Duration;
+use tracing::{error, info, span, trace, warn, Level};
 
 /// Implementation of the `NatsClient` trait for interacting with NATS JetStream.
 ///
@@ -37,6 +37,7 @@ impl NatsClientImpl {
     #[allow(dead_code)]
     pub async fn new(nats: NatsConfig) -> Result<Self> {
         let nats_options = connect_options(nats.credentials.clone())?;
+        trace!(options=?nats_options, "connecting to NATS server");
         let client = async_nats::connect_with_options(nats.endpoint.clone(), nats_options)
             .await
             .context(format!("connecting to NATS server {}", nats.endpoint))?;
@@ -219,8 +220,23 @@ impl futures::Stream for NatsMessages {
 }
 
 fn connect_options(config: Option<NatsCredentials>) -> Result<ConnectOptions> {
+    let options = ConnectOptions::default()
+        .retry_on_initial_connect()
+        .name("rhio")
+        .max_reconnects(None)
+        .reconnect_delay_callback(reconnect_delay_callback_default)
+        .event_callback(|event| async move {
+            match event {
+                async_nats::Event::Disconnected => error!("Nats client disconnected."),
+                async_nats::Event::Connected => info!("Nats client connected."),
+                async_nats::Event::SlowConsumer(id) => warn!("Slow consumer detected: {id}"),
+                async_nats::Event::ClientError(err) => error!("client error occurred: {err}"),
+                async_nats::Event::ServerError(err) => error!("server error occurred: {err}"),
+                other => trace!("Nats event: {other}"),
+            }
+        });
     let Some(credentials) = config else {
-        return Ok(ConnectOptions::default());
+        return Ok(options);
     };
 
     let options = match (
@@ -232,10 +248,20 @@ fn connect_options(config: Option<NatsCredentials>) -> Result<ConnectOptions> {
         (Some(nkey), None, None, None) => ConnectOptions::with_nkey(nkey),
         (None, Some(token), None, None) => ConnectOptions::with_token(token),
         (None, None, Some(username), Some(password)) => {
-            ConnectOptions::with_user_and_password(username, password)
+            options.user_and_password(username, password)
         }
         _ => bail!("ambigious nats credentials configuration"),
     };
 
     Ok(options)
+}
+
+fn reconnect_delay_callback_default(attempts: usize) -> Duration {
+    if attempts <= 1 {
+        Duration::from_millis(0)
+    } else {
+        let exp: u32 = (attempts - 2).try_into().unwrap_or(u32::MAX);
+        let max = Duration::from_secs(20);
+        std::cmp::min(Duration::from_secs(2_u64.saturating_pow(exp)), max)
+    }
 }
