@@ -109,19 +109,19 @@ impl NodeActor {
                             break Ok(reply);
                         }
                         msg => {
-                            if let Err(err) = self.on_actor_message(msg).await {
-                                break Err(err);
-                            }
+                            self.on_actor_message(msg).await;
                         }
                     }
                 },
                 Some(event) = self.nats_consumer_rx.next() => {
                     if let Err(err) = self.on_nats_event(event).await {
-                        break Err(err);
+                        warn!("error during nats event handling: {}", err);
                     }
                 },
                 Some(event) = self.p2panda_topic_rx.next() => {
-                    self.on_network_event(event).await?;
+                    if let Err(err) = self.on_network_event(event).await {
+                        warn!("error during network event handling: {}", err);
+                    }
                 },
                 Some(event) = self.s3_watcher_rx.recv() => {
                     match event {
@@ -143,7 +143,7 @@ impl NodeActor {
         }
     }
 
-    async fn on_actor_message(&mut self, msg: ToNodeActor) -> Result<()> {
+    async fn on_actor_message(&mut self, msg: ToNodeActor) {
         match msg {
             ToNodeActor::Publish { publication, reply } => {
                 let result = self.on_publish(publication).await;
@@ -160,8 +160,6 @@ impl NodeActor {
                 unreachable!("handled in run_inner");
             }
         }
-
-        Ok(())
     }
 
     /// Application decided to publish a local NATS message stream or S3 bucket.
