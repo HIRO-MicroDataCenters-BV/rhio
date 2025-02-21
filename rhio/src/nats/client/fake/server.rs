@@ -1,6 +1,5 @@
-use anyhow::bail;
-use anyhow::{Context as AnyhowContext, Result};
-use async_nats::jetstream::consumer::push::MessagesError;
+use anyhow::{anyhow, bail, Context as AnyhowContext, Result};
+use async_nats::jetstream::consumer::push::{MessagesError, MessagesErrorKind};
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message;
 use dashmap::DashMap;
@@ -10,10 +9,11 @@ use once_cell::sync::Lazy;
 use rhio_config::configuration::NatsConfig;
 use rhio_core::Subject;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
+use tokio::task::yield_now;
+use tracing::{debug, error, info};
 
 type ClientId = String;
 type MessageSender = Sender<Result<Message, MessagesError>>;
@@ -78,6 +78,8 @@ pub struct FakeNatsServer {
     subscribers: DashMap<ClientId, DashMap<FakeSubscription, MessageSender>>,
     storage: Mutex<Vec<Message>>,
     subscription_ids: AtomicU64,
+    connection_error: AtomicBool,
+    failed_connection_attempts: AtomicU64,
 }
 
 impl FakeNatsServer {
@@ -86,7 +88,46 @@ impl FakeNatsServer {
             subscribers: DashMap::new(),
             subscription_ids: AtomicU64::new(1),
             storage: Mutex::new(vec![]),
+            connection_error: AtomicBool::new(false),
+            failed_connection_attempts: AtomicU64::new(0),
         }
+    }
+
+    pub fn get_by_config(config: &NatsConfig) -> Option<Arc<FakeNatsServer>> {
+        TEST_FAKE_SERVER.get(config).map(|server| server.clone())
+    }
+
+    pub fn enable_connection_error(&self) {
+        self.connection_error.store(true, Ordering::Release);
+        self.subscribers.iter().for_each(|e| {
+            e.value().iter().for_each(|e| {
+                debug!("sending error to {:?}", e.key());
+                if let Err(e) = e
+                    .value()
+                    .send(Err(MessagesErrorKind::MissingHeartbeat.into()))
+                {
+                    error!("error sending to channel {:?}", e);
+                }
+                e.value().close();
+            });
+        });
+    }
+
+    pub fn disable_connection_error(&self) {
+        self.connection_error.store(false, Ordering::Release);
+    }
+
+    pub async fn wait_for_connection_error(&self, duration: std::time::Duration) -> Result<u64> {
+        let failures = tokio::time::timeout(duration, async {
+            while self.failed_connection_attempts.load(Ordering::Acquire) == 0 {
+                yield_now().await;
+            }
+            let failed_attempts = self.failed_connection_attempts.load(Ordering::Acquire);
+            self.failed_connection_attempts.store(0, Ordering::Release);
+            failed_attempts
+        })
+        .await?;
+        Ok(failures)
     }
 }
 
@@ -97,6 +138,11 @@ impl FakeNatsServer {
         filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
     ) -> Result<(FakeSubscription, MessageReceiver)> {
+        if self.connection_error.load(Ordering::Acquire) {
+            self.failed_connection_attempts
+                .fetch_add(1, Ordering::AcqRel);
+            return Err(anyhow!("simulated connection error"));
+        }
         let subscriber_id = self.subscription_ids.fetch_add(1, Ordering::AcqRel);
 
         info!(%client_id, ?subscriber_id, ?filter_subjects, "add message subscription to FakeNatsServer");
