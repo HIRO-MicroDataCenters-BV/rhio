@@ -550,7 +550,6 @@ spec:
                     enum:
                     - cluster-internal
                     - external-unstable
-                    - disabled
                     type: string
                 type: object
               clusterOperation:
@@ -733,9 +732,19 @@ spec:
                               properties:
                                 bucket:
                                   type: string
+                                last_check_time:
+                                  format: uint64
+                                  minimum: 0.0
+                                  nullable: true
+                                  type: integer
+                                last_error:
+                                  nullable: true
+                                  type: string
                                 status:
                                   enum:
-                                  - Activated
+                                  - New
+                                  - Active
+                                  - Inactive
                                   - Unknown
                                   type: string
                               required:
@@ -746,6 +755,14 @@ spec:
                           subscribed:
                             items:
                               properties:
+                                last_check_time:
+                                  format: uint64
+                                  minimum: 0.0
+                                  nullable: true
+                                  type: integer
+                                last_error:
+                                  nullable: true
+                                  type: string
                                 local_bucket:
                                   type: string
                                 remote_bucket:
@@ -754,7 +771,9 @@ spec:
                                   type: string
                                 status:
                                   enum:
-                                  - Activated
+                                  - New
+                                  - Active
+                                  - Inactive
                                   - Unknown
                                   type: string
                               required:
@@ -773,9 +792,19 @@ spec:
                           published:
                             items:
                               properties:
+                                last_check_time:
+                                  format: uint64
+                                  minimum: 0.0
+                                  nullable: true
+                                  type: integer
+                                last_error:
+                                  nullable: true
+                                  type: string
                                 status:
                                   enum:
-                                  - Activated
+                                  - New
+                                  - Active
+                                  - Inactive
                                   - Unknown
                                   type: string
                                 stream:
@@ -791,11 +820,21 @@ spec:
                           subscribed:
                             items:
                               properties:
+                                last_check_time:
+                                  format: uint64
+                                  minimum: 0.0
+                                  nullable: true
+                                  type: integer
+                                last_error:
+                                  nullable: true
+                                  type: string
                                 source:
                                   type: string
                                 status:
                                   enum:
-                                  - Activated
+                                  - New
+                                  - Active
+                                  - Inactive
                                   - Unknown
                                   type: string
                                 stream:
@@ -890,9 +929,19 @@ spec:
                           properties:
                             bucket:
                               type: string
+                            last_check_time:
+                              format: uint64
+                              minimum: 0.0
+                              nullable: true
+                              type: integer
+                            last_error:
+                              nullable: true
+                              type: string
                             status:
                               enum:
-                              - Activated
+                              - New
+                              - Active
+                              - Inactive
                               - Unknown
                               type: string
                           required:
@@ -903,6 +952,14 @@ spec:
                       subscribed:
                         items:
                           properties:
+                            last_check_time:
+                              format: uint64
+                              minimum: 0.0
+                              nullable: true
+                              type: integer
+                            last_error:
+                              nullable: true
+                              type: string
                             local_bucket:
                               type: string
                             remote_bucket:
@@ -911,7 +968,9 @@ spec:
                               type: string
                             status:
                               enum:
-                              - Activated
+                              - New
+                              - Active
+                              - Inactive
                               - Unknown
                               type: string
                           required:
@@ -930,9 +989,19 @@ spec:
                       published:
                         items:
                           properties:
+                            last_check_time:
+                              format: uint64
+                              minimum: 0.0
+                              nullable: true
+                              type: integer
+                            last_error:
+                              nullable: true
+                              type: string
                             status:
                               enum:
-                              - Activated
+                              - New
+                              - Active
+                              - Inactive
                               - Unknown
                               type: string
                             stream:
@@ -948,11 +1017,21 @@ spec:
                       subscribed:
                         items:
                           properties:
+                            last_check_time:
+                              format: uint64
+                              minimum: 0.0
+                              nullable: true
+                              type: integer
+                            last_error:
+                              nullable: true
+                              type: string
                             source:
                               type: string
                             status:
                               enum:
-                              - Activated
+                              - New
+                              - Active
+                              - Inactive
                               - Unknown
                               type: string
                             stream:
@@ -1026,9 +1105,19 @@ spec:
               subjects:
                 items:
                   properties:
+                    last_check_time:
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    last_error:
+                      nullable: true
+                      type: string
                     status:
                       enum:
-                      - Activated
+                      - New
+                      - Active
+                      - Inactive
                       - Unknown
                       type: string
                     stream:
@@ -1100,11 +1189,21 @@ spec:
               subjects:
                 items:
                   properties:
+                    last_check_time:
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    last_error:
+                      nullable: true
+                      type: string
                     source:
                       type: string
                     status:
                       enum:
-                      - Activated
+                      - New
+                      - Active
+                      - Inactive
                       - Unknown
                       type: string
                     stream:
@@ -1168,9 +1267,19 @@ spec:
                   properties:
                     bucket:
                       type: string
+                    last_check_time:
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    last_error:
+                      nullable: true
+                      type: string
                     status:
                       enum:
-                      - Activated
+                      - New
+                      - Active
+                      - Inactive
                       - Unknown
                       type: string
                   required:
@@ -1237,6 +1346,14 @@ spec:
               buckets:
                 items:
                   properties:
+                    last_check_time:
+                      format: uint64
+                      minimum: 0.0
+                      nullable: true
+                      type: integer
+                    last_error:
+                      nullable: true
+                      type: string
                     local_bucket:
                       type: string
                     remote_bucket:
@@ -1245,7 +1362,9 @@ spec:
                       type: string
                     status:
                       enum:
-                      - Activated
+                      - New
+                      - Active
+                      - Inactive
                       - Unknown
                       type: string
                   required:

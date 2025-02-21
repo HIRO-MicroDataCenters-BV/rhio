@@ -1,23 +1,20 @@
 use crate::{
-    tests::configuration::{
-        configure_blob_subscription, configure_network, generate_nats_config, generate_rhio_config,
-        generate_s3_config,
+    tests::{
+        configuration::{
+            configure_blob_subscription, configure_network, generate_nats_config,
+            generate_rhio_config, generate_s3_config, new_s3_server,
+        },
+        utils::wait_for_condition,
     },
     tracing::setup_tracing,
 };
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 use p2panda_core::PrivateKey;
 use rand::Rng;
-use rhio_config::configuration::S3Config;
 use s3_server::FakeS3Server;
-use s3s::auth::SimpleAuth;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-use tokio::runtime::{Builder, Runtime};
-use tracing::{debug, info};
-use url::Url;
+use std::{sync::Arc, time::Duration};
+use tokio::runtime::Builder;
+use tracing::info;
 
 use super::fake_rhio_server::FakeRhioServer;
 
@@ -53,20 +50,6 @@ pub fn test_e2e_blob_replication() -> Result<()> {
     s3_source.discard();
     s3_target.discard();
     Ok(())
-}
-
-fn wait_for_condition<F>(timeout: Duration, condition: F) -> Result<()>
-where
-    F: Fn() -> Result<bool>,
-{
-    let start = Instant::now();
-    while Instant::now().duration_since(start) < timeout {
-        if condition()? {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    }
-    bail!("timeout waiting condition")
 }
 
 /// A structure representing the setup for a two-cluster blob storage system.
@@ -170,36 +153,4 @@ pub fn create_two_node_blob_setup() -> Result<TwoClusterBlobSetup> {
     };
 
     Ok(setup)
-}
-
-fn new_s3_server(s3_config: &S3Config, runtime: Arc<Runtime>) -> Result<FakeS3Server> {
-    let maybe_auth = if let Some(credentials) = &s3_config.credentials {
-        match (&credentials.access_key, &credentials.secret_key) {
-            (Some(access_key), Some(secret_key)) => {
-                Some(SimpleAuth::from_single(access_key, secret_key.as_str()))
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-
-    debug!("s3 server {} has auth {:?}", s3_config.endpoint, maybe_auth);
-
-    let url: Url = s3_config
-        .endpoint
-        .parse()
-        .context(format!("Invalid endpoint address {}", s3_config.endpoint))?;
-
-    let host = url
-        .host()
-        .ok_or(anyhow!("s3 url does not have host"))?
-        .to_string();
-    let port = url
-        .port()
-        .ok_or(anyhow!("s3 url does not have port specified"))?;
-
-    let s3 = FakeS3Server::new(host, port, maybe_auth, runtime.clone())
-        .context(format!("Creating FakeS3Server {}", s3_config.endpoint))?;
-    Ok(s3)
 }

@@ -1,9 +1,13 @@
 use std::fs::File;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as ConnBuilder;
+use once_cell::sync::Lazy;
+use s3::creds::Credentials;
+use s3::Region;
 use s3s::auth::SimpleAuth;
 use s3s::service::{S3ServiceBuilder, SharedS3Service};
 use s3s_fs::FileSystem;
@@ -15,6 +19,9 @@ use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
+use url::Url;
+
+static TEST_INSTANCE_S3_PORT: Lazy<AtomicU16> = Lazy::new(|| AtomicU16::new(34000));
 
 /// `FakeS3Server` is a fake implementation of an S3 server for testing purposes.
 /// It provides methods to create buckets, check for file existence, read and write files,
@@ -165,7 +172,26 @@ impl FakeS3Server {
         std::fs::create_dir(path).context("Create bucket path")?;
         Ok(())
     }
-
+    /// Deletes a bucket from the fake S3 server.
+    ///
+    /// # Arguments
+    ///
+    /// * `bucket` - The name of the bucket to delete.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure.
+    ///
+    pub fn delete_bucket<P: AsRef<str>>(&self, bucket: P) -> Result<()> {
+        let path = self.root.path().join(bucket.as_ref());
+        debug!(
+            "FakeS3Server: deleting bucket {}, fs path {}",
+            bucket.as_ref(),
+            path.to_str().unwrap()
+        );
+        std::fs::remove_dir(path).context("Delete bucket path")?;
+        Ok(())
+    }
     /// Checks if a file exists in the specified bucket.
     ///
     /// # Arguments
@@ -258,9 +284,81 @@ impl FakeS3Server {
         Ok(())
     }
 
+    pub fn delete_bytes<P: AsRef<str>>(&self, bucket: P, file_path: P) -> Result<()> {
+        let path = self
+            .root
+            .path()
+            .join(bucket.as_ref())
+            .join(file_path.as_ref());
+        debug!(
+            "FakeS3Server: delete bytes from bucket {}, file_path {}, fs path {}",
+            bucket.as_ref(),
+            file_path.as_ref(),
+            path.to_str().unwrap()
+        );
+
+        std::fs::remove_file(path).context("Delete file")?;
+
+        Ok(())
+    }
+
     /// Discards the fake S3 server, cancelling any ongoing operations.
     pub fn discard(self) {
         self.cancel.cancel();
         self.handle.abort();
     }
+}
+
+pub fn new_s3_server(
+    region: Region,
+    credentials: Option<Credentials>,
+    runtime: Arc<Runtime>,
+) -> Result<FakeS3Server> {
+    let maybe_auth = if let Some(creds) = credentials {
+        match (creds.access_key, creds.secret_key) {
+            (Some(access_key), Some(secret_key)) => {
+                Some(SimpleAuth::from_single(access_key, secret_key))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    debug!("s3 server {} has auth {:?}", region.endpoint(), maybe_auth);
+
+    let url: Url = region
+        .endpoint()
+        .parse()
+        .context(format!("Invalid endpoint address {}", region.endpoint()))?;
+
+    let host = url
+        .host()
+        .ok_or(anyhow!("s3 url does not have host"))?
+        .to_string();
+    let port = url
+        .port()
+        .ok_or(anyhow!("s3 url does not have port specified"))?;
+
+    let s3 = FakeS3Server::new(host, port, maybe_auth, runtime.clone())
+        .context(format!("Creating FakeS3Server {}", region.endpoint()))?;
+    Ok(s3)
+}
+
+pub fn generate_s3_config() -> (Region, Credentials) {
+    let port = TEST_INSTANCE_S3_PORT.fetch_add(1, Ordering::SeqCst);
+
+    let region = Region::Custom {
+        region: "us-east-1".to_string(),
+        endpoint: format!("http://127.0.0.1:{}", port),
+    };
+
+    let credentials = Credentials {
+        access_key: Some("access-key".into()),
+        secret_key: Some("secret-key".into()),
+        security_token: None,
+        session_token: None,
+        expiration: None,
+    };
+    (region, credentials)
 }

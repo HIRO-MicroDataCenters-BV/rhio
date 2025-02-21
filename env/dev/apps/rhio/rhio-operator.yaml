@@ -16,7 +16,7 @@ spec:
   source:
     repoURL: https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/
     chart: rhio-operator
-    targetRevision: 0.1.3-dev.116.main.a4aa22ff
+    targetRevision: 0.*.*
     helm:
       version: v3
       parameters:
@@ -26,7 +26,7 @@ spec:
         kubernetesClusterDomain: cluster1.local
         image:
           repository: "ghcr.io/hiro-microdatacenters-bv/rhio"
-          tag: "0.1.3-dev.116.main.a4aa22ff"
+          tag: "0.2.1"
 
   syncPolicy:  
     automated:
