@@ -123,14 +123,13 @@ pub fn configure_message_subscription(
     stream: &str,
     subject: &str,
 ) {
+    configure_message_publisher(publisher, stream, subject);
+    configure_message_subscriber(publisher_pub_key, subscriber, stream, subject);
+}
+
+pub fn configure_message_publisher(publisher: &mut Config, stream: &str, subject: &str) {
     if publisher.publish.is_none() {
         publisher.publish = Some(PublishConfig {
-            s3_buckets: vec![],
-            nats_subjects: vec![],
-        });
-    }
-    if subscriber.subscribe.is_none() {
-        subscriber.subscribe = Some(SubscribeConfig {
             s3_buckets: vec![],
             nats_subjects: vec![],
         });
@@ -139,6 +138,20 @@ pub fn configure_message_subscription(
         publish_config.nats_subjects.push(LocalNatsSubject {
             subject: Subject::from_str(subject).unwrap(),
             stream_name: stream.into(),
+        });
+    }
+}
+
+pub fn configure_message_subscriber(
+    publisher_pub_key: &PublicKey,
+    subscriber: &mut Config,
+    stream: &str,
+    subject: &str,
+) {
+    if subscriber.subscribe.is_none() {
+        subscriber.subscribe = Some(SubscribeConfig {
+            s3_buckets: vec![],
+            nats_subjects: vec![],
         });
     }
 
@@ -150,6 +163,7 @@ pub fn configure_message_subscription(
         });
     }
 }
+
 /// Configures blob subscription between a publisher and a subscriber.
 ///
 /// This function sets up the necessary configurations for a publisher to publish blobs
