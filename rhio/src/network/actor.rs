@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use p2panda_net::network::{FromNetwork, ToNetwork};
 use p2panda_net::{Network, TopicId};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use crate::topic::Query;
 
@@ -71,7 +71,7 @@ impl PandaActor {
                         }
                         msg => {
                             if let Err(err) = self.on_actor_message(msg).await {
-                                break Err(err);
+                                warn!(err = ?err, "error processing actor message");
                             }
                         }
                     }
