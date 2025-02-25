@@ -48,6 +48,8 @@ tracing-subscriber.workspace = true
 pin-project.workspace = true
 bytes.workspace = true
 futures.workspace = true
+pin-project-lite.version = "0.2.4"
+thiserror.workspace = true
 
 [dev-dependencies]
 figment = { workspace = true, features = ["test"] }

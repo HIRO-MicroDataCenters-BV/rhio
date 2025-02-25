@@ -8,6 +8,7 @@ mod network;
 mod node;
 mod topic;
 pub mod tracing;
+mod utils;
 
 pub use nats::StreamName;
 pub use topic::{
