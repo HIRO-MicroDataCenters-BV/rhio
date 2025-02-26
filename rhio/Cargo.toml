@@ -48,7 +48,7 @@ tracing-subscriber.workspace = true
 pin-project.workspace = true
 bytes.workspace = true
 futures.workspace = true
-pin-project-lite.version = "0.2.4"
+pin-project-lite.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

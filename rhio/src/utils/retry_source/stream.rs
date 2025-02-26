@@ -10,11 +10,31 @@ use std::{
 };
 
 use super::types::ErrorHandler;
-use crate::utils::retry_source::types::RetryPolicy;
 use crate::utils::retry_source::types::StreamFactory;
 use crate::utils::retry_source::types::StreamFuture;
+use crate::utils::retry_source::types::{RetryPolicy, SeqNo};
 
 pin_project! {
+    ///
+    /// `RetriableStream` wraps around another stream and provides retry logic
+    /// for handling errors that occur during streaming. It uses a factory to
+    /// create new instances of the stream when retries are needed.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `StreamT` - The type of the underlying stream.
+    /// * `Factory` - The type of the factory used to create new stream instances.
+    /// * `FactoryE` - The type of error that the factory can produce.
+    /// * `F` - The type of the error handler used to determine the retry policy.
+    ///
+    /// # Fields
+    ///
+    /// * `state` - The current state of the retry logic, which can be waiting for a stream,
+    ///   waiting for the factory to create a stream, or waiting for a retry timer.
+    /// * `error_handler` - The error handler that determines the retry policy based on errors.
+    /// * `stream_factory` - The factory used to create new stream instances.
+    /// * `attempt` - The current retry attempt count.
+    ///
     pub struct RetriableStream<StreamT, Factory: StreamFactory<StreamT, FactoryE>, FactoryE, F>{
         #[pin]
         state: RetryState<StreamT, FactoryE>,
@@ -34,7 +54,7 @@ pin_project! {
             factory_method: Pin<Box<StreamFuture<StreamT, FactoryE>>>,
         },
         TimerActive {
-            #[pin] delay: tokio::time::Sleep
+            #[pin] delay: tokio::time::Sleep, seq_no: Option<SeqNo>
         },
     }
 }
@@ -52,11 +72,38 @@ where
             attempt: 1,
             state: RetryState::TimerActive {
                 delay: tokio::time::sleep(Duration::from_millis(1)),
+                seq_no: None,
             },
         }
     }
 }
-
+///
+/// This implementation provides the core logic for polling the underlying stream
+/// and handling retries when errors occur. The `poll_next` method is responsible
+/// for driving the state machine that manages the retry logic.
+///
+/// # Type Parameters
+///
+/// * `StreamT` - The type of the underlying stream.
+/// * `T` - The type of items produced by the stream.
+/// * `Factory` - The type of the factory used to create new stream instances.
+/// * `FactoryE` - The type of error that the factory can produce.
+/// * `F` - The type of the error handler used to determine the retry policy.
+///
+/// # Polling Logic
+///
+/// The `poll_next` method uses a loop to continuously poll the current state of the
+/// retry logic until a stream item is produced or the stream is exhausted. The state
+/// transitions are as follows:
+///
+/// * `TimerActive` - Waits for a retry timer to complete before attempting to create
+///   a new stream instance using the factory.
+/// * `WaitingForStreamFactory` - Waits for the factory to create a new stream instance.
+///   If the factory produces an error, the error handler is consulted to determine the
+///   retry policy.
+/// * `WaitingForStream` - Polls the underlying stream for the next item. If an error
+///   occurs, the error handler is consulted to determine the retry policy.
+///
 impl<StreamT, T, Factory, FactoryE, F> Stream for RetriableStream<StreamT, Factory, FactoryE, F>
 where
     F: ErrorHandler<T, FactoryE, Out = T>,
@@ -70,9 +117,9 @@ where
             let this = self.as_mut().project();
             let attempt = *this.attempt;
             let new_state = match this.state.project() {
-                RetryStateProj::TimerActive { delay } => {
+                RetryStateProj::TimerActive { delay, seq_no } => {
                     ready!(delay.poll(cx));
-                    let factory_method = this.stream_factory.create();
+                    let factory_method = this.stream_factory.create(*seq_no);
                     RetryState::WaitingForStreamFactory { factory_method }
                 }
                 RetryStateProj::WaitingForStreamFactory { factory_method, .. } => {
@@ -83,9 +130,12 @@ where
                             *this.attempt += 1;
                             match this.error_handler.on_factory_error(attempt, e) {
                                 RetryPolicy::Forward(element) => return Poll::Ready(Some(element)),
-                                RetryPolicy::WaitRetry(duration) => RetryState::TimerActive {
-                                    delay: tokio::time::sleep(duration),
-                                },
+                                RetryPolicy::WaitRetry(duration, seq_no) => {
+                                    RetryState::TimerActive {
+                                        delay: tokio::time::sleep(duration),
+                                        seq_no,
+                                    }
+                                }
                             }
                         }
                     }
@@ -95,8 +145,9 @@ where
                     match next_result {
                         Some(x) => match this.error_handler.on_stream_msg(x) {
                             RetryPolicy::Forward(element) => return Poll::Ready(Some(element)),
-                            RetryPolicy::WaitRetry(duration) => RetryState::TimerActive {
+                            RetryPolicy::WaitRetry(duration, seq_no) => RetryState::TimerActive {
                                 delay: tokio::time::sleep(duration),
+                                seq_no,
                             },
                         },
                         None => return Poll::Ready(None),
@@ -178,8 +229,14 @@ mod test {
     async fn test_basic_retry() -> Result<()> {
         let factory = TestStreamFactory::new(vec![
             Ok(vec![Ok(1u8), Ok(2u8), Err(TestError::StreamError)]),
-            Ok(vec![Ok(3u8), Ok(4u8), Err(TestError::StreamError)]),
-            Ok(vec![Ok(5u8), Ok(6u8)]),
+            Ok(vec![
+                Ok(1u8),
+                Ok(2u8),
+                Ok(3u8),
+                Ok(4u8),
+                Err(TestError::StreamError),
+            ]),
+            Ok(vec![Ok(1u8), Ok(2u8), Ok(3u8), Ok(4u8), Ok(5u8), Ok(6u8)]),
         ]);
 
         let error_action = TestErrorHandler::new(2);
@@ -196,7 +253,7 @@ mod test {
         let factory = TestStreamFactory::new(vec![
             Ok(vec![Ok(1u8), Ok(2u8), Err(TestError::StreamError)]),
             Err(TestError::StreamError),
-            Ok(vec![Ok(3u8), Ok(4u8)]),
+            Ok(vec![Ok(1u8), Ok(2u8), Ok(3u8), Ok(4u8)]),
         ]);
 
         let error_action = TestErrorHandler::new(2);
@@ -210,11 +267,15 @@ mod test {
 
     pub struct TestErrorHandler {
         max_attempts: usize,
+        seq_no: Option<SeqNo>,
     }
 
     impl TestErrorHandler {
         pub fn new(max_attempts: usize) -> Self {
-            TestErrorHandler { max_attempts }
+            TestErrorHandler {
+                max_attempts,
+                seq_no: None,
+            }
         }
     }
 
@@ -226,8 +287,11 @@ mod test {
             e: Result<u8, TestError>,
         ) -> RetryPolicy<Result<u8, TestError>> {
             match e {
-                Ok(element) => RetryPolicy::Forward(Ok(element)),
-                Err(_) => RetryPolicy::WaitRetry(Duration::from_millis(1)),
+                Ok(element) => {
+                    self.seq_no = Some(element as SeqNo);
+                    RetryPolicy::Forward(Ok(element))
+                }
+                Err(_) => RetryPolicy::WaitRetry(Duration::from_millis(1), self.seq_no.clone()),
             }
         }
 
@@ -239,7 +303,7 @@ mod test {
             if current_attempt >= self.max_attempts {
                 return RetryPolicy::Forward(Err(e));
             } else {
-                RetryPolicy::WaitRetry(Duration::from_millis(1))
+                RetryPolicy::WaitRetry(Duration::from_millis(1), self.seq_no.clone())
             }
         }
     }
@@ -272,14 +336,18 @@ mod test {
         }
     }
 
+    type StreamItem = Result<u8, TestError>;
+    type StreamItems = Vec<StreamItem>;
+    type ConnectionAttempt = Result<StreamItems, TestError>;
+
     #[derive(Clone)]
     struct TestStreamFactory {
-        items: Vec<Result<Vec<Result<u8, TestError>>, TestError>>,
+        items: Vec<ConnectionAttempt>,
         counter: Arc<AtomicUsize>,
     }
 
     impl TestStreamFactory {
-        pub fn new(items: Vec<Result<Vec<Result<u8, TestError>>, TestError>>) -> TestStreamFactory {
+        pub fn new(items: Vec<ConnectionAttempt>) -> TestStreamFactory {
             TestStreamFactory {
                 items,
                 counter: Arc::new(AtomicUsize::new(0)),
@@ -288,18 +356,20 @@ mod test {
     }
 
     impl StreamFactory<MyStream, TestError> for TestStreamFactory {
-        fn create(&self) -> Pin<Box<StreamFuture<MyStream, TestError>>> {
+        fn create(&self, seq_no: Option<SeqNo>) -> Pin<Box<StreamFuture<MyStream, TestError>>> {
             let this = self.clone();
             Box::pin(async move {
-                let index = this.counter.fetch_add(1, Ordering::AcqRel);
-                let maybe_items: Result<Vec<Result<u8, TestError>>, TestError> = this
+                let connection_attempt_no = this.counter.fetch_add(1, Ordering::AcqRel);
+                let items_for_connection: ConnectionAttempt = this
                     .items
-                    .get(index)
+                    .get(connection_attempt_no)
                     .map(|items| items.clone())
                     .unwrap_or(Ok(vec![]));
-                let items = maybe_items?;
+                let items = items_for_connection?;
+                let start_idx = seq_no.unwrap_or(0) as usize;
+                let to_return = items[start_idx..].to_vec();
                 let stream: Box<MyStream> = Box::new(MyStream {
-                    items: Box::new(futures::stream::iter(items)),
+                    items: Box::new(futures::stream::iter(to_return)),
                 });
                 Ok::<Box<MyStream>, TestError>(stream)
             })
