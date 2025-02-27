@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::consumer::DeliverPolicy;
@@ -6,7 +6,7 @@ use async_nats::HeaderMap;
 use rand::random;
 use rhio_core::{subjects_to_str, Subject};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::nats::{
     client::types::NatsClient,
@@ -96,20 +96,22 @@ where
     N: NatsClient<M>,
 {
     inbox: mpsc::Receiver<ToNatsActor>,
-    nats_client: Box<N>,
-    consumers: HashMap<ConsumerId, Consumer<M>>,
+    nats_client: Arc<N>,
+    consumers: HashMap<ConsumerId, Consumer>,
+    phantom: PhantomData<M>,
 }
 
 impl<M, N> NatsActor<M, N>
 where
     M: NatsMessageStream + Send + Sync + Unpin + 'static,
-    N: NatsClient<M>,
+    N: NatsClient<M> + 'static + Send + Sync,
 {
-    pub fn new(nats_client: Box<N>, inbox: mpsc::Receiver<ToNatsActor>) -> Self {
+    pub fn new(nats_client: N, inbox: mpsc::Receiver<ToNatsActor>) -> Self {
         Self {
             inbox,
-            nats_client,
+            nats_client: Arc::new(nats_client),
             consumers: HashMap::new(),
+            phantom: PhantomData,
         }
     }
 
@@ -227,18 +229,21 @@ where
                     stream_name.clone(),
                     format!("{filter_subjects_str}-{random_id}"),
                 );
-                let (messages, consumer_info) = self
-                    .nats_client
-                    .create_consumer_stream(
-                        stream_name.clone(),
-                        filter_subjects.clone(),
-                        deliver_policy,
-                    )
-                    .await?;
 
-                let mut consumer =
-                    Consumer::new(messages, consumer_info, stream_name, topic_id).await?;
+                let mut consumer = Consumer::new(
+                    self.nats_client.clone(),
+                    consumer_id.clone(),
+                    deliver_policy,
+                    filter_subjects,
+                    stream_name,
+                    topic_id,
+                )
+                .await?;
 
+                trace!(
+                    "Subscribe new consumer with DeliveryPolicy=All id={}",
+                    consumer_id.to_string()
+                );
                 let rx = consumer.subscribe();
                 self.consumers.insert(consumer_id.clone(), consumer);
                 Ok((consumer_id, rx))
@@ -248,19 +253,27 @@ where
                 // when using NATS consumer for _new_ messages.
                 let consumer_id = ConsumerId::new(stream_name.clone(), filter_subjects_str);
                 let rx = match self.consumers.get_mut(&consumer_id) {
-                    Some(consumer) => consumer.subscribe(),
+                    Some(consumer) => {
+                        trace!(
+                            "Subscribe to existing consumer with DeliveryPolicy=New id={}",
+                            consumer_id.to_string()
+                        );
+                        consumer.subscribe()
+                    }
                     None => {
-                        let (messages, consumer_info) = self
-                            .nats_client
-                            .create_consumer_stream(
-                                stream_name.clone(),
-                                filter_subjects.clone(),
-                                deliver_policy,
-                            )
-                            .await?;
-
-                        let mut consumer =
-                            Consumer::new(messages, consumer_info, stream_name, topic_id).await?;
+                        let mut consumer = Consumer::new(
+                            self.nats_client.clone(),
+                            consumer_id.clone(),
+                            deliver_policy,
+                            filter_subjects,
+                            stream_name,
+                            topic_id,
+                        )
+                        .await?;
+                        trace!(
+                            "Subscribe new consumer with DeliveryPolicy=New id={}",
+                            consumer_id.to_string()
+                        );
                         let rx = consumer.subscribe();
                         self.consumers.insert(consumer_id.clone(), consumer);
                         rx
@@ -273,6 +286,7 @@ where
     }
 
     async fn on_unsubscribe(&mut self, consumer_id: ConsumerId) -> Result<()> {
+        trace!("Unsubscribe consumer {}", consumer_id.to_string());
         self.consumers.remove(&consumer_id);
         Ok(())
     }

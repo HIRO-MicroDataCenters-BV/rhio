@@ -1,5 +1,4 @@
-use anyhow::Result;
-use async_nats::jetstream::consumer::push::MessagesError;
+use anyhow::{anyhow, Result};
 use async_nats::jetstream::consumer::{DeliverPolicy, Info};
 use async_nats::HeaderMap;
 use async_nats::Message;
@@ -14,7 +13,7 @@ use crate::StreamName;
 ///
 /// This trait is used to define a stream of messages that can be consumed from a NATS JetStream consumer.
 /// The stream yields `Result<Message, MessagesError>` items.
-pub trait NatsMessageStream: Stream<Item = Result<Message, MessagesError>> + Sized {}
+pub trait NatsMessageStream: Stream<Item = NatsStreamProtocol> + Sized {}
 
 /// A trait for a NATS client that interacts with NATS JetStream.
 ///
@@ -43,6 +42,7 @@ pub trait NatsClient<M: NatsMessageStream>: Sized {
     /// A tuple containing the consumer stream and its information.
     async fn create_consumer_stream(
         &self,
+        consumer_name: String,
         stream_name: StreamName,
         filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
@@ -67,4 +67,23 @@ pub trait NatsClient<M: NatsMessageStream>: Sized {
         payload: Bytes,
         headers: Option<HeaderMap>,
     ) -> Result<()>;
+}
+
+#[derive(Clone, Debug)]
+pub enum NatsStreamProtocol {
+    Msg { msg: Message, seq: Option<u64> },
+    Error { msg: String },
+    ServerDisconnect,
+}
+
+impl From<NatsStreamProtocol> for Result<Message> {
+    fn from(value: NatsStreamProtocol) -> Self {
+        match value {
+            NatsStreamProtocol::Msg { msg, .. } => Ok(msg),
+            NatsStreamProtocol::ServerDisconnect => {
+                Err(anyhow!("NatsStreamProtocol::ServerDisconnect"))
+            }
+            NatsStreamProtocol::Error { msg } => Err(anyhow!("NatsStreamProtocol::Error {msg}")),
+        }
+    }
 }

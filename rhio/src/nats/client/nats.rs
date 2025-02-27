@@ -1,21 +1,27 @@
+use super::types::NatsStreamProtocol;
 use super::types::{NatsClient, NatsMessageStream};
 use crate::StreamName;
 use anyhow::{bail, Context as AnyhowContext, Result};
-use async_nats::jetstream::consumer::push::MessagesError;
-use async_nats::jetstream::consumer::push::{Config as ConsumerConfig, Messages};
+use async_nats::jetstream::consumer::push::Config as ConsumerConfig;
 use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy};
 use async_nats::jetstream::consumer::{Info, PushConsumer};
 use async_nats::jetstream::context::Publish;
 use async_nats::jetstream::Context as JetstreamContext;
-use async_nats::{Client, Message};
+use async_nats::{Client, Event};
 use async_nats::{ConnectOptions, HeaderMap};
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures::{Stream, StreamExt};
+use futures_util::stream::select_all::SelectAll;
+use loole::Receiver;
+use loole::Sender;
 use pin_project::pin_project;
 use rhio_config::configuration::{NatsConfig, NatsCredentials};
 use rhio_core::{subjects_to_str, Subject};
 use std::time::Duration;
 use tracing::{error, info, span, trace, warn, Level};
+
+type MessageStream = dyn Stream<Item = NatsStreamProtocol> + Unpin + Send + Sync + 'static;
 
 /// Implementation of the `NatsClient` trait for interacting with NATS JetStream.
 ///
@@ -31,19 +37,25 @@ use tracing::{error, info, span, trace, warn, Level};
 pub struct NatsClientImpl {
     jetstream: JetstreamContext,
     client: Client,
+    error_rx: Receiver<NatsStreamProtocol>,
 }
 
 impl NatsClientImpl {
     #[allow(dead_code)]
     pub async fn new(nats: NatsConfig) -> Result<Self> {
-        let nats_options = connect_options(nats.credentials.clone())?;
+        let (error_tx, error_rx) = loole::bounded::<NatsStreamProtocol>(16);
+        let nats_options = connect_options(nats.credentials.clone(), error_tx)?;
         trace!(options=?nats_options, "connecting to NATS server");
         let client = async_nats::connect_with_options(nats.endpoint.clone(), nats_options)
             .await
             .context(format!("connecting to NATS server {}", nats.endpoint))?;
 
         let jetstream = async_nats::jetstream::new(client.clone());
-        Ok(NatsClientImpl { jetstream, client })
+        Ok(NatsClientImpl {
+            jetstream,
+            client,
+            error_rx,
+        })
     }
 }
 
@@ -89,6 +101,7 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
     /// why for every published subject a "stream name" needs to be mentioned.
     async fn create_consumer_stream(
         &self,
+        consumer_name: String,
         stream_name: StreamName,
         filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
@@ -105,6 +118,7 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
                 stream_name,
             ))?
             .create_consumer(ConsumerConfig {
+                name: Some(consumer_name),
                 // Setting a delivery subject is crucial for making this consumer push-based. We
                 // need to create a push based consumer as pull-based ones are required to
                 // explicitly acknowledge messages.
@@ -172,9 +186,12 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
         let num_pending = consumer_info.num_pending;
 
         let span = span!(Level::TRACE, "consumer", id = %consumer_name);
-        let deliver_policy_str = match deliver_policy {
-            DeliverPolicy::All => "all",
-            DeliverPolicy::New => "new",
+        let deliver_policy_str: String = match deliver_policy {
+            DeliverPolicy::All => "all".into(),
+            DeliverPolicy::New => "new".into(),
+            DeliverPolicy::ByStartSequence { start_sequence } => {
+                format!("by-start-sequence({})", start_sequence)
+            }
             _ => unimplemented!(),
         };
         let filter_subjects_str = subjects_to_str(filter_subjects);
@@ -186,9 +203,31 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
             num_pending = num_pending,
             "create consumer for NATS"
         );
+        let consumer_messages: Box<MessageStream> = Box::new(
+            consumer
+                .messages()
+                .await
+                .context("get message stream")?
+                .map(|msg| match msg {
+                    Ok(message_with_context) => {
+                        let seq = message_with_context
+                            .info()
+                            .map(|info| Some(info.consumer_sequence))
+                            .unwrap_or(None);
+                        let (msg, _) = message_with_context.split();
+                        NatsStreamProtocol::Msg { msg, seq }
+                    }
+                    Err(e) => NatsStreamProtocol::Error {
+                        msg: format!("{}", e),
+                    },
+                }),
+        );
 
-        let messages = consumer.messages().await.context("get message stream")?;
-
+        let mut messages: SelectAll<Box<MessageStream>> =
+            futures_util::stream::select_all::SelectAll::new();
+        let disconnect_messages: Box<MessageStream> = Box::new(self.error_rx.clone().stream());
+        messages.push(consumer_messages);
+        messages.push(disconnect_messages);
         Ok((NatsMessages { messages }, consumer_info))
     }
 }
@@ -196,43 +235,48 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
 #[pin_project]
 pub struct NatsMessages {
     #[pin]
-    messages: Messages,
+    messages: SelectAll<Box<MessageStream>>,
 }
 
 impl NatsMessageStream for NatsMessages {}
 
 impl futures::Stream for NatsMessages {
-    type Item = Result<Message, MessagesError>;
+    type Item = NatsStreamProtocol;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.project();
-        this.messages.poll_next(cx).map_ok(|message_with_context| {
-            // We decouple async message from the inner static message contents
-            // for testability purposes.
-            // The `context` from async message is not used later anymore.
-            let (msg, _) = message_with_context.split();
-            msg
-        })
+        this.messages.poll_next(cx)
     }
 }
 
-fn connect_options(config: Option<NatsCredentials>) -> Result<ConnectOptions> {
+fn connect_options(
+    config: Option<NatsCredentials>,
+    error_tx: Sender<NatsStreamProtocol>,
+) -> Result<ConnectOptions> {
     let options = ConnectOptions::default()
         .retry_on_initial_connect()
         .name("rhio")
         .max_reconnects(None)
         .reconnect_delay_callback(reconnect_delay_callback_default)
-        .event_callback(|event| async move {
-            match event {
-                async_nats::Event::Disconnected => error!("Nats client disconnected."),
-                async_nats::Event::Connected => info!("Nats client connected."),
-                async_nats::Event::SlowConsumer(id) => warn!("Slow consumer detected: {id}"),
-                async_nats::Event::ClientError(err) => error!("client error occurred: {err}"),
-                async_nats::Event::ServerError(err) => error!("server error occurred: {err}"),
-                other => trace!("Nats event: {other}"),
+        .event_callback(move |event: Event| {
+            let value = error_tx.clone();
+            async move {
+                match event {
+                    async_nats::Event::Disconnected => {
+                        error!("Nats client disconnected.");
+                        if let Err(e) = value.send(NatsStreamProtocol::ServerDisconnect) {
+                            error!("Unable to send NatsStreamProtocol::ServerDisconnect msg to consumers. Error: {e}");
+                        }
+                    },
+                    async_nats::Event::Connected => info!("Nats client connected."),
+                    async_nats::Event::SlowConsumer(id) => warn!("Slow consumer detected: {id}"),
+                    async_nats::Event::ClientError(err) => error!("client error occurred: {err}"),
+                    async_nats::Event::ServerError(err) => error!("server error occurred: {err}"),
+                    other => trace!("Nats event: {other}"),
+                }
             }
         });
     let Some(credentials) = config else {

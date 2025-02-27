@@ -94,6 +94,7 @@ where
 
     pub fn create_consumer(
         &self,
+        consumer_name: String,
         stream_name: StreamName,
         filter_subjects: Vec<Subject>,
         _deliver_policy: DeliverPolicy,
@@ -101,7 +102,12 @@ where
         self.runtime.block_on(async {
             let (messages, _) = self
                 .inner
-                .create_consumer_stream(stream_name, filter_subjects, _deliver_policy)
+                .create_consumer_stream(
+                    consumer_name,
+                    stream_name,
+                    filter_subjects,
+                    _deliver_policy,
+                )
                 .await?;
             Ok(BlockingConsumer::new(
                 Consumer::new(messages),

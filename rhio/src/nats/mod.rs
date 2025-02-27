@@ -1,7 +1,6 @@
 mod actor;
 pub mod client;
 mod consumer;
-
 use anyhow::Result;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::HeaderMap;
@@ -33,7 +32,7 @@ impl Nats {
     {
         // Start the main NATS JetStream actor to dynamically maintain "stream consumers".
         let (nats_actor_tx, nats_actor_rx) = mpsc::channel(512);
-        let nats_actor = NatsActor::new(Box::new(client), nats_actor_rx);
+        let nats_actor = NatsActor::new(client, nats_actor_rx);
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = nats_actor.run().await {
