@@ -10,9 +10,9 @@ use std::{
 };
 
 use super::types::ErrorHandler;
-use crate::utils::retry_source::types::StreamFactory;
-use crate::utils::retry_source::types::StreamFuture;
-use crate::utils::retry_source::types::{RetryPolicy, SeqNo};
+use crate::utils::retry::types::StreamFactory;
+use crate::utils::retry::types::StreamFuture;
+use crate::utils::retry::types::{RetryPolicy, SeqNo};
 
 pin_project! {
     ///

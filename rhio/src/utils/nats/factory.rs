@@ -1,9 +1,9 @@
 use crate::nats::client::types::NatsClient;
 use crate::nats::client::types::NatsMessageStream;
 use crate::nats::ConsumerId;
-use crate::utils::retry_source::types::SeqNo;
-use crate::utils::retry_source::types::StreamFactory;
-use crate::utils::retry_source::types::StreamFuture;
+use crate::utils::retry::types::SeqNo;
+use crate::utils::retry::types::StreamFactory;
+use crate::utils::retry::types::StreamFuture;
 use anyhow::Context as AnyhowContext;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use futures::Stream;

@@ -2,7 +2,7 @@ use crate::nats::client::types::NatsClient;
 use crate::nats::client::types::NatsMessageStream;
 use crate::nats::client::types::NatsStreamProtocol;
 
-use crate::utils::retry_source::stream::RetriableStream;
+use crate::utils::retry::stream::RetriableStream;
 use futures::Stream;
 use pin_project::pin_project;
 use std::pin::Pin;

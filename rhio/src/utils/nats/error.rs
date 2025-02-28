@@ -1,7 +1,7 @@
 use crate::nats::client::types::NatsStreamProtocol;
-use crate::utils::retry_source::types::ErrorHandler;
-use crate::utils::retry_source::types::RetryPolicy;
-use crate::utils::retry_source::types::SeqNo;
+use crate::utils::retry::types::ErrorHandler;
+use crate::utils::retry::types::RetryPolicy;
+use crate::utils::retry::types::SeqNo;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::time::Duration;
