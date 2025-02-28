@@ -147,7 +147,6 @@ where
     }
 
     async fn on_message(&mut self, message: NatsStreamProtocol) -> Result<()> {
-        info!("message received {:?}", message);
         if let Err(err) = self.on_message_inner(message).await {
             error!(parent: &self.span, "consuming nats stream failed: {err}");
 
