@@ -6,3 +6,4 @@ config*.yaml
 !configmap.yaml
 private-key*
 .DS_Store
+tmp

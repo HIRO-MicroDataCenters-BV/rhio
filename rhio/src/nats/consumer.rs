@@ -1,18 +1,25 @@
+use std::sync::Arc;
+
+use crate::nats::Subject;
+use crate::utils::nats::error::RetryConfig;
+use crate::utils::nats::factory::NatsStreamFactory;
+use crate::utils::nats::stream::RecoverableNatsStreamImpl;
+use anyhow::Context;
 use anyhow::Result;
-use async_nats::error::Error;
-use async_nats::jetstream::consumer::push::MessagesErrorKind;
-use async_nats::jetstream::consumer::Info;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::{error, span, trace, Level, Span};
+use tracing::{error, info, span, trace, Level, Span};
 
 use crate::JoinErrToStr;
 
+use super::client::types::NatsClient;
 use super::client::types::NatsMessageStream;
+use super::client::types::NatsStreamProtocol;
 
 pub type StreamName = String;
 
@@ -22,6 +29,12 @@ pub struct ConsumerId(StreamName, String);
 impl ConsumerId {
     pub fn new(stream_name: String, filter_subject: String) -> Self {
         Self(stream_name, filter_subject)
+    }
+}
+
+impl std::fmt::Display for ConsumerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{}", self.0, self.1)
     }
 }
 
@@ -77,7 +90,7 @@ where
     status: ConsumerStatus,
     stream_name: StreamName,
     topic_id: [u8; 32],
-    _span: Span,
+    span: Span,
 }
 
 impl<M> ConsumerActor<M>
@@ -90,7 +103,7 @@ where
         num_pending: u64,
         stream_name: StreamName,
         topic_id: [u8; 32],
-        _span: Span,
+        span: Span,
     ) -> Self {
         Self {
             subscribers_tx,
@@ -99,12 +112,12 @@ where
             status: ConsumerStatus::Initializing,
             stream_name,
             topic_id,
-            _span,
+            span,
         }
     }
 
     pub async fn run(mut self) -> Result<()> {
-        trace!(parent: &self._span, "start consumer");
+        trace!(parent: &self.span, "start consumer");
         let result = self.run_inner().await;
         drop(self);
         result
@@ -116,24 +129,26 @@ where
             self.on_init_complete()?;
         }
 
-        loop {
+        let inner_result = loop {
             match self.messages.next().await {
                 Some(message) => {
                     if let Err(err) = self.on_message(message).await {
                         break Err(err);
                     }
                 }
-                None => break Ok(()),
+                None => {
+                    info!("stream consumed all messages - {}", self.stream_name);
+                    break Ok(());
+                }
             }
-        }
+        };
+        trace!(parent: &self.span, "consumer stopped, result={:?}", inner_result);
+        inner_result
     }
 
-    async fn on_message(
-        &mut self,
-        message: Result<NatsMessage, Error<MessagesErrorKind>>,
-    ) -> Result<()> {
+    async fn on_message(&mut self, message: NatsStreamProtocol) -> Result<()> {
         if let Err(err) = self.on_message_inner(message).await {
-            error!(parent: &self._span, "consuming nats stream failed: {err}");
+            error!(parent: &self.span, "consuming nats stream failed: {err}");
 
             self.subscribers_tx.send(JetStreamEvent::Failed {
                 stream_name: self.stream_name.clone(),
@@ -147,37 +162,39 @@ where
         }
     }
 
-    async fn on_message_inner(
-        &mut self,
-        message: Result<NatsMessage, Error<MessagesErrorKind>>,
-    ) -> Result<()> {
+    async fn on_message_inner(&mut self, protocol_message: NatsStreamProtocol) -> Result<()> {
+        let message: Result<async_nats::Message> = protocol_message.into();
         let message = message?;
 
-        self.subscribers_tx.send(JetStreamEvent::Message {
-            is_init: matches!(self.status, ConsumerStatus::Initializing),
-            message: message.clone(),
-            topic_id: self.topic_id,
-        })?;
+        self.subscribers_tx
+            .send(JetStreamEvent::Message {
+                is_init: matches!(self.status, ConsumerStatus::Initializing),
+                message: message.clone(),
+                topic_id: self.topic_id,
+            })
+            .context("sending JetStreamEvent::Message")?;
 
         if matches!(self.status, ConsumerStatus::Initializing) {
             self.num_pending -= 1;
-            trace!(parent: &self._span, payload = ?message.payload, num_pending = self.num_pending, is_init = true, "message");
+            trace!(parent: &self.span, payload = ?message.payload, num_pending = self.num_pending, is_init = true, "message");
             if self.num_pending == 0 {
                 self.on_init_complete()?;
             }
         } else {
-            trace!(parent: &self._span, payload = ?message.payload, "message");
+            trace!(parent: &self.span, payload = ?message.payload, "message");
         }
 
         Ok(())
     }
 
     fn on_init_complete(&mut self) -> Result<()> {
-        trace!(parent: &self._span, "completed initialization phase");
+        trace!(parent: &self.span, "completed initialization phase");
         self.status = ConsumerStatus::Streaming;
-        self.subscribers_tx.send(JetStreamEvent::InitCompleted {
-            topic_id: self.topic_id,
-        })?;
+        self.subscribers_tx
+            .send(JetStreamEvent::InitCompleted {
+                topic_id: self.topic_id,
+            })
+            .context("sending JetStreamEvent::InitCompleted")?;
         Ok(())
     }
 }
@@ -187,27 +204,20 @@ where
     M: NatsMessageStream + Unpin,
 {
     fn drop(&mut self) {
-        trace!(parent: &self._span, "drop consumer");
+        trace!(parent: &self.span, "drop consumer");
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Consumer<M>
-where
-    M: NatsMessageStream + Send + Sync + Unpin + 'static,
-{
+pub struct Consumer {
     #[allow(dead_code)]
     subscribers_tx: loole::Sender<JetStreamEvent>,
     subscribers_rx: loole::Receiver<JetStreamEvent>,
     #[allow(dead_code)]
     actor_handle: Shared<MapErr<AbortOnDropHandle<()>, JoinErrToStr>>,
-    phantom: std::marker::PhantomData<M>,
 }
 
-impl<M> Consumer<M>
-where
-    M: NatsMessageStream + Send + Sync + Unpin + 'static,
-{
+impl Consumer {
     /// Create a consumer of a NATS stream.
     ///
     /// The consumers used here are push-based, "un-acking" and ephemeral, meaning that no state of
@@ -218,17 +228,37 @@ where
     /// configurations, rhio does not create any streams automatically but merely consumes them.
     /// This allows rhio operators to have full flexibility over the nature of the stream. This is
     /// why for every published subject a "stream name" needs to be mentioned.
-    pub async fn new(
-        messages: M,
-        consumer_info: Info,
+    pub async fn new<M, N>(
+        client: Arc<N>,
+        consumer_id: ConsumerId,
+        deliver_policy: DeliverPolicy,
+        filter_subjects: Vec<Subject>,
         stream_name: StreamName,
         topic_id: [u8; 32],
-    ) -> Result<Self> {
-        let (subscribers_tx, subscribers_rx) = loole::bounded(256);
-
-        let consumer_name = consumer_info.name.clone();
-        let num_pending = consumer_info.num_pending;
+    ) -> Result<Self>
+    where
+        M: NatsMessageStream + Send + Sync + Unpin + 'static,
+        N: NatsClient<M> + 'static + Send + Sync,
+    {
+        let consumer_name = consumer_id.to_string();
         let span = span!(Level::TRACE, "consumer", id = %consumer_name);
+
+        let (subscribers_tx, subscribers_rx) = loole::bounded(256);
+        let factory = NatsStreamFactory::new(
+            client,
+            consumer_id.clone(),
+            stream_name.clone(),
+            filter_subjects,
+            deliver_policy,
+            span.clone(),
+        );
+        let retry_options = RetryConfig::default();
+        let messages = RecoverableNatsStreamImpl::new(factory, retry_options, span.clone());
+
+        // We are supposed to get num_pending from consumer_info.
+        // It is not completely clear why we need to skip num_pending messages later in consumer_actor
+        // Konstantin: setting this to 0 until the use case is clear
+        let num_pending = 0;
 
         let consumer_actor = ConsumerActor::new(
             subscribers_tx.clone(),
@@ -236,12 +266,12 @@ where
             num_pending,
             stream_name,
             topic_id,
-            span,
+            span.clone(),
         );
 
         let actor_handle = tokio::task::spawn(async move {
             if let Err(err) = consumer_actor.run().await {
-                error!("consumer actor failed: {err:?}");
+                error!(parent: &span, "consumer actor failed: {err:?}");
             }
         });
 
@@ -253,7 +283,6 @@ where
             subscribers_tx,
             subscribers_rx,
             actor_handle: actor_drop_handle,
-            phantom: std::marker::PhantomData,
         })
     }
 

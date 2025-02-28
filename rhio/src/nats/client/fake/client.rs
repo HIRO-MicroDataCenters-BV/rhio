@@ -1,14 +1,15 @@
+use crate::nats::client::fake::server::MessageStream;
 use crate::nats::client::fake::server::TEST_FAKE_SERVER;
+use crate::nats::client::types::NatsStreamProtocol;
 use crate::nats::HeaderMap;
 use anyhow::{Context as AnyhowContext, Result};
-use async_nats::jetstream::consumer::push::MessagesError;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::jetstream::consumer::{Info, SequenceInfo};
 use async_nats::Message;
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures::stream::SelectAll;
 use futures::StreamExt;
-use loole::RecvStream;
 use pin_project::pin_project;
 use pin_project::pinned_drop;
 use rand::random;
@@ -61,26 +62,46 @@ impl FakeNatsClient {
             .clone();
         Ok(FakeNatsClient { client_id, server })
     }
+
+    pub async fn publish_test_messages(&self, subject: &String, ids: &Vec<usize>) -> Result<()> {
+        for i in ids {
+            let payload = format!("message {}", i);
+            self.publish(
+                false,
+                subject.clone().into(),
+                Bytes::copy_from_slice(payload.as_bytes()),
+                None,
+            )
+            .await?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl NatsClient<FakeNatsMessages> for FakeNatsClient {
     async fn create_consumer_stream(
         &self,
+        consumer_name: String,
         stream_name: StreamName,
         filter_subjects: Vec<Subject>,
         deliver_policy: DeliverPolicy,
     ) -> Result<(FakeNatsMessages, Info)> {
-        let (subscription, receiver) = self
+        let (subscription, messages) = self
             .server
-            .add_subscription(self.client_id.clone(), filter_subjects, deliver_policy)
+            .add_subscription(
+                self.client_id.clone(),
+                consumer_name,
+                filter_subjects,
+                deliver_policy,
+            )
             .await
             .context("FakeNatsClient: create consumer stream")?;
 
         let info = to_fake_consumer_info(&self.client_id, &stream_name);
         Ok((
             FakeNatsMessages {
-                messages: receiver.into_stream(),
+                messages,
                 server: self.server.clone(),
                 client_id: self.client_id.clone(),
                 subscription,
@@ -111,7 +132,7 @@ impl NatsClient<FakeNatsMessages> for FakeNatsClient {
 #[pin_project(PinnedDrop)]
 pub struct FakeNatsMessages {
     #[pin]
-    messages: RecvStream<Result<Message, MessagesError>>,
+    messages: SelectAll<Box<MessageStream>>,
     server: Arc<FakeNatsServer>,
     client_id: String,
     subscription: FakeSubscription,
@@ -120,7 +141,7 @@ pub struct FakeNatsMessages {
 impl NatsMessageStream for FakeNatsMessages {}
 
 impl futures::Stream for FakeNatsMessages {
-    type Item = Result<Message, MessagesError>;
+    type Item = NatsStreamProtocol;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -194,6 +215,7 @@ impl<M: NatsMessageStream> Consumer<M> {
     async fn recv_count(&mut self, count: usize) -> Result<Vec<Message>> {
         let mut result = vec![];
         while let Some(maybe_message) = self.messages.next().await {
+            let maybe_message: Result<Message> = maybe_message.into();
             let message =
                 maybe_message.context("Consumer: receiving message from fake message stream")?;
             result.push(message);
@@ -241,4 +263,8 @@ fn to_nats_message(subject: String, data: Bytes, headers: Option<HeaderMap>) -> 
         description: None,
         length: 0,
     }
+}
+
+pub fn test_consumer() -> String {
+    format!("test-consumer-{}", random::<u16>())
 }
