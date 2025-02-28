@@ -125,7 +125,10 @@ where
                 RetryStateProj::WaitingForStreamFactory { factory_method, .. } => {
                     let maybe_result = ready!(factory_method.poll(cx));
                     match maybe_result {
-                        Ok(stream) => RetryState::WaitingForStream { stream },
+                        Ok(stream) => {
+                            *this.attempt = 1;
+                            RetryState::WaitingForStream { stream }
+                        }
                         Err(e) => {
                             *this.attempt += 1;
                             match this.error_handler.on_factory_error(attempt, e) {
@@ -208,6 +211,25 @@ mod test {
         let error_action = TestErrorHandler::new(1);
         let data_stream = RetriableStream::new(factory, error_action);
         assert!(data_stream.try_collect::<Vec<u8>>().await.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_reset_attempt_count() -> Result<()> {
+        let factory = TestStreamFactory::new(vec![
+            Err(TestError::FactoryError),
+            Err(TestError::FactoryError),
+            Ok(vec![Ok(1u8), Err(TestError::StreamError)]),
+            Err(TestError::FactoryError),
+            Err(TestError::FactoryError),
+            Ok(vec![Ok(1u8)]),
+        ]);
+
+        let error_action = TestErrorHandler::new(3);
+        let data_stream = RetriableStream::new(factory, error_action);
+        let actual = data_stream.try_collect::<Vec<u8>>().await?;
+        assert_eq!(vec![1], actual);
 
         Ok(())
     }
