@@ -17,6 +17,18 @@ struct NodeInfo {
     pub addr: Option<NodeAddr>,
 }
 
+/// This is a simple implementation of peer discovery built specifically to workaround cases
+/// where peers may not be running or being redeployed in kubernetes.
+/// In those cases the DNS will not be able to resolve IP addresses of peers,
+/// because kubernetes services will not be available and therefore FQDN records will not exist.
+///
+/// # Responsibilities
+/// - Maintains a list of known peers and their associated information, such as
+///   addresses and resolved `NodeAddr`.
+/// - Periodically performs peer discovery by resolving addresses of known peers
+///   and updating their `NodeAddr` if changes are detected.
+/// - Sends discovery events to subscribers when new peers are discovered.
+///
 #[derive(Debug)]
 pub struct Membership {
     #[allow(dead_code)]
@@ -46,9 +58,9 @@ impl Membership {
                 tokio::select! {
                     _ = interval.tick() => {
                         let discovery_result = Membership::discover_peers(&mut known_peers).await;
-                        trace!("Peer discovery result {:?}", discovery_result);
+                        trace!("Peer discovery result: {:?}", discovery_result);
                         for node_addr in discovery_result {
-                            sender.send(Ok(DiscoveryEvent{ provenance: "peer discovery", node_addr })).ok();
+                            sender.send(Ok(DiscoveryEvent{ provenance: "peer_discovery", node_addr })).ok();
                         }
                     },
                 }
