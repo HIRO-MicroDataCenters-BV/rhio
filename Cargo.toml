@@ -26,10 +26,12 @@ p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c7
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
 p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", default-features = false }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", features = ["cbor"], default-features = false }
+p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
 rhio-blobs = { path = "rhio-blobs" }
 rhio-core = { path = "rhio-core" }
 rhio-config = { path = "rhio-config" }
 rhio-http-api = { path = "rhio-http-api" }
+iroh-base = "0.25.0"
 s3-server = { path = "s3-server" }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.132"
