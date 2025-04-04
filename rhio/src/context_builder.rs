@@ -4,8 +4,8 @@ use std::time::Duration;
 use crate::blobs::watcher::S3WatcherOptions;
 use crate::context::Context;
 use crate::http::api::RhioApiImpl;
+use crate::network::membership::Membership;
 use crate::node::rhio::NodeOptions;
-
 use crate::{blobs::store_from_config, nats::Nats, Node};
 
 use anyhow::{anyhow, Context as AnyhowContext, Result};
@@ -152,9 +152,14 @@ impl ContextBuilder {
         let resync_config = ContextBuilder::to_resync_config(&config);
         let sync_config = SyncConfiguration::new(sync_protocol).resync(resync_config);
 
-        let builder = NetworkBuilder::from_config(p2p_network_config)
+        let mut builder = NetworkBuilder::from_config(p2p_network_config)
             .private_key(private_key.clone())
             .sync(sync_config);
+
+        builder = builder.discovery(Membership::new(
+            &config.node.known_nodes,
+            config.node.discovery.to_owned().unwrap_or_default(),
+        ));
 
         let (watcher_tx, watcher_rx) = mpsc::channel(512);
         // 4. Configure and set up blob store and connection handlers for blob replication.

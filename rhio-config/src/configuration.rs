@@ -200,6 +200,7 @@ pub struct NodeConfig {
     pub private_key_path: PathBuf,
     pub network_id: String,
     pub protocol: Option<ProtocolConfig>,
+    pub discovery: Option<DiscoveryOptions>,
 }
 
 impl Default for NodeConfig {
@@ -211,6 +212,7 @@ impl Default for NodeConfig {
             private_key_path: DEFAULT_PRIVATE_KEY_PATH.into(),
             network_id: DEFAULT_NETWORK_ID.to_string(),
             protocol: None,
+            discovery: None,
         }
     }
 }
@@ -235,6 +237,19 @@ impl Default for ProtocolConfig {
         Self {
             poll_interval_seconds: 1,
             resync_interval_seconds: 60,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub struct DiscoveryOptions {
+    pub query_interval_seconds: u64,
+}
+
+impl Default for DiscoveryOptions {
+    fn default() -> Self {
+        Self {
+            query_interval_seconds: 5,
         }
     }
 }
@@ -288,8 +303,8 @@ mod tests {
     use s3::creds::Credentials;
 
     use crate::configuration::{
-        Config, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials, NodeConfig,
-        ProtocolConfig, PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config,
+        Config, DiscoveryOptions, KnownNode, LocalNatsSubject, NatsConfig, NatsCredentials,
+        NodeConfig, ProtocolConfig, PublishConfig, RemoteNatsSubject, RemoteS3Bucket, S3Config,
         SubscribeConfig,
     };
 
@@ -334,7 +349,8 @@ mod tests {
                         known_nodes: vec![],
                         private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
-                        protocol: None
+                        protocol: None,
+                        discovery: None
                     },
                     s3: None,
                     log_level: None,
@@ -360,6 +376,8 @@ network_id: "rhio-default-network-1"
 protocol:
     poll_interval_seconds: 1
     resync_interval_seconds: 60
+discovery:
+    query_interval_seconds: 5
 
 s3:
     endpoint: "http://minio.svc.kubernetes.local"
@@ -458,6 +476,7 @@ subscribe:
                         private_key_path: PathBuf::from("/usr/app/rhio/private.key"),
                         network_id: "rhio-default-network-1".into(),
                         protocol: Some(ProtocolConfig::default()),
+                        discovery: Some(DiscoveryOptions::default()),
                     },
                     log_level: None,
                     publish: Some(PublishConfig {

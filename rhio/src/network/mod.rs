@@ -1,4 +1,5 @@
 mod actor;
+pub mod membership;
 pub mod sync;
 
 use anyhow::Result;

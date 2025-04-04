@@ -311,6 +311,7 @@ impl RhioConfigMapBuilder {
                 private_key_path: RHIO_PRIVATE_KEY_PATH.into(),
                 network_id: service_spec.network_id.to_owned(),
                 protocol: None,
+                discovery: None,
             },
             s3,
             nats,
@@ -381,6 +382,7 @@ mod tests {
                 private_key_path: PathBuf::from("/etc/rhio/private-key.txt"),
                 network_id: "test".into(),
                 protocol: None,
+                discovery: None,
             },
             log_level: None,
             publish: Some(PublishConfig {
@@ -470,6 +472,7 @@ mod tests {
                 private_key_path: PathBuf::from("/etc/rhio/private-key.txt"),
                 network_id: "test".into(),
                 protocol: None,
+                discovery: None,
             },
             log_level: Some("=INFO".into()),
             publish: Some(PublishConfig {
