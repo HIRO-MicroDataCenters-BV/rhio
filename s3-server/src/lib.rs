@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fs::File;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
@@ -162,11 +163,11 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
-    pub fn create_bucket<P: AsRef<str>>(&self, bucket: P) -> Result<()> {
-        let path = self.root.path().join(bucket.as_ref());
+    pub fn create_bucket<P: Borrow<str>>(&self, bucket: P) -> Result<()> {
+        let path = self.root.path().join(bucket.borrow());
         debug!(
             "FakeS3Server: creating bucket {}, fs path {}",
-            bucket.as_ref(),
+            bucket.borrow(),
             path.to_str().unwrap()
         );
         std::fs::create_dir(path).context("Create bucket path")?;
@@ -182,11 +183,11 @@ impl FakeS3Server {
     ///
     /// A `Result` indicating success or failure.
     ///
-    pub fn delete_bucket<P: AsRef<str>>(&self, bucket: P) -> Result<()> {
-        let path = self.root.path().join(bucket.as_ref());
+    pub fn delete_bucket<P: Borrow<str>>(&self, bucket: P) -> Result<()> {
+        let path = self.root.path().join(bucket.borrow());
         debug!(
             "FakeS3Server: deleting bucket {}, fs path {}",
-            bucket.as_ref(),
+            bucket.borrow(),
             path.to_str().unwrap()
         );
         std::fs::remove_dir(path).context("Delete bucket path")?;
@@ -202,12 +203,12 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` containing a boolean indicating whether the file exists.
-    pub fn exists<P: AsRef<str>>(&self, bucket: P, file_path: P) -> Result<bool> {
+    pub fn exists<P: Borrow<str>>(&self, bucket: P, file_path: P) -> Result<bool> {
         let path = self
             .root
             .path()
-            .join(bucket.as_ref())
-            .join(file_path.as_ref());
+            .join(bucket.borrow())
+            .join(file_path.borrow());
         Ok(std::fs::exists(path.as_path())?)
     }
 
@@ -221,7 +222,7 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` containing a vector of bytes representing the file contents.
-    pub fn get_bytes<P: AsRef<str>>(&self, bucket: P, file_path: P) -> Result<Vec<u8>> {
+    pub fn get_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F) -> Result<Vec<u8>> {
         let mut file = self.get(bucket, file_path)?;
         let mut target_bytes = Vec::new();
         file.read_to_end(&mut target_bytes)
@@ -239,16 +240,16 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` containing the file.
-    pub fn get<P: AsRef<str>>(&self, bucket: P, file_path: P) -> Result<File> {
+    pub fn get<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F) -> Result<File> {
         let path = self
             .root
             .path()
-            .join(bucket.as_ref())
-            .join(file_path.as_ref());
+            .join(bucket.borrow())
+            .join(file_path.borrow());
         debug!(
             "FakeS3Server: reading from bucket {}, file_path {}, fs path {}",
-            bucket.as_ref(),
-            file_path.as_ref(),
+            bucket.borrow(),
+            file_path.borrow(),
             path.to_str().unwrap()
         );
         Ok(File::open(path)?)
@@ -265,16 +266,16 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
-    pub fn put_bytes<P: AsRef<str>>(&self, bucket: P, file_path: P, contents: &[u8]) -> Result<()> {
+    pub fn put_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F, contents: &[u8]) -> Result<()> {
         let path = self
             .root
             .path()
-            .join(bucket.as_ref())
-            .join(file_path.as_ref());
+            .join(bucket.borrow())
+            .join(file_path.borrow());
         debug!(
             "FakeS3Server: save bytes into bucket {}, file_path {}, fs path {}",
-            bucket.as_ref(),
-            file_path.as_ref(),
+            bucket.borrow(),
+            file_path.borrow(),
             path.to_str().unwrap()
         );
         std::fs::File::create(path)
@@ -284,16 +285,16 @@ impl FakeS3Server {
         Ok(())
     }
 
-    pub fn delete_bytes<P: AsRef<str>>(&self, bucket: P, file_path: P) -> Result<()> {
+    pub fn delete_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F) -> Result<()> {
         let path = self
             .root
             .path()
-            .join(bucket.as_ref())
-            .join(file_path.as_ref());
+            .join(bucket.borrow())
+            .join(file_path.borrow());
         debug!(
             "FakeS3Server: delete bytes from bucket {}, file_path {}, fs path {}",
-            bucket.as_ref(),
-            file_path.as_ref(),
+            bucket.borrow(),
+            file_path.borrow(),
             path.to_str().unwrap()
         );
 
