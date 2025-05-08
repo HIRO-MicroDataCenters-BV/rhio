@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::nats::Subject;
@@ -82,10 +83,10 @@ enum ConsumerStatus {
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     subscribers_tx: loole::Sender<JetStreamEvent>,
-    messages: M,
+    messages: Pin<Box<M>>,
     num_pending: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
@@ -95,7 +96,7 @@ where
 
 impl<M> ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     pub fn new(
         subscribers_tx: loole::Sender<JetStreamEvent>,
@@ -107,7 +108,7 @@ where
     ) -> Self {
         Self {
             subscribers_tx,
-            messages,
+            messages: Box::pin(messages),
             num_pending,
             status: ConsumerStatus::Initializing,
             stream_name,
@@ -128,7 +129,6 @@ where
         if self.num_pending == 0 {
             self.on_init_complete()?;
         }
-
         let inner_result = loop {
             match self.messages.next().await {
                 Some(message) => {
@@ -201,7 +201,7 @@ where
 
 impl<M> Drop for ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     fn drop(&mut self) {
         trace!(parent: &self.span, "drop consumer");
