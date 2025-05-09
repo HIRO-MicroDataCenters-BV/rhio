@@ -24,10 +24,10 @@ use stackable_operator::{client::Client, kube::runtime::Controller, namespace::W
 use stackable_operator::{
     client::GetApi,
     kube::{
-        api::ListParams,
-        core::{error_boundary, DeserializeGuard},
-        runtime::{controller::Action, reflector::ObjectRef},
         Resource, ResourceExt,
+        api::ListParams,
+        core::{DeserializeGuard, error_boundary},
+        runtime::{controller::Action, reflector::ObjectRef},
     },
 };
 use stackable_operator::{

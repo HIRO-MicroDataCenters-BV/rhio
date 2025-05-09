@@ -1,26 +1,41 @@
-use futures::Future;
+use futures::Stream;
+use futures::TryFuture;
 use std::time::Duration;
-pub type StreamFuture<StreamT, FactoryE> =
-    dyn Future<Output = Result<Box<StreamT>, FactoryE>> + Send + 'static;
-use std::pin::Pin;
 
 /// Stream Item sequence number
 pub type SeqNo = u64;
 
+/// A trait for creating streams with optional sequence number starting points.
 ///
-/// This trait defines a method for creating a stream, optionally starting from a given sequence number.
+/// The `StreamFactory` trait provides an abstraction for creating streams that can start
+/// from a specific sequence number. It is designed to be generic and flexible, allowing
+/// implementers to define the types of streams, items, and errors they work with.
 ///
-/// # Type Parameters
+/// # Associated Types
 ///
-/// * `StreamT` - The type of the stream to be created.
-/// * `FactoryE` - The type of the error that can occur during stream creation.
+/// * `T` - The type of the items produced by the stream.
+/// * `ErrorT` - The type of the error that can occur during stream creation.
+/// * `StreamT` - The type of the stream to be created, which must implement the `Stream` trait
+///   and produce items of type `T`.
+/// * `Fut` - The type of the future returned by the `create` method, which must implement the
+///   `TryFuture` trait and resolve to a `Result` containing the created stream or an error.
 ///
-/// # Methods
+/// # Required Methods
 ///
 /// * `create` - Creates a new stream, optionally starting from the given sequence number.
+///   This method returns a future that resolves to the created stream or an error.
 ///
-pub trait StreamFactory<StreamT, FactoryE>: Send + Sync {
-    fn create(&self, seq_no: Option<SeqNo>) -> Pin<Box<StreamFuture<StreamT, FactoryE>>>;
+pub trait StreamFactory {
+    type T;
+    type ErrorT;
+    type StreamT: Stream<Item = Self::T>;
+    type Fut: TryFuture<
+            Ok = Self::StreamT,
+            Error = Self::ErrorT,
+            Output = Result<Self::StreamT, Self::ErrorT>,
+        >;
+
+    fn create(&self, seq_no: Option<SeqNo>) -> Self::Fut;
 }
 
 ///

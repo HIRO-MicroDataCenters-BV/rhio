@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use iroh_blobs::store::bao_tree::io::sync::WriteAt;
 use iroh_blobs::util::SparseMemFile;
 use s3::Bucket;
 use tracing::trace;
 
-use crate::bao_file::{BaoMeta, META_CONTENT_TYPE};
 use crate::Paths;
+use crate::bao_file::{BaoMeta, META_CONTENT_TYPE};
 
 /// Creates a meta file in S3 bucket.
 pub async fn put_meta(bucket: &Bucket, paths: &Paths, meta: &BaoMeta) -> Result<()> {

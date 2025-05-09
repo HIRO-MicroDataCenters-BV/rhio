@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use p2panda_core::PublicKey;
 use rhio_blobs::BucketName;
 use rhio_core::Subject;
@@ -169,9 +169,9 @@ impl NodeConfig {
                     } => {
                         if existing_bucket_name == &new_files_subscription.local_bucket_name {
                             bail!(
-                            "local bucket '{}' for subscribe config is already used in publish config",
-                            new_files_subscription.local_bucket_name.clone()
-                        );
+                                "local bucket '{}' for subscribe config is already used in publish config",
+                                new_files_subscription.local_bucket_name.clone()
+                            );
                         }
                     }
                     Publication::Messages { .. } => {
@@ -217,10 +217,10 @@ impl NodeConfig {
                                 for existing_subject in &existing_stream.subjects {
                                     if new_stream.subjects.contains(existing_subject) {
                                         bail!(
-                                        "public key {} and subject '{}' is used multiple times in subscribe NATS config",
-                                        existing_messages_subscription.public_key,
-                                        existing_subject
-                                    );
+                                            "public key {} and subject '{}' is used multiple times in subscribe NATS config",
+                                            existing_messages_subscription.public_key,
+                                            existing_subject
+                                        );
                                     }
                                 }
                             }

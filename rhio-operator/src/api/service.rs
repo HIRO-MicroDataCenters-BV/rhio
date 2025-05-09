@@ -12,8 +12,8 @@ use stackable_operator::commons::cluster_operation::ClusterOperation;
 use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::commons::product_image_selection::ResolvedProductImage;
 use stackable_operator::crd::ClusterRef;
-use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::kube::CustomResource;
+use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::role_utils::RoleGroupRef;
 use stackable_operator::status::condition::ClusterCondition;
 use stackable_operator::status::condition::HasStatusCondition;
@@ -164,7 +164,6 @@ pub struct NatsConfigSpec {
 
 #[derive(Clone, Deserialize, Debug, Eq, JsonSchema, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-
 pub struct NatsCredentials {
     pub username: String,
     pub password: String,

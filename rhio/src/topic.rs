@@ -4,7 +4,7 @@ use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::Topic;
 use rhio_blobs::BucketName;
-use rhio_core::{subjects_to_str, Subject};
+use rhio_core::{Subject, subjects_to_str};
 use serde::{Deserialize, Serialize};
 
 use crate::nats::StreamName;

@@ -1,5 +1,5 @@
-use futures::ready;
 use futures::stream::Stream;
+use futures::{TryFuture, ready};
 use pin_project_lite::pin_project;
 use std::{
     future::Future,
@@ -10,34 +10,46 @@ use std::{
 };
 
 use super::types::ErrorHandler;
-use crate::utils::retry::types::StreamFactory;
-use crate::utils::retry::types::StreamFuture;
-use crate::utils::retry::types::{RetryPolicy, SeqNo};
+use crate::utils::retry::types::{RetryPolicy, SeqNo, StreamFactory};
 
 pin_project! {
-    ///
-    /// `RetriableStream` wraps around another stream and provides retry logic
-    /// for handling errors that occur during streaming. It uses a factory to
-    /// create new instances of the stream when retries are needed.
+    /// `RetriableStream` is a wrapper around a stream that provides retry logic for handling errors
+    /// during streaming. It uses a factory to create new instances of the stream when retries are
+    /// required, and an error handler to determine the retry policy.
     ///
     /// # Type Parameters
     ///
-    /// * `StreamT` - The type of the underlying stream.
     /// * `Factory` - The type of the factory used to create new stream instances.
-    /// * `FactoryE` - The type of error that the factory can produce.
     /// * `F` - The type of the error handler used to determine the retry policy.
     ///
     /// # Fields
     ///
-    /// * `state` - The current state of the retry logic, which can be waiting for a stream,
-    ///   waiting for the factory to create a stream, or waiting for a retry timer.
-    /// * `error_handler` - The error handler that determines the retry policy based on errors.
+    /// * `state` - Represents the current state of the retry logic, which can be:
+    ///   - Waiting for a stream to produce items.
+    ///   - Waiting for the factory to create a new stream.
+    ///   - Waiting for a retry timer to elapse.
+    /// * `error_handler` - The error handler that determines the retry policy based on errors
+    ///   encountered during streaming or factory creation.
     /// * `stream_factory` - The factory used to create new stream instances.
-    /// * `attempt` - The current retry attempt count.
+    /// * `attempt` - Tracks the current retry attempt count.
     ///
-    pub struct RetriableStream<StreamT, Factory: StreamFactory<StreamT, FactoryE>, FactoryE, F>{
+    /// # Behavior
+    ///
+    /// The `RetriableStream` transitions between states based on the outcome of the underlying
+    /// stream or factory:
+    ///
+    /// - If the stream produces an error, the error handler determines whether to retry or forward
+    ///   the error.
+    /// - If the factory fails to create a stream, the error handler determines whether to retry or
+    ///   forward the error.
+    /// - If a retry is required, a timer is started before attempting to create a new stream.
+    ///
+    pub struct RetriableStream<Factory, F>
+    where
+        Factory: StreamFactory,
+    {
         #[pin]
-        state: RetryState<StreamT, FactoryE>,
+        state: RetryState<Factory>,
         error_handler: F,
         stream_factory: Arc<Factory>,
         attempt: usize
@@ -46,24 +58,58 @@ pin_project! {
 
 pin_project! {
     #[project = RetryStateProj]
-    enum RetryState<StreamT, FactoryE>
+    enum RetryState<Factory: StreamFactory>
     {
-        WaitingForStream{ #[pin] stream: Box<StreamT> },
+
+        WaitingForStream {
+            #[pin]
+            stream: Factory::StreamT,
+        },
+
         WaitingForStreamFactory {
             #[pin]
-            factory_method: Pin<Box<StreamFuture<StreamT, FactoryE>>>,
+            factory_method: Factory::Fut,
         },
+
         TimerActive {
             #[pin] delay: tokio::time::Sleep, seq_no: Option<SeqNo>
         },
     }
 }
 
-impl<StreamT, T, Factory, FactoryE, F> RetriableStream<StreamT, Factory, FactoryE, F>
+///
+/// This implementation provides the core logic for consuming items from the wrapped stream
+/// while handling errors and applying retry policies. The `RetriableStream` transitions
+/// between different states (`TimerActive`, `WaitingForStreamFactory`, and `WaitingForStream`)
+/// to manage retries and recover from errors.
+///
+/// # Type Parameters
+///
+/// * `Factory` - The type of the factory used to create new stream instances.
+/// * `F` - The type of the error handler used to determine the retry policy.
+///
+/// # Behavior
+///
+/// - The `poll_next` method is responsible for driving the state machine of the `RetriableStream`.
+/// - When an error occurs in the stream or during stream creation, the error handler determines
+///   whether to retry or forward the error.
+/// - If a retry is required, a delay is introduced before attempting to create a new stream.
+/// - The retry attempt count is reset when a new stream is successfully created.
+///
+/// # States
+///
+/// - `TimerActive`: A delay is active before retrying the stream creation.
+/// - `WaitingForStreamFactory`: Waiting for the factory to create a new stream instance.
+/// - `WaitingForStream`: Consuming items from the active stream.
+///
+/// # Methods
+///
+/// - `poll_next`: Polls the next item from the stream, handling retries and errors as needed.
+///
+impl<Factory, F> RetriableStream<Factory, F>
 where
-    F: ErrorHandler<T, FactoryE, Out = T>,
-    StreamT: Stream<Item = T>,
-    Factory: StreamFactory<StreamT, FactoryE>,
+    Factory: StreamFactory,
+    F: ErrorHandler<Factory::T, Factory::ErrorT, Out = Factory::T>,
 {
     pub fn new(stream_factory: Factory, error_handler: F) -> Self {
         Self {
@@ -77,40 +123,12 @@ where
         }
     }
 }
-///
-/// This implementation provides the core logic for polling the underlying stream
-/// and handling retries when errors occur. The `poll_next` method is responsible
-/// for driving the state machine that manages the retry logic.
-///
-/// # Type Parameters
-///
-/// * `StreamT` - The type of the underlying stream.
-/// * `T` - The type of items produced by the stream.
-/// * `Factory` - The type of the factory used to create new stream instances.
-/// * `FactoryE` - The type of error that the factory can produce.
-/// * `F` - The type of the error handler used to determine the retry policy.
-///
-/// # Polling Logic
-///
-/// The `poll_next` method uses a loop to continuously poll the current state of the
-/// retry logic until a stream item is produced or the stream is exhausted. The state
-/// transitions are as follows:
-///
-/// * `TimerActive` - Waits for a retry timer to complete before attempting to create
-///   a new stream instance using the factory.
-/// * `WaitingForStreamFactory` - Waits for the factory to create a new stream instance.
-///   If the factory produces an error, the error handler is consulted to determine the
-///   retry policy.
-/// * `WaitingForStream` - Polls the underlying stream for the next item. If an error
-///   occurs, the error handler is consulted to determine the retry policy.
-///
-impl<StreamT, T, Factory, FactoryE, F> Stream for RetriableStream<StreamT, Factory, FactoryE, F>
+
+impl<Factory: StreamFactory, F> Stream for RetriableStream<Factory, F>
 where
-    F: ErrorHandler<T, FactoryE, Out = T>,
-    StreamT: Stream<Item = T> + Unpin + 'static,
-    Factory: StreamFactory<StreamT, FactoryE>,
+    F: ErrorHandler<Factory::T, <Factory::Fut as TryFuture>::Error, Out = Factory::T>,
 {
-    type Item = StreamT::Item;
+    type Item = Factory::T;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         loop {
@@ -172,7 +190,7 @@ mod test {
     use anyhow::Result;
     use futures_util::TryStreamExt;
     use std::sync::atomic::Ordering;
-    use std::sync::{atomic::AtomicUsize, Arc};
+    use std::sync::{Arc, atomic::AtomicUsize};
     use thiserror::Error;
 
     #[tokio::test]
@@ -377,8 +395,13 @@ mod test {
         }
     }
 
-    impl StreamFactory<MyStream, TestError> for TestStreamFactory {
-        fn create(&self, seq_no: Option<SeqNo>) -> Pin<Box<StreamFuture<MyStream, TestError>>> {
+    impl StreamFactory for TestStreamFactory {
+        type T = Result<u8, TestError>;
+        type ErrorT = TestError;
+        type StreamT = MyStream;
+        type Fut = Pin<Box<dyn Future<Output = Result<MyStream, TestError>>>>;
+
+        fn create(&self, seq_no: Option<SeqNo>) -> Self::Fut {
             let this = self.clone();
             Box::pin(async move {
                 let connection_attempt_no = this.counter.fetch_add(1, Ordering::AcqRel);
@@ -390,10 +413,10 @@ mod test {
                 let items = items_for_connection?;
                 let start_idx = seq_no.unwrap_or(0) as usize;
                 let to_return = items[start_idx..].to_vec();
-                let stream: Box<MyStream> = Box::new(MyStream {
+                let stream: MyStream = MyStream {
                     items: Box::new(futures::stream::iter(to_return)),
-                });
-                Ok::<Box<MyStream>, TestError>(stream)
+                };
+                Ok::<MyStream, TestError>(stream)
             })
         }
     }

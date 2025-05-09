@@ -1,8 +1,8 @@
 use crate::nats::client::types::NatsClient;
 use crate::nats::client::types::NatsMessageStream;
 use crate::nats::client::types::NatsStreamProtocol;
-
 use crate::utils::retry::stream::RetriableStream;
+
 use futures::Stream;
 use pin_project::pin_project;
 use std::pin::Pin;
@@ -13,44 +13,72 @@ use super::error::NatsErrorHandler;
 use super::error::RetryConfig;
 use super::factory::NatsStreamFactory;
 
-pub type RecoverableNatsStream = dyn Stream<Item = NatsStreamProtocol> + Send + 'static;
-
-/// the `NatsMessageStream` and `Stream` traits. It provides a mechanism to create a stream
-/// that can recover from errors using a retry strategy.
+/// A recoverable NATS message stream implementation.
+///
+/// `RecoverableNatsStreamImpl` is a wrapper around a NATS message stream that provides
+/// error recovery and retry capabilities. It is designed to handle transient errors
+/// in the underlying NATS stream by using a retry strategy, ensuring that the stream
+/// remains operational even in the presence of temporary failures.
+///
+/// This implementation leverages the `RetriableStream` to manage retries and error
+/// handling, and it integrates with tracing spans for better observability.
+///
+/// # Type Parameters
+/// - `N`: The type of the NATS client that implements the `NatsClient` trait.
+/// - `M`: The type of the NATS message stream that implements the `NatsMessageStream` trait.
 ///
 /// # Fields
-/// - `stream`: A pinned box containing the recoverable NATS stream.
+/// - `stream`: A pinned `RetriableStream` that wraps the NATS stream factory and error handler.
 ///
 /// # Methods
-/// - `new`: Creates a new instance of `RecoverableNatsStreamImpl` with the given factory,
-///   retry options, and tracing span.
+/// - `new`: Constructs a new instance of `RecoverableNatsStreamImpl` with the provided
+///   stream factory, retry configuration, and tracing span.
+///
+/// # Traits Implemented
+/// - `Stream`: Allows the `RecoverableNatsStreamImpl` to be used as an asynchronous stream,
+///   yielding items of type `NatsStreamProtocol`.
+/// - `NatsMessageStream`: Implements the NATS-specific message stream trait.
 ///
 #[pin_project]
-pub struct RecoverableNatsStreamImpl {
+pub struct RecoverableNatsStreamImpl<N, M>
+where
+    M: NatsMessageStream + Send + Sync + 'static,
+    N: NatsClient<M> + Send + Sync + 'static,
+{
     #[pin]
-    stream: Pin<Box<RecoverableNatsStream>>,
+    stream: RetriableStream<NatsStreamFactory<N, M>, NatsErrorHandler>,
 }
 
-impl RecoverableNatsStreamImpl {
-    pub fn new<N, M>(
+impl<N, M> RecoverableNatsStreamImpl<N, M>
+where
+    M: NatsMessageStream + Send + Sync + 'static,
+    N: NatsClient<M> + Send + Sync + 'static,
+{
+    pub fn new(
         factory: NatsStreamFactory<N, M>,
         retry_options: RetryConfig,
         span: Span,
-    ) -> RecoverableNatsStreamImpl
-    where
-        M: NatsMessageStream + Send + Sync + Unpin + 'static,
-        N: NatsClient<M> + Send + Sync + 'static,
-    {
+    ) -> RecoverableNatsStreamImpl<N, M> {
         let error_handler = NatsErrorHandler::new(retry_options, span);
-        let stream = Box::pin(RetriableStream::new(factory, error_handler));
+        let stream: RetriableStream<NatsStreamFactory<N, M>, NatsErrorHandler> =
+            RetriableStream::new(factory, error_handler);
 
         RecoverableNatsStreamImpl { stream }
     }
 }
 
-impl NatsMessageStream for RecoverableNatsStreamImpl {}
+impl<N, M> NatsMessageStream for RecoverableNatsStreamImpl<N, M>
+where
+    M: NatsMessageStream + Send + Sync + 'static,
+    N: NatsClient<M> + Send + Sync + 'static,
+{
+}
 
-impl Stream for RecoverableNatsStreamImpl {
+impl<N, M> Stream for RecoverableNatsStreamImpl<N, M>
+where
+    M: NatsMessageStream + Send + Sync + 'static,
+    N: NatsClient<M> + Send + Sync + 'static,
+{
     type Item = NatsStreamProtocol;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -65,14 +93,14 @@ pub mod tests {
 
     use crate::{
         nats::{
-            client::fake::{client::FakeNatsClient, server::FakeNatsServer},
             ConsumerId,
+            client::fake::{client::FakeNatsClient, server::FakeNatsServer},
         },
         tests::configuration::generate_nats_config,
         tracing::setup_tracing,
     };
     use anyhow::Context;
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use async_nats::jetstream::consumer::DeliverPolicy;
     use futures::StreamExt;
     use rhio_core::Subject;
@@ -191,12 +219,17 @@ pub mod tests {
     }
 
     impl ActiveConsumer {
-        pub fn new(mut stream: RecoverableNatsStreamImpl) -> ActiveConsumer {
+        pub fn new<N, M>(stream: RecoverableNatsStreamImpl<N, M>) -> ActiveConsumer
+        where
+            M: NatsMessageStream + Send + Sync + 'static,
+            N: NatsClient<M> + Send + Sync + 'static,
+        {
             let results = Arc::new(Mutex::new(vec![]));
             let local_result = results.clone();
             tokio::spawn(async move {
+                let mut s = Box::pin(stream);
                 loop {
-                    if let Some(value) = stream.next().await {
+                    if let Some(value) = s.next().await {
                         let mut result_guard = local_result.lock().await;
                         result_guard.push(value);
                         drop(result_guard);

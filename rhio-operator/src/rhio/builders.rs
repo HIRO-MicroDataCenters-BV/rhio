@@ -12,9 +12,9 @@ use crate::rhio::error::{
 };
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::builder::meta::ObjectMetaBuilder;
+use stackable_operator::builder::pod::PodBuilder;
 use stackable_operator::builder::pod::container::ContainerBuilder;
 use stackable_operator::builder::pod::resources::ResourceRequirementsBuilder;
-use stackable_operator::builder::pod::PodBuilder;
 use stackable_operator::commons::product_image_selection::ResolvedProductImage;
 use stackable_operator::k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetSpec};
 use stackable_operator::k8s_openapi::api::core::v1::{

@@ -1,3 +1,4 @@
+use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::nats::Subject;
@@ -6,14 +7,14 @@ use crate::utils::nats::factory::NatsStreamFactory;
 use crate::utils::nats::stream::RecoverableNatsStreamImpl;
 use anyhow::Context;
 use anyhow::Result;
-use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::{error, info, span, trace, Level, Span};
+use tracing::{Level, Span, error, info, span, trace};
 
 use crate::JoinErrToStr;
 
@@ -82,10 +83,10 @@ enum ConsumerStatus {
 /// any message published on those subjects will be captured in the defined storage system.
 pub struct ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     subscribers_tx: loole::Sender<JetStreamEvent>,
-    messages: M,
+    messages: Pin<Box<M>>,
     num_pending: u64,
     status: ConsumerStatus,
     stream_name: StreamName,
@@ -95,7 +96,7 @@ where
 
 impl<M> ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     pub fn new(
         subscribers_tx: loole::Sender<JetStreamEvent>,
@@ -107,7 +108,7 @@ where
     ) -> Self {
         Self {
             subscribers_tx,
-            messages,
+            messages: Box::pin(messages),
             num_pending,
             status: ConsumerStatus::Initializing,
             stream_name,
@@ -128,7 +129,6 @@ where
         if self.num_pending == 0 {
             self.on_init_complete()?;
         }
-
         let inner_result = loop {
             match self.messages.next().await {
                 Some(message) => {
@@ -201,7 +201,7 @@ where
 
 impl<M> Drop for ConsumerActor<M>
 where
-    M: NatsMessageStream + Unpin,
+    M: NatsMessageStream,
 {
     fn drop(&mut self) {
         trace!(parent: &self.span, "drop consumer");

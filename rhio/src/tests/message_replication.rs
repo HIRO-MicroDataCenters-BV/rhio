@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use crate::{
     nats::client::fake::{
         blocking::BlockingClient,
-        client::{test_consumer, FakeNatsClient, FakeNatsMessages},
+        client::{FakeNatsClient, FakeNatsMessages, test_consumer},
         server::FakeNatsServer,
     },
     tests::{
@@ -16,7 +16,7 @@ use crate::{
     tracing::setup_tracing,
 };
 use anyhow::{Context, Result};
-use async_nats::{jetstream::consumer::DeliverPolicy, HeaderMap};
+use async_nats::{HeaderMap, jetstream::consumer::DeliverPolicy};
 use bytes::Bytes;
 use p2panda_core::PrivateKey;
 use rhio_config::configuration::NatsConfig;

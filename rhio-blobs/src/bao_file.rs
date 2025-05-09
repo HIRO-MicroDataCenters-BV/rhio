@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use bytes::{Bytes, BytesMut};
+use iroh_blobs::store::bao_tree::BaoTree;
 use iroh_blobs::store::bao_tree::io::fsm::{BaoContentItem, CreateOutboard};
 use iroh_blobs::store::bao_tree::io::outboard::PreOrderOutboard;
 use iroh_blobs::store::bao_tree::io::sync::WriteAt;
-use iroh_blobs::store::bao_tree::BaoTree;
 use iroh_blobs::util::SparseMemFile;
 use iroh_blobs::{Hash as BlobHash, IROH_BLOCK_SIZE};
 use iroh_io::AsyncSliceReader;

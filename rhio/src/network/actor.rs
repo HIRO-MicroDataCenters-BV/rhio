@@ -1,6 +1,6 @@
-use std::collections::{hash_map, HashMap};
+use std::collections::{HashMap, hash_map};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use p2panda_net::network::{FromNetwork, ToNetwork};
 use p2panda_net::{Network, TopicId};
 use tokio::sync::{mpsc, oneshot};

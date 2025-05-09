@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use tracing::Level;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 /// Setup logging with the help of the `tracing` crate.
 ///

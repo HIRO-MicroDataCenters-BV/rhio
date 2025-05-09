@@ -2,7 +2,7 @@
 name = "rhio"
 description = "Peer-to-peer NATS message routing and S3 object sync solution"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 publish = false
 default-run = "rhio"
 

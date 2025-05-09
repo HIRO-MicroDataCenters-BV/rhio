@@ -6,9 +6,9 @@ use crate::context::Context;
 use crate::http::api::RhioApiImpl;
 use crate::network::membership::Membership;
 use crate::node::rhio::NodeOptions;
-use crate::{blobs::store_from_config, nats::Nats, Node};
+use crate::{Node, blobs::store_from_config, nats::Nats};
 
-use anyhow::{anyhow, Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, anyhow};
 use p2panda_blobs::Blobs as BlobsHandler;
 use p2panda_core::{PrivateKey, PublicKey};
 use p2panda_net::SyncConfiguration;
@@ -21,17 +21,17 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
-use crate::blobs::{blobs_config, Blobs};
+use crate::blobs::{Blobs, blobs_config};
 #[cfg(test)]
 use crate::nats::client::fake::client::FakeNatsClient;
 #[cfg(not(test))]
 use crate::nats::client::nats::NatsClientImpl;
-use crate::network::sync::RhioSyncProtocol;
 use crate::network::Panda;
+use crate::network::sync::RhioSyncProtocol;
 use crate::tracing::setup_tracing;
 use figment::providers::Env;
 use rhio_config::configuration::PRIVATE_KEY_ENV;
-use rhio_config::configuration::{load_config, Config};
+use rhio_config::configuration::{Config, load_config};
 use rhio_core::load_private_key_from_file;
 
 #[derive(Debug)]

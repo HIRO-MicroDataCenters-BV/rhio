@@ -1,22 +1,23 @@
-use anyhow::{anyhow, bail, Context, Result};
-use async_nats::jetstream::consumer::DeliverPolicy;
+use anyhow::{Context, Result, anyhow, bail};
 use async_nats::Message as NatsMessage;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use axum_prometheus::metrics;
 use futures_util::stream::SelectAll;
 use loole::RecvStream;
 use p2panda_core::{PrivateKey, PublicKey};
-use p2panda_net::network::FromNetwork;
 use p2panda_net::TopicId;
+use p2panda_net::network::FromNetwork;
 use rhio_blobs::{CompletedBlob, NotImportedObject, SignedBlobInfo};
-use rhio_core::{nats, NetworkMessage, NetworkPayload, Subject};
+use rhio_core::{NetworkMessage, NetworkPayload, Subject, nats};
 use s3::error::S3Error;
 use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, error, trace, warn};
 
-use crate::blobs::watcher::S3Event;
+use crate::Publication;
 use crate::blobs::Blobs;
+use crate::blobs::watcher::S3Event;
 use crate::metrics::{
     LABEL_MSG_TYPE, LABEL_NETWORK_MSG_TYPE_BLOB_ANNOUNCEMENT, LABEL_NETWORK_MSG_TYPE_NATS_MESSAGE,
     LABEL_REMOTE_BUCKET, LABEL_SOURCE, LABEL_SOURCE_NATS, LABEL_SOURCE_NETWORK, LABEL_SUBJECT,
@@ -26,7 +27,6 @@ use crate::nats::{JetStreamEvent, Nats};
 use crate::network::Panda;
 use crate::node::config::NodeConfig;
 use crate::topic::{Query, Subscription};
-use crate::Publication;
 
 pub enum ToNodeActor {
     Publish {

@@ -1,12 +1,12 @@
 use super::types::NatsStreamProtocol;
 use super::types::{NatsClient, NatsMessageStream};
 use crate::StreamName;
-use anyhow::{bail, Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, bail};
+use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::jetstream::consumer::push::Config as ConsumerConfig;
 use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy};
 use async_nats::jetstream::consumer::{Info, PushConsumer};
 use async_nats::jetstream::context::Publish;
-use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::{Client, Event};
 use async_nats::{ConnectOptions, HeaderMap};
 use async_trait::async_trait;
@@ -17,9 +17,9 @@ use loole::Receiver;
 use loole::Sender;
 use pin_project::pin_project;
 use rhio_config::configuration::{NatsConfig, NatsCredentials};
-use rhio_core::{subjects_to_str, Subject};
+use rhio_core::{Subject, subjects_to_str};
 use std::time::Duration;
-use tracing::{error, info, span, trace, warn, Level};
+use tracing::{Level, error, info, span, trace, warn};
 
 type MessageStream = dyn Stream<Item = NatsStreamProtocol> + Unpin + Send + Sync + 'static;
 

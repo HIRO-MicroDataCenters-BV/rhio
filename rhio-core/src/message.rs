@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_nats::{HeaderMap, Message as NatsMessage, Subject};
 use bytes::Bytes;
 use p2panda_core::{Hash, PrivateKey, PublicKey, Signature};
 use rhio_blobs::{BlobHash, BucketName, ObjectKey, ObjectSize, SignedBlobInfo};
 use serde::{Deserialize, Serialize};
 
-use crate::nats::{remove_custom_nats_headers, NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE};
+use crate::nats::{NATS_RHIO_PUBLIC_KEY, NATS_RHIO_SIGNATURE, remove_custom_nats_headers};
 
 /// Messages which are exchanged in the p2panda network, via sync or gossip.
 ///

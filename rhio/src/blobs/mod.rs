@@ -5,7 +5,7 @@ pub mod watcher;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use p2panda_blobs::{Blobs as BlobsHandler, Config as BlobsConfig};
 use proxy::BlobsActorProxy;
 use rhio_blobs::{NotImportedObject, S3Store, SignedBlobInfo};

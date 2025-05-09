@@ -2,7 +2,7 @@
 name = "s3-server"
 description = "Simple S3 server for testing purposes"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [lints]

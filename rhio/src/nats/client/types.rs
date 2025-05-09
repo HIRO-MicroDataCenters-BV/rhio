@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
-use async_nats::jetstream::consumer::{DeliverPolicy, Info};
+use anyhow::{Result, anyhow};
 use async_nats::HeaderMap;
 use async_nats::Message;
+use async_nats::jetstream::consumer::{DeliverPolicy, Info};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::Stream;
