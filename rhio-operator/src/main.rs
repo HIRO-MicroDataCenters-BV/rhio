@@ -9,12 +9,13 @@ use rhio_operator::cli::{Opts, RhioCommand, RhioRun};
 use rhio_operator::configuration::controllers::{
     create_rms_controller, create_rmss_controller, create_ros_controller, create_ross_controller,
 };
-use rhio_operator::rhio::controller::{create_rhio_controller, APP_NAME, OPERATOR_NAME};
+use rhio_operator::rhio::controller::{APP_NAME, OPERATOR_NAME, create_rhio_controller};
 
-use clap::{crate_description, crate_version, Parser};
+use clap::{Parser, crate_description, crate_version};
 use stackable_operator::{
+    CustomResourceExt,
     cli::{Command, ProductOperatorRun},
-    client, CustomResourceExt,
+    client,
 };
 
 const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =

@@ -3,18 +3,18 @@ use bytes::Bytes;
 use chrono::Utc;
 use dashmap::DashMap;
 use futures_lite::Stream;
-use iroh_blobs::store::bao_tree::io::{fsm::Outboard, outboard::PreOrderOutboard};
 use iroh_blobs::store::bao_tree::BaoTree;
+use iroh_blobs::store::bao_tree::io::{fsm::Outboard, outboard::PreOrderOutboard};
 use iroh_blobs::store::{
     BaoBatchWriter, BaoBlobSize, ConsistencyCheckProgress, ExportProgressCb, GcConfig, ImportMode,
     ImportProgress, Map, MapEntry, MapEntryMut, MapMut, ReadableStore, Store,
 };
-use iroh_blobs::util::progress::{BoxedProgressSender, IdGenerator, ProgressSender};
 use iroh_blobs::util::SparseMemFile;
-use iroh_blobs::{BlobFormat, HashAndFormat, Tag, TempTag, IROH_BLOCK_SIZE};
+use iroh_blobs::util::progress::{BoxedProgressSender, IdGenerator, ProgressSender};
+use iroh_blobs::{BlobFormat, HashAndFormat, IROH_BLOCK_SIZE, Tag, TempTag};
 use iroh_io::AsyncSliceReader;
-use s3::serde_types::ListBucketResult;
 use s3::Bucket;
+use s3::serde_types::ListBucketResult;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::io;
@@ -23,11 +23,11 @@ use tokio::sync::RwLock;
 use tracing::{debug, trace, warn};
 
 use crate::bao_file::{BaoFileHandle, BaoMeta};
-use crate::paths::{Paths, META_SUFFIX, NO_PREFIX};
+use crate::paths::{META_SUFFIX, NO_PREFIX, Paths};
 use crate::utils::{get_meta, get_outboard, put_meta, remove_meta, remove_outboard};
 use crate::{
-    BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
-    SignedBlobInfo, UnsignedBlobInfo, OUTBOARD_SUFFIX,
+    BlobHash, CompletedBlob, IncompleteBlob, NotImportedObject, OUTBOARD_SUFFIX, ObjectKey,
+    ObjectSize, SignedBlobInfo, UnsignedBlobInfo,
 };
 
 /// An S3 backed iroh blobs store.
@@ -720,7 +720,7 @@ impl ReadableStore for S3Store {
 pub mod tests {
 
     use rand::Rng;
-    use s3_server::{generate_s3_config, new_s3_server, FakeS3Server};
+    use s3_server::{FakeS3Server, generate_s3_config, new_s3_server};
     use tokio::runtime::{Builder, Runtime};
 
     use super::*;
@@ -735,7 +735,7 @@ pub mod tests {
         } = create_test_setup()?;
 
         let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
 
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
 
@@ -745,9 +745,11 @@ pub mod tests {
             size: 1024,
         };
 
-        assert!(test_runtime
-            .block_on(async { store.import_object(object).await })
-            .is_ok());
+        assert!(
+            test_runtime
+                .block_on(async { store.import_object(object).await })
+                .is_ok()
+        );
 
         let complete_blobs = store.complete_blobs();
         assert_eq!(complete_blobs.len(), 1);
@@ -769,7 +771,7 @@ pub mod tests {
 
         // Importing object and creating meta
         let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
         test_runtime.block_on(async { store.reload().await });
 
@@ -804,7 +806,7 @@ pub mod tests {
 
         // Importing object and creating meta
         let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
         test_runtime.block_on(async { store.reload().await });
 

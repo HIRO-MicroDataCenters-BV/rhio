@@ -1,7 +1,7 @@
+use crate::nats::ConsumerId;
 use crate::nats::client::types::NatsClient;
 use crate::nats::client::types::NatsMessageStream;
 use crate::nats::client::types::NatsStreamProtocol;
-use crate::nats::ConsumerId;
 use crate::utils::retry::types::SeqNo;
 use crate::utils::retry::types::StreamFactory;
 use anyhow::Context as AnyhowContext;
@@ -11,8 +11,8 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::Arc;
-use tracing::info;
 use tracing::Span;
+use tracing::info;
 
 #[derive(Clone)]
 pub struct NatsStreamFactory<N, M: Stream> {
@@ -99,7 +99,6 @@ pub struct NatsStreamFactoryInner<N, M> {
 /// - Errors may occur due to issues with the NATS client, invalid parameters, or
 ///   other runtime conditions.
 ///
-
 impl<N, M> StreamFactory for NatsStreamFactory<N, M>
 where
     N: NatsClient<M> + Send + Sync + 'static,

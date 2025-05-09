@@ -12,7 +12,7 @@ mod utils;
 pub use iroh_blobs::Hash as BlobHash;
 use p2panda_core::{PublicKey, Signature};
 
-pub use paths::{Paths, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX};
+pub use paths::{META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX, Paths};
 use serde::{Deserialize, Serialize};
 pub use store::BucketState;
 pub use store::BucketStatus;

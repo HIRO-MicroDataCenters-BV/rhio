@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use iroh_blobs::IROH_BLOCK_SIZE;
 use iroh_io::AsyncSliceReader;
@@ -260,7 +260,7 @@ async fn upload_to_s3(
 mod tests {
     use iroh_blobs::IROH_BLOCK_SIZE;
 
-    use super::{offset_to_part_number, MIN_PART_SIZE};
+    use super::{MIN_PART_SIZE, offset_to_part_number};
 
     #[test]
     fn calculate_part_number() {

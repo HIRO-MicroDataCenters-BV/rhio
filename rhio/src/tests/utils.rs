@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::time::{Duration, Instant};
 
 pub fn wait_for_condition<F>(timeout: Duration, condition: F) -> Result<()>

@@ -4,11 +4,11 @@ use std::time::Duration;
 
 use anyhow::Result;
 use rhio_blobs::{
-    BlobHash, BucketName, CompletedBlob, IncompleteBlob, NotImportedObject, ObjectKey, ObjectSize,
-    S3Store, SignedBlobInfo, META_SUFFIX, NO_PREFIX, OUTBOARD_SUFFIX,
+    BlobHash, BucketName, CompletedBlob, IncompleteBlob, META_SUFFIX, NO_PREFIX, NotImportedObject,
+    OUTBOARD_SUFFIX, ObjectKey, ObjectSize, S3Store, SignedBlobInfo,
 };
 use s3::error::S3Error;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 

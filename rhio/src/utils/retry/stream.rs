@@ -1,5 +1,5 @@
 use futures::stream::Stream;
-use futures::{ready, TryFuture};
+use futures::{TryFuture, ready};
 use pin_project_lite::pin_project;
 use std::{
     future::Future,
@@ -190,7 +190,7 @@ mod test {
     use anyhow::Result;
     use futures_util::TryStreamExt;
     use std::sync::atomic::Ordering;
-    use std::sync::{atomic::AtomicUsize, Arc};
+    use std::sync::{Arc, atomic::AtomicUsize};
     use thiserror::Error;
 
     #[tokio::test]

@@ -2,8 +2,8 @@ mod actor;
 pub mod client;
 mod consumer;
 use anyhow::Result;
-use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::HeaderMap;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use client::types::{NatsClient, NatsMessageStream};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
@@ -13,9 +13,9 @@ use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
+use crate::JoinErrToStr;
 use crate::nats::actor::{NatsActor, ToNatsActor};
 pub use crate::nats::consumer::{ConsumerId, JetStreamEvent, StreamName};
-use crate::JoinErrToStr;
 
 #[derive(Clone, Debug)]
 pub struct Nats {

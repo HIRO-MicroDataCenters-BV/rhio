@@ -1,5 +1,5 @@
 use anyhow::Context;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use once_cell::sync::Lazy;
 use p2panda_core::{PrivateKey, PublicKey};
 use rhio_config::configuration::{
@@ -13,8 +13,8 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{
-        atomic::{AtomicU16, Ordering},
         Arc,
+        atomic::{AtomicU16, Ordering},
     },
 };
 use tokio::runtime::Runtime;

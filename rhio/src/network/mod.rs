@@ -5,16 +5,16 @@ pub mod sync;
 use anyhow::Result;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
-use p2panda_net::network::FromNetwork;
 use p2panda_net::Network;
+use p2panda_net::network::FromNetwork;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::error;
 
+use crate::JoinErrToStr;
 use crate::network::actor::{PandaActor, ToPandaActor};
 use crate::topic::Query;
-use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct Panda {

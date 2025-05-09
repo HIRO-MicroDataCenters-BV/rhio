@@ -6,22 +6,22 @@ use async_nats::message::Message as NatsMessage;
 use async_trait::async_trait;
 use futures_util::future::{self};
 use futures_util::stream::BoxStream;
-use futures_util::{pin_mut, AsyncRead, AsyncWrite, Sink, SinkExt, StreamExt};
+use futures_util::{AsyncRead, AsyncWrite, Sink, SinkExt, StreamExt, pin_mut};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
 use p2panda_net::TopicId;
 use p2panda_sync::cbor::{into_cbor_sink, into_cbor_stream};
 use p2panda_sync::{FromSync, SyncError, SyncProtocol};
 use rand::random;
 use rhio_blobs::{BlobHash, CompletedBlob, S3Store};
-use rhio_core::{nats, NetworkMessage, Subject};
+use rhio_core::{NetworkMessage, Subject, nats};
 use serde::{Deserialize, Serialize};
 use tokio_stream::StreamMap;
-use tracing::{debug, span, warn, Level};
+use tracing::{Level, debug, span, warn};
 
+use crate::FilteredMessageStream;
 use crate::nats::{ConsumerId, JetStreamEvent, Nats, StreamName};
 use crate::node::config::NodeConfig;
 use crate::topic::Query;
-use crate::FilteredMessageStream;
 
 /// Simple sync protocol implementation to allow exchange of past NATS messages or blob
 /// announcements.

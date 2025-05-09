@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
@@ -12,14 +12,14 @@ use tokio::task::JoinError;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{error, warn};
 
-use crate::blobs::watcher::S3Event;
+use crate::JoinErrToStr;
 use crate::blobs::Blobs;
+use crate::blobs::watcher::S3Event;
 use crate::nats::Nats;
 use crate::network::Panda;
 use crate::node::actor::{NodeActor, ToNodeActor};
 use crate::node::config::NodeConfig;
 use crate::topic::{Publication, Subscription};
-use crate::JoinErrToStr;
 use rhio_config::configuration::Config;
 
 #[derive(Debug, Clone, Default)]

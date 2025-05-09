@@ -30,10 +30,10 @@ pub trait StreamFactory {
     type ErrorT;
     type StreamT: Stream<Item = Self::T>;
     type Fut: TryFuture<
-        Ok = Self::StreamT,
-        Error = Self::ErrorT,
-        Output = Result<Self::StreamT, Self::ErrorT>,
-    >;
+            Ok = Self::StreamT,
+            Error = Self::ErrorT,
+            Output = Result<Self::StreamT, Self::ErrorT>,
+        >;
 
     fn create(&self, seq_no: Option<SeqNo>) -> Self::Fut;
 }

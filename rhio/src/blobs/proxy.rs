@@ -8,9 +8,9 @@ use tokio::task::JoinError;
 use tokio_util::task::{AbortOnDropHandle, LocalPoolHandle};
 use tracing::error;
 
+use crate::JoinErrToStr;
 use crate::blobs::actor::{BlobsActor, ToBlobsActor};
 use crate::topic::Query;
-use crate::JoinErrToStr;
 
 #[derive(Debug)]
 pub struct BlobsActorProxy {

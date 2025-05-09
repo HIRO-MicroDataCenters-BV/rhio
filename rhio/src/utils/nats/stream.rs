@@ -93,14 +93,14 @@ pub mod tests {
 
     use crate::{
         nats::{
-            client::fake::{client::FakeNatsClient, server::FakeNatsServer},
             ConsumerId,
+            client::fake::{client::FakeNatsClient, server::FakeNatsServer},
         },
         tests::configuration::generate_nats_config,
         tracing::setup_tracing,
     };
     use anyhow::Context;
-    use anyhow::{anyhow, Result};
+    use anyhow::{Result, anyhow};
     use async_nats::jetstream::consumer::DeliverPolicy;
     use futures::StreamExt;
     use rhio_core::Subject;

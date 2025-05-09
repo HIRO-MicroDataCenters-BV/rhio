@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{Node, StreamName};
 
-use anyhow::{bail, Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, bail};
 use p2panda_core::PublicKey;
 use rhio_http_api::api::{HTTP_HEALTH_ROUTE, HTTP_METRICS_ROUTE};
 use tokio::runtime::Runtime;

@@ -1,7 +1,7 @@
 use crate::nats::HeaderMap;
 use anyhow::Result;
-use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use bytes::Bytes;
 use rhio_core::Subject;
 use std::marker::PhantomData;

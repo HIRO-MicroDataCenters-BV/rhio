@@ -28,8 +28,8 @@ use rhio_http_api::{api::RhioApi, client::RhioApiClient, status::HealthStatus};
 use s3::creds::Credentials;
 use snafu::{OptionExt, ResultExt};
 use stackable_operator::client::GetApi;
-use stackable_operator::kube::api::ListParams;
 use stackable_operator::kube::ResourceExt;
+use stackable_operator::kube::api::ListParams;
 use stackable_operator::kvp::Labels;
 use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
@@ -37,9 +37,9 @@ use stackable_operator::{
     cluster_resources::{ClusterResourceApplyStrategy, ClusterResources},
     commons::rbac::build_rbac_resources,
     kube::{
-        core::{error_boundary, DeserializeGuard},
-        runtime::{controller::Action, reflector::ObjectRef},
         Resource,
+        core::{DeserializeGuard, error_boundary},
+        runtime::{controller::Action, reflector::ObjectRef},
     },
     status::condition::{
         compute_conditions, operations::ClusterOperationsConditionBuilder,

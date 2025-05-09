@@ -1,14 +1,14 @@
 use std::borrow::Borrow;
 use std::fs::File;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as ConnBuilder;
 use once_cell::sync::Lazy;
-use s3::creds::Credentials;
 use s3::Region;
+use s3::creds::Credentials;
 use s3s::auth::SimpleAuth;
 use s3s::service::{S3ServiceBuilder, SharedS3Service};
 use s3s_fs::FileSystem;
@@ -222,7 +222,11 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` containing a vector of bytes representing the file contents.
-    pub fn get_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F) -> Result<Vec<u8>> {
+    pub fn get_bytes<P: Borrow<str>, F: Borrow<str>>(
+        &self,
+        bucket: P,
+        file_path: F,
+    ) -> Result<Vec<u8>> {
         let mut file = self.get(bucket, file_path)?;
         let mut target_bytes = Vec::new();
         file.read_to_end(&mut target_bytes)
@@ -266,7 +270,12 @@ impl FakeS3Server {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
-    pub fn put_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F, contents: &[u8]) -> Result<()> {
+    pub fn put_bytes<P: Borrow<str>, F: Borrow<str>>(
+        &self,
+        bucket: P,
+        file_path: F,
+        contents: &[u8],
+    ) -> Result<()> {
         let path = self
             .root
             .path()
@@ -285,7 +294,11 @@ impl FakeS3Server {
         Ok(())
     }
 
-    pub fn delete_bytes<P: Borrow<str>, F: Borrow<str>>(&self, bucket: P, file_path: F) -> Result<()> {
+    pub fn delete_bytes<P: Borrow<str>, F: Borrow<str>>(
+        &self,
+        bucket: P,
+        file_path: F,
+    ) -> Result<()> {
         let path = self
             .root
             .path()

@@ -1,15 +1,15 @@
+use crate::nats::HeaderMap;
 use crate::nats::client::fake::server::MessageStream;
 use crate::nats::client::fake::server::TEST_FAKE_SERVER;
 use crate::nats::client::types::NatsStreamProtocol;
-use crate::nats::HeaderMap;
 use anyhow::{Context as AnyhowContext, Result};
+use async_nats::Message;
 use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::jetstream::consumer::{Info, SequenceInfo};
-use async_nats::Message;
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::stream::SelectAll;
 use futures::StreamExt;
+use futures::stream::SelectAll;
 use pin_project::pin_project;
 use pin_project::pinned_drop;
 use rand::random;

@@ -1,10 +1,10 @@
 use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 use anyhow::{Context, Result};
-use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::HeaderMap;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use rand::random;
-use rhio_core::{subjects_to_str, Subject};
+use rhio_core::{Subject, subjects_to_str};
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, trace};
 

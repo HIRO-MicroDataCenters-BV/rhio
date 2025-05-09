@@ -7,14 +7,14 @@ use crate::utils::nats::factory::NatsStreamFactory;
 use crate::utils::nats::stream::RecoverableNatsStreamImpl;
 use anyhow::Context;
 use anyhow::Result;
-use async_nats::jetstream::consumer::DeliverPolicy;
 use async_nats::Message as NatsMessage;
+use async_nats::jetstream::consumer::DeliverPolicy;
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use tokio::task::JoinError;
 use tokio_stream::StreamExt;
 use tokio_util::task::AbortOnDropHandle;
-use tracing::{error, info, span, trace, Level, Span};
+use tracing::{Level, Span, error, info, span, trace};
 
 use crate::JoinErrToStr;
 

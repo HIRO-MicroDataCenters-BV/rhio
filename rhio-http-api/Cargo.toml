@@ -2,7 +2,7 @@
 name = "rhio-http-api"
 description = "Rhio HTTP API"
 version = "0.1.1"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [lints]
