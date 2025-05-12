@@ -734,8 +734,8 @@ pub mod tests {
             ..
         } = create_test_setup()?;
 
-        let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
+        let mut rng = rand::rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.random()).collect();
 
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
 
@@ -770,8 +770,8 @@ pub mod tests {
         } = create_test_setup()?;
 
         // Importing object and creating meta
-        let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
+        let mut rng = rand::rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.random()).collect();
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
         test_runtime.block_on(async { store.reload().await });
 
@@ -805,8 +805,8 @@ pub mod tests {
         } = create_test_setup()?;
 
         // Importing object and creating meta
-        let mut rng = rand::thread_rng();
-        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.r#gen()).collect();
+        let mut rng = rand::rng();
+        let source_bytes: Vec<u8> = (0..1024).map(|_| rng.random()).collect();
         s3_source.put_bytes("test-bucket", "file.bin", &source_bytes)?;
         test_runtime.block_on(async { store.reload().await });
 

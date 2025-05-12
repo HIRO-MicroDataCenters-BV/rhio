@@ -30,8 +30,8 @@ pub fn test_e2e_blob_replication() -> Result<()> {
     } = create_two_node_blob_setup()?;
     info!("environment started");
 
-    let mut rng = rand::thread_rng();
-    let source_bytes: Vec<u8> = (0..128).map(|_| rng.r#gen()).collect();
+    let mut rng = rand::rng();
+    let source_bytes: Vec<u8> = (0..128).map(|_| rng.random()).collect();
 
     s3_source.put_bytes("source-bucket", "test.txt", &source_bytes)?;
 
