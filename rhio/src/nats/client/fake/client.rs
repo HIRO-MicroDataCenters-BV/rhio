@@ -250,6 +250,8 @@ fn to_fake_consumer_info(client_id: &String, stream_name: &String) -> Info {
         num_pending: 0,
         cluster: None,
         push_bound: false,
+        paused: false,
+        pause_remaining: None,
     }
 }
 
