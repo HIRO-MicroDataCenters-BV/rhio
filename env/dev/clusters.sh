@@ -70,7 +70,9 @@ create_clusters() {
   configure_calico_all
   wait_pods_ready_all
   configure_dns_all
+  wait_pods_ready_all
   configure_bgp_all
+  wait_pods_ready_all
   configure_bgp_peers_all
 
   echo "Clusters with Calico with inter-cluster networking are now set up!"
@@ -167,6 +169,7 @@ install_calico_all() {
       install_calico $cluster
   done
   echo ""    
+  sleep 1
 }
 
 install_calico() {
@@ -174,7 +177,8 @@ install_calico() {
 
   echo "Installing Calico on $cluster..."    
   kubectl --context kind-${cluster} create ns calico-system
-  kubectl --context kind-${cluster} create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/tigera-operator.yaml
+  kubectl --context kind-${cluster} create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/operator-crds.yaml  
+  kubectl --context kind-${cluster} create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/tigera-operator.yaml
 }
 
 configure_calico_all() {
@@ -191,6 +195,7 @@ configure_calico_all() {
 configure_calico() {
   local cluster=$1
   local pod_subnet=$2
+
   echo "Configuring Calico on $cluster..."    
 
   kubectl --context kind-${cluster} create -f -<<EOF
@@ -198,15 +203,19 @@ apiVersion: operator.tigera.io/v1
 kind: Installation
 metadata:
   name: default
+  namespace: default
 spec:
   registry: quay.io/
   calicoNetwork:
+    bgp: Enabled
     ipPools:
       - blockSize: 26
         cidr: ${pod_subnet}/16
-        encapsulation: VXLAN
+        encapsulation: None
         natOutgoing: Enabled
         nodeSelector: all()
+  cni:
+    type: Calico        
 ---
 apiVersion: operator.tigera.io/v1
 kind: APIServer
@@ -285,13 +294,15 @@ create_bgp_configuration() {
 
   echo "Setting up BGP configuration on $cluster..."    
   kubectl --context kind-${cluster} create -f -<<EOF
-apiVersion: projectcalico.org/v3
+apiVersion: crd.projectcalico.org/v1
 kind: BGPConfiguration
 metadata:
   name: default
+  namespace: default
 spec:
   logSeverityScreen: Info
   asNumber: ${as_number}
+  # nodeToNodeMeshEnabled: false
   serviceClusterIPs:
     - cidr: ${svc_subnet}/16
 EOF
@@ -303,10 +314,11 @@ create_calico_node_status() {
 
   echo "Creating calico node status on $cluster..."    
   kubectl --context kind-${cluster} create -f -<<EOF
-apiVersion: projectcalico.org/v3
+apiVersion: crd.projectcalico.org/v1
 kind: CalicoNodeStatus
 metadata:
   name: ${node}-status
+  namespace: default
 spec:
   classes:
     - Agent
@@ -353,6 +365,7 @@ apiVersion: projectcalico.org/v3
 kind: BGPPeer
 metadata:
   name: ${node}-peer
+  namespace: default
 spec:
   peerIP: "${node_ip}"
   asNumber: ${as_number}
