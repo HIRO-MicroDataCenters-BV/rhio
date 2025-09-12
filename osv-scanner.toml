@@ -1,0 +1,21 @@
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0384"
+reason = "Low risk (unmaintained)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0436"
+reason = "Low risk (unmaintained)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+reason = "Low risk (unmaintained)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0384"
+reason = "Low risk (unmaintained)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0056"
+reason = "Low risk (unmaintained)"
+
+
