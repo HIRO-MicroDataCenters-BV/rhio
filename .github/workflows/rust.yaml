@@ -4,7 +4,7 @@ on: push
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: 1.86
+  RUST_TOOLCHAIN: 1.89
 
 jobs:
 
@@ -66,3 +66,29 @@ jobs:
 
       - name: Check code with clippy
         run: cargo clippy -- -D warnings --no-deps
+
+  sbom:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: moonrepo/setup-rust@v1
+        with:
+          cache: false
+          channel: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install SBOM
+        uses: psastras/sbom-rs/actions/install-cargo-sbom@cargo-sbom-v0.10.0
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2    
+
+      - name: Run cargo-sbom
+        run: cargo-sbom --output-format=cyclone_dx_json_1_6 > sbom.cdx.json
+
+  osv-scanner:    
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.2.1
+    needs: [sbom]
