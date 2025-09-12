@@ -391,16 +391,12 @@ impl Store for S3Store {
         Ok(())
     }
 
-    fn rename_tag(&self, _from: Tag, _to: Tag) -> impl Future<Output = io::Result<()>> + Send {
-        async { unimplemented!() }
+    async fn rename_tag(&self, _from: Tag, _to: Tag) -> io::Result<()> {
+        unimplemented!()
     }
 
-    fn delete_tags(
-        &self,
-        _from: Option<Tag>,
-        _to: Option<Tag>,
-    ) -> impl Future<Output = io::Result<()>> + Send {
-        async { unimplemented!() }
+    async fn delete_tags(&self, _from: Option<Tag>, _to: Option<Tag>) -> io::Result<()> {
+        unimplemented!()
     }
 }
 
