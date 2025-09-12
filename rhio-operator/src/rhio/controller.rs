@@ -1,5 +1,6 @@
 use crate::configuration::secret::Secret;
 use crate::rhio::error::BuildLabelSnafu;
+use crate::rhio::error::ResolveProductImageSnafu;
 use crate::{
     api::{
         message_stream::ReplicatedMessageStream,
@@ -30,6 +31,7 @@ use snafu::{OptionExt, ResultExt};
 use stackable_operator::client::GetApi;
 use stackable_operator::kube::ResourceExt;
 use stackable_operator::kube::api::ListParams;
+use stackable_operator::kube::runtime::events::{Recorder, Reporter};
 use stackable_operator::kvp::Labels;
 use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
@@ -92,14 +94,16 @@ pub async fn reconcile_rhio(
         .map_err(error_boundary::InvalidObject::clone)
         .context(InvalidRhioServiceSnafu)?;
 
-    let resolved_product_image = rhio.resolve_product_image();
+    let resolved_product_image = rhio
+        .resolve_product_image()
+        .context(ResolveProductImageSnafu)?;
     let client = &ctx.client;
     let cluster_info = &client.kubernetes_cluster_info;
     let rolegroup = rhio.server_rolegroup_ref();
     let recommended_labels = build_recommended_labels(
         rhio,
         RHIO_CONTROLLER_NAME,
-        &resolved_product_image.app_version_label,
+        &resolved_product_image.app_version_label_value,
         &rolegroup.role,
         &rolegroup.role_group,
     );
@@ -347,12 +351,19 @@ pub async fn create_rhio_controller(
         watcher::Config::default(),
     );
 
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: RHIO_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
     let rhio_store_streams = rhio_controller.store();
     let rhio_store_stores = rhio_controller.store();
     let rhio_store_stream_subs_store = rhio_controller.store();
     let rhio_store_bucket_subs_store = rhio_controller.store();
 
-    let rhio_controller = rhio_controller
+    rhio_controller
         .watches(
             namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(client),
             watcher::Config::default(),
@@ -458,13 +469,21 @@ pub async fn create_rhio_controller(
                 product_config,
             }),
         )
-        .map(|res| {
-            report_controller_reconciled(
-                client,
-                &format!("{RHIO_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-                &res,
-            );
-        })
-        .collect::<()>();
-    rhio_controller.await
+        .for_each_concurrent(
+            16, // concurrency limit
+            |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        &format!("{RHIO_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                        &result,
+                    )
+                    .await;
+                }
+            },
+        )
+        .await;
 }

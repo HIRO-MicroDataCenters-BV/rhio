@@ -159,6 +159,11 @@ pub enum Error {
 
     #[snafu(display("Unable to resolve rhio service endpoint"))]
     GetRhioServiceEndpoint,
+
+    #[snafu(display("Resolve product image error"))]
+    ResolveProductImage {
+        source: stackable_operator::commons::product_image_selection::Error,
+    },
 }
 
 impl ReconcilerError for Error {
@@ -198,6 +203,7 @@ impl ReconcilerError for Error {
             Error::GracefulShutdown { .. } => None,
             Error::GetSecret { .. } => None,
             Error::GetRhioServiceEndpoint => None,
+            Error::ResolveProductImage { .. } => None,
         }
     }
 }

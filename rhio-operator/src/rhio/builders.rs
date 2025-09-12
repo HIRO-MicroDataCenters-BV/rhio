@@ -171,7 +171,7 @@ pub fn build_statefulset(
                 match_labels: Some(role_group_selector.into()),
                 ..LabelSelector::default()
             },
-            service_name: rolegroup_ref.object_name(),
+            service_name: Some(rolegroup_ref.object_name()),
             template: pod_builder.build_template(),
             volume_claim_templates: None,
             ..StatefulSetSpec::default()
@@ -302,12 +302,12 @@ mod tests {
         let expected: StatefulSet =
             serde_yaml::from_str(fixtures::statefulset::STS).expect("illegal statefulset.yaml");
 
-        let resolved_product_image = rhio.resolve_product_image();
+        let resolved_product_image = rhio.resolve_product_image().unwrap();
         let rolegroup = rhio.server_rolegroup_ref();
         let recommended_labels = build_recommended_labels(
             &rhio,
             RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
+            &resolved_product_image.app_version_label_value,
             &rolegroup.role,
             &rolegroup.role_group,
         );
@@ -339,12 +339,12 @@ mod tests {
         let expected: Service =
             serde_yaml::from_str(fixtures::service::SVC).expect("illegal service.yaml");
 
-        let resolved_product_image = rhio.resolve_product_image();
+        let resolved_product_image = rhio.resolve_product_image().unwrap();
         let rolegroup = rhio.server_rolegroup_ref();
         let recommended_labels = build_recommended_labels(
             &rhio,
             RHIO_CONTROLLER_NAME,
-            &resolved_product_image.app_version_label,
+            &resolved_product_image.app_version_label_value,
             &rolegroup.role,
             &rolegroup.role_group,
         );

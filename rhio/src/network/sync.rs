@@ -745,7 +745,7 @@ impl RhioSyncProtocol {
     ) -> Result<
         (
             Vec<ConsumerId>,
-            StreamMap<(StreamName, ConsumerId), BoxStream<Result<NatsMessage, SyncError>>>,
+            StreamMap<(StreamName, ConsumerId), BoxStream<'_, Result<NatsMessage, SyncError>>>,
         ),
         SyncError,
     > {
@@ -766,7 +766,7 @@ impl RhioSyncProtocol {
         stream_name: StreamName,
         subjects: Vec<Subject>,
         topic_id: [u8; 32],
-    ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
+    ) -> Result<(ConsumerId, BoxStream<'_, Result<NatsMessage, SyncError>>), SyncError> {
         let (consumer_id, nats_rx) = self
             .nats
             .subscribe(stream_name, subjects, DeliverPolicy::All, topic_id)

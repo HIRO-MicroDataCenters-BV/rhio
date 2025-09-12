@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use futures::FutureExt;
 use rhio_operator::api::message_stream::ReplicatedMessageStream;
 use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
@@ -9,9 +10,11 @@ use rhio_operator::cli::{Opts, RhioCommand, RhioRun};
 use rhio_operator::configuration::controllers::{
     create_rms_controller, create_rmss_controller, create_ros_controller, create_ross_controller,
 };
-use rhio_operator::rhio::controller::{APP_NAME, OPERATOR_NAME, create_rhio_controller};
+use rhio_operator::rhio::controller::{OPERATOR_NAME, create_rhio_controller};
 
 use clap::{Parser, crate_description, crate_version};
+use stackable_operator::cli::CommonOptions;
+use stackable_operator::telemetry::Tracing;
 use stackable_operator::{
     CustomResourceExt,
     cli::{Command, ProductOperatorRun},
@@ -21,7 +24,6 @@ use stackable_operator::{
 const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =
     "/etc/hiro/rhio-operator/config-spec/properties.yaml";
 const RHIO_OPERATOR_LOCAL_PRODUCT_PROPERTIES: &str = "./config-spec/properties.yaml";
-const RHIO_OPERATOR_LOG_ENV_VAR: &str = "RHIO_OPERATOR_LOG";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,17 +48,28 @@ async fn main() -> anyhow::Result<()> {
         RhioCommand::Framework(Command::Run(RhioRun {
             common:
                 ProductOperatorRun {
+                    common:
+                        CommonOptions {
+                            cluster_info,
+                            telemetry,
+                        },
+                    operator_environment: _,
                     product_config,
                     watch_namespace,
-                    tracing_target,
-                    cluster_info_opts,
+                    ..
                 },
             ..
         })) => {
-            stackable_operator::logging::initialize_logging(
-                RHIO_OPERATOR_LOG_ENV_VAR,
-                APP_NAME,
-                tracing_target,
+            let _tracing_guard = Tracing::pre_configured(built_info::PKG_NAME, telemetry).init()?;
+
+            tracing::info!(
+                built_info.pkg_version = built_info::PKG_VERSION,
+                built_info.git_version = built_info::GIT_VERSION,
+                built_info.target = built_info::TARGET,
+                built_info.built_time_utc = built_info::BUILT_TIME_UTC,
+                built_info.rustc_version = built_info::RUSTC_VERSION,
+                "Starting {description}",
+                description = built_info::PKG_DESCRIPTION
             );
             stackable_operator::utils::print_startup_string(
                 crate_description!(),
@@ -71,8 +84,7 @@ async fn main() -> anyhow::Result<()> {
                 RHIO_OPERATOR_PRODUCT_PROPERTIES,
             ])?;
             let client =
-                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &cluster_info_opts)
-                    .await?;
+                client::initialize_operator(Some(OPERATOR_NAME.to_string()), &cluster_info).await?;
             let rhio_controller =
                 create_rhio_controller(&client, product_config, watch_namespace.clone()).boxed();
             let rms_controller = create_rms_controller(&client, watch_namespace.clone()).boxed();

@@ -9,15 +9,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use stackable_operator::commons::affinity::StackableAffinity;
 use stackable_operator::commons::cluster_operation::ClusterOperation;
+use stackable_operator::commons::product_image_selection::Error;
 use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::commons::product_image_selection::ResolvedProductImage;
 use stackable_operator::crd::ClusterRef;
 use stackable_operator::kube::CustomResource;
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::role_utils::RoleGroupRef;
+use stackable_operator::shared::time::Duration;
 use stackable_operator::status::condition::ClusterCondition;
 use stackable_operator::status::condition::HasStatusCondition;
-use stackable_operator::time::Duration;
 use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use strum::Display;
 
@@ -74,7 +75,7 @@ impl RhioService {
         ClusterRef::to_object(self)
     }
 
-    pub fn resolve_product_image(&self) -> ResolvedProductImage {
+    pub fn resolve_product_image(&self) -> Result<ResolvedProductImage, Error> {
         self.spec
             .image
             .resolve(DOCKER_IMAGE_BASE_NAME, crate::built_info::PKG_VERSION)

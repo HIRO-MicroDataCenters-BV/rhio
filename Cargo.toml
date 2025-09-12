@@ -35,7 +35,7 @@ iroh-base = "0.25.0"
 s3-server = { path = "s3-server" }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.143"
-serde_yaml = "0.9"
+serde_yaml = "0.9.34-deprecated"
 futures-lite = "2.6.1"
 futures-util = "0.3.31"
 iroh-blobs = "0.25.0"
@@ -68,7 +68,7 @@ hyper-util = { version = "0.1.16", features = [
 ] }
 schemars = { version = "0.8.22", features = ["chrono"] }
 built = { version = "0.7", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.83.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.97.0" }
 product-config = { git = "https://github.com/stackabletech/product-config.git", tag = "0.7.0" }
 snafu = { version = "0.8.9" }
 strum = { version = "0.27.2", features = ["derive"] }
