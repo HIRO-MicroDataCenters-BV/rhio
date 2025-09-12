@@ -22,24 +22,25 @@ bytes = "1.10.1"
 ciborium = "0.2.2"
 hex = "0.4.3"
 clap = { version = "4.5.47", features = ["derive"] }
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", default-features = false }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5", features = ["cbor"], default-features = false }
-p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", rev = "26474c72151d304fc86aca147799b5dd7cd640d5" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", default-features = false, tag="v0.3.1" }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", features = ["cbor", "log-sync"], default-features = false, tag="v0.3.1" }
+p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda.git", features=["memory"], tag="v0.3.1" }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
+iroh-io = { version = "0.6.2", features = ["x-http"] }
+iroh-base = "0.34.1"
+iroh-blobs = "0.34.1"
 rhio-blobs = { path = "rhio-blobs" }
 rhio-core = { path = "rhio-core" }
 rhio-config = { path = "rhio-config" }
 rhio-http-api = { path = "rhio-http-api" }
-iroh-base = "0.25.0"
 s3-server = { path = "s3-server" }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.143"
 serde_yaml = "0.9.34-deprecated"
 futures-lite = "2.6.1"
 futures-util = "0.3.31"
-iroh-blobs = "0.25.0"
-iroh-io = { version = "0.6.2", features = ["x-http"] }
 rust-s3 = { version = "0.35.1", features = ["tokio", "blocking"] }
 thiserror = "2.0.16"
 tokio = { version = "1.45.0", features = ["full"] }
@@ -82,3 +83,6 @@ chrono = { version = "0.4.42" }
 # pinned version due to vulnerabilities
 openssl = "=0.10.73"
 slab = "=0.4.11"
+crossbeam-channel = "=0.5.15"
+ring = "=0.17.8"
+quinn-proto = "=0.11.7"

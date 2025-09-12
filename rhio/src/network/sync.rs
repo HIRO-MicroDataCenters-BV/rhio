@@ -196,7 +196,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                             // "Ingest" data to p2panda backend.
                             app_tx
-                                .send(FromSync::Data(blob_announcement.to_bytes(), None))
+                                .send(FromSync::Data {
+                                    header: Vec::new(),
+                                    payload: Some(blob_announcement.to_bytes()),
+                                })
                                 .await?;
                         }
                         Message::BlobsDone => {
@@ -302,7 +305,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                             // "Ingest" data to p2panda backend.
                             app_tx
-                                .send(FromSync::Data(nats_message.to_bytes(), None))
+                                .send(FromSync::Data {
+                                    header: Vec::new(),
+                                    payload: Some(nats_message.to_bytes()),
+                                })
                                 .await?;
                         }
                         Message::NatsDone => {

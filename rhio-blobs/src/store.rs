@@ -361,7 +361,7 @@ impl Store for S3Store {
         unimplemented!()
     }
 
-    async fn set_tag(&self, _name: Tag, _value: Option<HashAndFormat>) -> io::Result<()> {
+    async fn set_tag(&self, _name: Tag, _value: HashAndFormat) -> io::Result<()> {
         unimplemented!()
     }
 
@@ -389,6 +389,18 @@ impl Store for S3Store {
 
     async fn sync(&self) -> io::Result<()> {
         Ok(())
+    }
+
+    fn rename_tag(&self, _from: Tag, _to: Tag) -> impl Future<Output = io::Result<()>> + Send {
+        async { unimplemented!() }
+    }
+
+    fn delete_tags(
+        &self,
+        _from: Option<Tag>,
+        _to: Option<Tag>,
+    ) -> impl Future<Output = io::Result<()>> + Send {
+        async { unimplemented!() }
     }
 }
 
@@ -689,7 +701,11 @@ impl ReadableStore for S3Store {
         Ok(Box::new(incompleted_blobs.into_iter()))
     }
 
-    async fn tags(&self) -> io::Result<iroh_blobs::store::DbIter<(Tag, HashAndFormat)>> {
+    async fn tags(
+        &self,
+        _from: Option<Tag>,
+        _to: Option<Tag>,
+    ) -> io::Result<iroh_blobs::store::DbIter<(Tag, HashAndFormat)>> {
         unimplemented!()
     }
 
