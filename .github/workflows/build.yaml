@@ -192,6 +192,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
+          sbom: true
+          provenance: true
           platforms: ${{ matrix.platform }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}

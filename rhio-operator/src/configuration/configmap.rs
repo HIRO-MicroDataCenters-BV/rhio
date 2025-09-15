@@ -194,8 +194,7 @@ impl RhioConfigMapBuilder {
     }
 
     fn subscribed_buckets(&self) -> Result<Vec<RemoteS3Bucket>> {
-        let subscribed_buckets = self
-            .ross
+        self.ross
             .iter()
             .flat_map(|sub| {
                 let maybe_public_key =
@@ -208,8 +207,7 @@ impl RhioConfigMapBuilder {
                     Err(error) => return vec![Err(error)],
                 };
 
-                let buckets = sub
-                    .spec
+                sub.spec
                     .buckets
                     .iter()
                     .map(|bucket| {
@@ -219,21 +217,17 @@ impl RhioConfigMapBuilder {
                             public_key,
                         })
                     })
-                    .collect::<Vec<Result<RemoteS3Bucket>>>();
-                buckets
+                    .collect::<Vec<Result<RemoteS3Bucket>>>()
             })
-            .collect::<Result<Vec<RemoteS3Bucket>>>();
-        subscribed_buckets
+            .collect::<Result<Vec<RemoteS3Bucket>>>()
     }
 
     fn published_buckets(&self) -> Vec<String> {
-        let published_buckets = self
-            .ros
+        self.ros
             .iter()
             .flat_map(|store| store.spec.buckets.iter())
             .cloned()
-            .collect::<Vec<String>>();
-        published_buckets
+            .collect::<Vec<String>>()
     }
 
     fn nats_credentials(&self) -> Option<NatsCredentials> {

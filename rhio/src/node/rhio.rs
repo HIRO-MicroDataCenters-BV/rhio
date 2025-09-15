@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use futures_util::future::{MapErr, Shared};
 use futures_util::{FutureExt, TryFutureExt};
 use p2panda_core::{Hash, PrivateKey, PublicKey};
-use p2panda_net::Config as NetworkConfig;
+use p2panda_net::{Config as NetworkConfig, NodeAddress};
 use s3::error::S3Error;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, oneshot};
@@ -85,7 +85,7 @@ impl Node {
         let network_id_hash = Hash::new(config.node.network_id.as_bytes());
         let network_id = network_id_hash.as_bytes();
         let mut network_config = NetworkConfig {
-            bind_port: config.node.bind_port,
+            bind_port_v4: config.node.bind_port,
             network_id: *network_id,
             ..Default::default()
         };
@@ -107,9 +107,12 @@ impl Node {
                     }
                 }
             }
-            network_config
-                .direct_node_addresses
-                .push((node.public_key, direct_addresses, None));
+            let node_address = NodeAddress {
+                public_key: node.public_key,
+                direct_addresses,
+                relay_url: None,
+            };
+            network_config.direct_node_addresses.push(node_address);
         }
         Ok((node_config, network_config))
     }

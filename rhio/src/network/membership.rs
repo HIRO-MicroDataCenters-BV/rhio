@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use anyhow::Result;
-use iroh_base::{key::NodeId, node_addr::NodeAddr};
+use iroh_base::{NodeAddr, NodeId};
 use loole::Receiver;
 use p2panda_core::PublicKey;
 use p2panda_discovery::DiscoveryEvent;

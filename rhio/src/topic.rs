@@ -2,7 +2,7 @@ use std::{collections::HashSet, fmt};
 
 use p2panda_core::{Hash, PublicKey};
 use p2panda_net::TopicId;
-use p2panda_sync::Topic;
+use p2panda_sync::TopicQuery;
 use rhio_blobs::BucketName;
 use rhio_core::{Subject, subjects_to_str};
 use serde::{Deserialize, Serialize};
@@ -103,7 +103,6 @@ pub enum Query {
 }
 
 // Make sure `p2panda-sync` is happy.
-impl Topic for Query {}
 
 impl Query {
     pub fn is_no_sync(&self) -> bool {
@@ -119,6 +118,8 @@ impl Query {
         }
     }
 }
+
+impl TopicQuery for Query {}
 
 impl From<Subscription> for Query {
     fn from(value: Subscription) -> Self {

@@ -196,7 +196,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                             // "Ingest" data to p2panda backend.
                             app_tx
-                                .send(FromSync::Data(blob_announcement.to_bytes(), None))
+                                .send(FromSync::Data {
+                                    header: blob_announcement.to_bytes(),
+                                    payload: None,
+                                })
                                 .await?;
                         }
                         Message::BlobsDone => {
@@ -302,7 +305,10 @@ impl<'a> SyncProtocol<'a, Query> for RhioSyncProtocol {
 
                             // "Ingest" data to p2panda backend.
                             app_tx
-                                .send(FromSync::Data(nats_message.to_bytes(), None))
+                                .send(FromSync::Data {
+                                    header: nats_message.to_bytes(),
+                                    payload: None,
+                                })
                                 .await?;
                         }
                         Message::NatsDone => {
@@ -745,7 +751,7 @@ impl RhioSyncProtocol {
     ) -> Result<
         (
             Vec<ConsumerId>,
-            StreamMap<(StreamName, ConsumerId), BoxStream<Result<NatsMessage, SyncError>>>,
+            StreamMap<(StreamName, ConsumerId), BoxStream<'_, Result<NatsMessage, SyncError>>>,
         ),
         SyncError,
     > {
@@ -766,7 +772,7 @@ impl RhioSyncProtocol {
         stream_name: StreamName,
         subjects: Vec<Subject>,
         topic_id: [u8; 32],
-    ) -> Result<(ConsumerId, BoxStream<Result<NatsMessage, SyncError>>), SyncError> {
+    ) -> Result<(ConsumerId, BoxStream<'_, Result<NatsMessage, SyncError>>), SyncError> {
         let (consumer_id, nats_rx) = self
             .nats
             .subscribe(stream_name, subjects, DeliverPolicy::All, topic_id)

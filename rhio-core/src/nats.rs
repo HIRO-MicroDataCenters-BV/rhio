@@ -11,11 +11,11 @@ pub const NATS_RHIO_PUBLIC_KEY: &str = "X-Rhio-PublicKey";
 pub const NATS_RHIO_SIGNATURE: &str = "X-Rhio-Signature";
 
 pub fn has_nats_signature(headers: &Option<HeaderMap>) -> bool {
-    if let Some(headers) = &headers {
-        if headers.get(NATS_RHIO_SIGNATURE).is_some() || headers.get(NATS_RHIO_PUBLIC_KEY).is_some()
-        {
-            return true;
-        }
+    if let Some(headers) = &headers
+        && (headers.get(NATS_RHIO_SIGNATURE).is_some()
+            || headers.get(NATS_RHIO_PUBLIC_KEY).is_some())
+    {
+        return true;
     }
     false
 }

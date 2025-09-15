@@ -19,6 +19,7 @@ use rhio_http_api::api::RhioApi;
 use rhio_http_api::client::RhioApiClient;
 use rhio_http_api::status::HealthStatus;
 use snafu::{OptionExt, ResultExt};
+use stackable_operator::kube::runtime::events::{Recorder, Reporter};
 use stackable_operator::utils::cluster_info::KubernetesClusterInfo;
 use stackable_operator::{client::Client, kube::runtime::Controller, namespace::WatchNamespace};
 use stackable_operator::{
@@ -215,9 +216,16 @@ pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {
         namespace.get_api::<DeserializeGuard<ReplicatedMessageStream>>(client),
         watcher::Config::default(),
     );
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: RMS_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
     let rms_store = rms_controller.store();
 
-    let rms_controller = rms_controller
+    rms_controller
         .owns(
             namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
@@ -247,15 +255,23 @@ pub async fn create_rms_controller(client: &Client, namespace: WatchNamespace) {
                 client: client.clone(),
             }),
         )
-        .map(|res| {
-            report_controller_reconciled(
-                client,
-                &format!("{RMS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-                &res,
-            );
-        })
-        .collect::<()>();
-    rms_controller.await
+        .for_each_concurrent(
+            16, // concurrency limit
+            |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        &format!("{RMS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                        &result,
+                    )
+                    .await;
+                }
+            },
+        )
+        .await;
 }
 
 pub async fn create_rmss_controller(client: &Client, namespace: WatchNamespace) {
@@ -263,9 +279,16 @@ pub async fn create_rmss_controller(client: &Client, namespace: WatchNamespace) 
         namespace.get_api::<DeserializeGuard<ReplicatedMessageStreamSubscription>>(client),
         watcher::Config::default(),
     );
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: RMSS_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
     let rmss_store = rmss_controller.store();
 
-    let rmss_controller = rmss_controller
+    rmss_controller
         .owns(
             namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
@@ -295,15 +318,23 @@ pub async fn create_rmss_controller(client: &Client, namespace: WatchNamespace) 
                 client: client.clone(),
             }),
         )
-        .map(|res| {
-            report_controller_reconciled(
-                client,
-                &format!("{RMSS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-                &res,
-            );
-        })
-        .collect::<()>();
-    rmss_controller.await
+        .for_each_concurrent(
+            16, // concurrency limit
+            |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        &format!("{RMSS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                        &result,
+                    )
+                    .await;
+                }
+            },
+        )
+        .await;
 }
 
 pub async fn create_ros_controller(client: &Client, namespace: WatchNamespace) {
@@ -311,9 +342,17 @@ pub async fn create_ros_controller(client: &Client, namespace: WatchNamespace) {
         namespace.get_api::<DeserializeGuard<ReplicatedObjectStore>>(client),
         watcher::Config::default(),
     );
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: ROS_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
+
     let ros_store = ros_controller.store();
 
-    let ros_controller = ros_controller
+    ros_controller
         .owns(
             namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
@@ -343,15 +382,23 @@ pub async fn create_ros_controller(client: &Client, namespace: WatchNamespace) {
                 client: client.clone(),
             }),
         )
-        .map(|res| {
-            report_controller_reconciled(
-                client,
-                &format!("{ROS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-                &res,
-            );
-        })
-        .collect::<()>();
-    ros_controller.await
+        .for_each_concurrent(
+            16, // concurrency limit
+            |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        &format!("{ROS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                        &result,
+                    )
+                    .await;
+                }
+            },
+        )
+        .await;
 }
 
 pub async fn create_ross_controller(client: &Client, namespace: WatchNamespace) {
@@ -359,9 +406,18 @@ pub async fn create_ross_controller(client: &Client, namespace: WatchNamespace) 
         namespace.get_api::<DeserializeGuard<ReplicatedObjectStoreSubscription>>(client),
         watcher::Config::default(),
     );
+
+    let event_recorder = Arc::new(Recorder::new(
+        client.as_kube_client(),
+        Reporter {
+            controller: ROSS_CONTROLLER_NAME.to_string(),
+            instance: None,
+        },
+    ));
+
     let ross_store = ross_controller.store();
 
-    let ross_controller = ross_controller
+    ross_controller
         .owns(
             namespace.get_api::<ConfigMap>(client),
             watcher::Config::default(),
@@ -391,13 +447,21 @@ pub async fn create_ross_controller(client: &Client, namespace: WatchNamespace) 
                 client: client.clone(),
             }),
         )
-        .map(|res| {
-            report_controller_reconciled(
-                client,
-                &format!("{ROSS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
-                &res,
-            );
-        })
-        .collect::<()>();
-    ross_controller.await
+        .for_each_concurrent(
+            16, // concurrency limit
+            |result| {
+                // The event_recorder needs to be shared across all invocations, so that
+                // events are correctly aggregated
+                let event_recorder = event_recorder.clone();
+                async move {
+                    report_controller_reconciled(
+                        &event_recorder,
+                        &format!("{ROSS_CONTROLLER_NAME}.{OPERATOR_NAME}"),
+                        &result,
+                    )
+                    .await;
+                }
+            },
+        )
+        .await;
 }

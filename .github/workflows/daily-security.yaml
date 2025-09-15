@@ -1,0 +1,40 @@
+---
+name: Security audit
+
+on:
+  schedule:
+    - cron: '15 4 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.89
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write          
+
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout repository
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: moonrepo/setup-rust@v1
+        with:
+          cache: false
+          channel: ${{ env.RUST_TOOLCHAIN }}
+
+      # build speedups
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run audit
+        run: cargo audit --json
