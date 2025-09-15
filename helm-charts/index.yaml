@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.2.5.tgz
     version: 0.2.5
   - apiVersion: v2
+    appVersion: 0.2.5-dev.15.main.95e44c1f
+    created: "2025-09-15T13:21:41.104614746Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 48f0cdcba2d4d1c2ac4b607d3c4a4f993da4b56807230e249e9ebfe02e017170
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.2.5-dev.15.main.95e44c1f.tgz
+    version: 0.2.5-dev.15.main.95e44c1f
+  - apiVersion: v2
     appVersion: 0.2.5-dev.3.main.467eb058
     created: "2025-06-04T09:00:31.100329395Z"
     description: peer-to-peer message stream and blob storage solution
@@ -514,6 +528,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.2.5.tgz
     version: 0.2.5
   - apiVersion: v2
+    appVersion: 0.2.5-dev.15.main.95e44c1f
+    created: "2025-09-15T13:21:41.105294969Z"
+    description: The Stackable Operator for Rhio Service
+    digest: bd9a06b63fc29297502b5b4d0752c47fa5ffd494860ccec4edff8ea8354eecae
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.2.5-dev.15.main.95e44c1f.tgz
+    version: 0.2.5-dev.15.main.95e44c1f
+  - apiVersion: v2
     appVersion: 0.2.5-dev.3.main.467eb058
     created: "2025-06-04T09:00:31.100860786Z"
     description: The Stackable Operator for Rhio Service
@@ -721,4 +748,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2025-06-04T09:00:31.09972641Z"
+generated: "2025-09-15T13:21:41.103178706Z"
