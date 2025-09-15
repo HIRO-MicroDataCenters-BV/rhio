@@ -31,7 +31,7 @@ jobs:
           channel: ${{ env.RUST_TOOLCHAIN }}
 
       # build speedups
-      - uses: Swatinem/rust-cache@v2    
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-audit
         run: cargo install cargo-audit

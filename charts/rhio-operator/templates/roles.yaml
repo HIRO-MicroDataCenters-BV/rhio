@@ -19,7 +19,7 @@ rules:
     resources:
       - nodes/proxy
     verbs:
-      - get      
+      - get
   - apiGroups:
       - ""
     resources:
