@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.0.tgz
     version: 0.3.0
   - apiVersion: v2
+    appVersion: 0.3.0-dev.2.main.22bed0f2
+    created: "2025-09-16T10:00:42.741636888Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 7d7bdabc270a247183f38901f7477704336974d8f6b20db35ed2661c3a6f557b
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.0-dev.2.main.22bed0f2.tgz
+    version: 0.3.0-dev.2.main.22bed0f2
+  - apiVersion: v2
     appVersion: 0.2.5
     created: "2025-05-12T14:54:19.797636277Z"
     description: peer-to-peer message stream and blob storage solution
@@ -542,6 +556,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.0.tgz
     version: 0.3.0
   - apiVersion: v2
+    appVersion: 0.3.0-dev.2.main.22bed0f2
+    created: "2025-09-16T10:00:42.742187557Z"
+    description: The Stackable Operator for Rhio Service
+    digest: 30e6a806dd108d163066b432d3ded6d386bcb2f0511dfb1a308d58fd2a240c6e
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.0-dev.2.main.22bed0f2.tgz
+    version: 0.3.0-dev.2.main.22bed0f2
+  - apiVersion: v2
     appVersion: 0.2.5
     created: "2025-05-12T14:54:19.798204104Z"
     description: The Stackable Operator for Rhio Service
@@ -775,4 +802,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2025-09-16T07:03:12.873737236Z"
+generated: "2025-09-16T10:00:42.740987654Z"
