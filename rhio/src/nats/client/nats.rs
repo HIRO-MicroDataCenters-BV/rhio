@@ -6,7 +6,7 @@ use async_nats::jetstream::Context as JetstreamContext;
 use async_nats::jetstream::consumer::push::Config as ConsumerConfig;
 use async_nats::jetstream::consumer::{AckPolicy, DeliverPolicy};
 use async_nats::jetstream::consumer::{Info, PushConsumer};
-use async_nats::jetstream::context::Publish;
+use async_nats::jetstream::message::PublishMessage;
 use async_nats::{Client, Event};
 use async_nats::{ConnectOptions, HeaderMap};
 use async_trait::async_trait;
@@ -68,7 +68,7 @@ impl NatsClient<NatsMessages> for NatsClientImpl {
         payload: Bytes,
         headers: Option<HeaderMap>,
     ) -> Result<()> {
-        let mut publish = Publish::build().payload(payload);
+        let mut publish = PublishMessage::build().payload(payload);
         if let Some(headers) = headers {
             publish = publish.headers(headers);
         }
