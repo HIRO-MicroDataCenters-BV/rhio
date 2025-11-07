@@ -22,12 +22,12 @@ bytes = "1.10.1"
 ciborium = "0.2.2"
 hex = "0.4.3"
 clap = { version = "4.5.51", features = ["derive"] }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", default-features = false, tag="v0.3.1" }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", features = ["cbor", "log-sync"], default-features = false, tag="v0.3.1" }
-p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda.git", features=["memory"], tag="v0.3.1" }
-p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", tag="v0.3.1" }
+p2panda-core = { git = "https://github.com/p2panda/p2panda.git", tag="v0.4.0" }
+p2panda-net = { git = "https://github.com/p2panda/p2panda.git", default-features = false, tag="v0.4.0" }
+p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", features = ["cbor", "log-sync"], default-features = false, tag="v0.4.0" }
+p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", tag="v0.4.0" }
+p2panda-store = { git = "https://github.com/p2panda/p2panda.git", features=["memory"], tag="v0.4.0" }
+p2panda-blobs = { git = "https://github.com/p2panda/p2panda.git", tag="v0.4.0" }
 iroh-io = { version = "0.6.2", features = ["x-http"] }
 iroh-base = "0.34.1"
 iroh-blobs = "0.34.1"
