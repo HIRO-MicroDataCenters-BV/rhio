@@ -68,8 +68,9 @@ hyper-util = { version = "0.1.17", features = [
     "tokio",
 ] }
 built = { version = "0.7", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.97.0" }
-product-config = { git = "https://github.com/stackabletech/product-config.git", tag = "0.7.0" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.100.3" }
+product-config = { git = "https://github.com/stackabletech/product-config.git", tag = "0.8.0" }
+
 snafu = { version = "0.8.9" }
 strum = { version = "0.27.2", features = ["derive"] }
 reqwest = { version = "0.12.24", features = ["json"] }
@@ -80,7 +81,7 @@ rustls = { version = "0.23.35" }
 chrono = { version = "0.4.42" }
 
 # pinned version due to product-config
-schemars = { version = "0.8.22", features = ["chrono"] }
+schemars = { version = "1.0.0" }
 
 # pinned version due to vulnerabilities
 openssl = "=0.10.74"
