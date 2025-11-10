@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.0.tgz
     version: 0.3.0
   - apiVersion: v2
+    appVersion: 0.3.0-dev.10.main.854a6002
+    created: "2025-11-10T10:14:08.56884165Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 7a42a5f8513a4f7e4eaf2f88ee7c14538353ce133673da0a204f3972be4ab89a
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.0-dev.10.main.854a6002.tgz
+    version: 0.3.0-dev.10.main.854a6002
+  - apiVersion: v2
     appVersion: 0.3.0-dev.5.main.754785ce
     created: "2025-09-19T12:37:20.784968961Z"
     description: peer-to-peer message stream and blob storage solution
@@ -570,6 +584,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.0.tgz
     version: 0.3.0
   - apiVersion: v2
+    appVersion: 0.3.0-dev.10.main.854a6002
+    created: "2025-11-10T10:14:08.569452844Z"
+    description: The Stackable Operator for Rhio Service
+    digest: d53eb990040c187cd5f99792b8e9cd0c9f1f771c2fe97ba5471583d8d649a3f4
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.0-dev.10.main.854a6002.tgz
+    version: 0.3.0-dev.10.main.854a6002
+  - apiVersion: v2
     appVersion: 0.3.0-dev.5.main.754785ce
     created: "2025-09-19T12:37:20.785538875Z"
     description: The Stackable Operator for Rhio Service
@@ -829,4 +856,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2025-09-19T12:37:20.784141666Z"
+generated: "2025-11-10T10:14:08.567554186Z"
