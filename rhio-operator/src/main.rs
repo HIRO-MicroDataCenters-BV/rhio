@@ -1,4 +1,5 @@
 #![allow(clippy::result_large_err)]
+use clap::{Parser, crate_description, crate_version};
 use futures::FutureExt;
 use rhio_operator::api::message_stream::ReplicatedMessageStream;
 use rhio_operator::api::message_stream_subscription::ReplicatedMessageStreamSubscription;
@@ -6,20 +7,15 @@ use rhio_operator::api::object_store::ReplicatedObjectStore;
 use rhio_operator::api::object_store_subscription::ReplicatedObjectStoreSubscription;
 use rhio_operator::api::service::RhioService;
 use rhio_operator::built_info;
-use rhio_operator::cli::{Opts, RhioCommand, RhioRun};
+use rhio_operator::cli::{Opts, RhioCommand};
 use rhio_operator::configuration::controllers::{
     create_rms_controller, create_rmss_controller, create_ros_controller, create_ross_controller,
 };
 use rhio_operator::rhio::controller::{OPERATOR_NAME, create_rhio_controller};
-
-use clap::{Parser, crate_description, crate_version};
-use stackable_operator::cli::CommonOptions;
+use stackable_operator::cli::Command;
+use stackable_operator::cli::{CommonOptions, RunArguments};
 use stackable_operator::telemetry::Tracing;
-use stackable_operator::{
-    CustomResourceExt,
-    cli::{Command, ProductOperatorRun},
-    client,
-};
+use stackable_operator::{CustomResourceExt, client};
 
 const RHIO_OPERATOR_PRODUCT_PROPERTIES: &str =
     "/etc/hiro/rhio-operator/config-spec/properties.yaml";
@@ -45,19 +41,14 @@ async fn main() -> anyhow::Result<()> {
             ReplicatedObjectStore::print_yaml_schema(built_info::PKG_VERSION)?;
             ReplicatedObjectStoreSubscription::print_yaml_schema(built_info::PKG_VERSION)?;
         }
-        RhioCommand::Framework(Command::Run(RhioRun {
+        RhioCommand::Framework(Command::Run(RunArguments {
             common:
-                ProductOperatorRun {
-                    common:
-                        CommonOptions {
-                            cluster_info,
-                            telemetry,
-                        },
-                    operator_environment: _,
-                    product_config,
-                    watch_namespace,
-                    ..
+                CommonOptions {
+                    cluster_info,
+                    telemetry,
                 },
+            product_config,
+            watch_namespace,
             ..
         })) => {
             let _tracing_guard = Tracing::pre_configured(built_info::PKG_NAME, telemetry).init()?;

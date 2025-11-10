@@ -1,6 +1,5 @@
 use rhio_config::configuration::NatsCredentials;
 use s3::creds::Credentials;
-use stackable_operator::cli::ProductOperatorRun;
 
 use crate::{configuration::secret::Secret, rhio::private_key::PrivateKey};
 
@@ -21,7 +20,7 @@ pub enum RhioCommand {
     CreateNatsSecret(NatsSecretArgs),
     CreateS3Secret(S3SecretArgs),
     #[clap(flatten)]
-    Framework(stackable_operator::cli::Command<RhioRun>),
+    Framework(stackable_operator::cli::Command),
 }
 
 #[derive(clap::Parser, Debug, PartialEq, Eq)]
@@ -95,10 +94,4 @@ impl S3SecretArgs {
 pub struct Opts {
     #[clap(subcommand)]
     pub cmd: RhioCommand,
-}
-
-#[derive(clap::Parser)]
-pub struct RhioRun {
-    #[clap(flatten)]
-    pub common: ProductOperatorRun,
 }

@@ -89,6 +89,7 @@ pub fn build_statefulset(
                     name: private_key_name.to_owned(),
                     optional: None,
                 }),
+                file_key_ref: None,
             },
         )
         .add_container_ports(container_ports())
