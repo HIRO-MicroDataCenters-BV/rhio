@@ -2,7 +2,7 @@ apiVersion: rhio.hiro.io/v1
 kind: RhioService
 metadata:
   name: test-service
-  uid: 1
+  uid: "1"
 spec:
   image:
     custom: ghcr.io/hiro-microdatacenters-bv/rhio-dev:1.0.1

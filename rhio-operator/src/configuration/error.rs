@@ -49,7 +49,7 @@ pub enum Error {
     SecretSerialization { source: serde_json::Error },
 
     #[snafu(display("failed to serialize secret"))]
-    YamlSerialization { source: serde_yaml::Error },
+    YamlSerialization { source: serde_yaml_bw::Error },
 
     #[snafu(display("Unable to make string from bytes"))]
     StringConversion { source: FromUtf8Error },
