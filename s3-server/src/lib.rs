@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use s3::Region;
 use s3::creds::Credentials;
 use s3s::auth::SimpleAuth;
-use s3s::service::{S3ServiceBuilder, SharedS3Service};
+use s3s::service::{S3Service, S3ServiceBuilder};
 use s3s_fs::FileSystem;
 use std::io::Read;
 use std::io::Write;
@@ -97,7 +97,7 @@ impl FakeS3Server {
         let cancel = CancellationToken::new();
         let cancel_token = cancel.clone();
         let handle = runtime.spawn(async move {
-            FakeS3Server::run_inner(service.into_shared(), cancel_token, host, port)
+            FakeS3Server::run_inner(service, cancel_token, host, port)
                 .await
                 .inspect_err(|e| error!("Fake3Server: connection loop failure {}", e))
         });
@@ -122,7 +122,7 @@ impl FakeS3Server {
     ///
     /// A `Result` indicating success or failure.
     async fn run_inner(
-        service: SharedS3Service,
+        service: S3Service,
         cancel_token: CancellationToken,
         host: String,
         port: u16,
