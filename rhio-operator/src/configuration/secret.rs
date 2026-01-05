@@ -85,7 +85,8 @@ where
     pub fn print_yaml(&self) -> Result<()> {
         let secret = self.to_secret()?;
 
-        let serialized_secret = serde_yaml::to_string(&secret).context(YamlSerializationSnafu)?;
+        let serialized_secret =
+            serde_yaml_bw::to_string(&secret).context(YamlSerializationSnafu)?;
 
         let mut writer = std::io::stdout();
         writer
@@ -244,7 +245,7 @@ mod tests {
         let sec = secret
             .to_secret()
             .expect("unable to serialize object into k8s secret");
-        serde_yaml::to_string(&sec).expect("unable to serialize k8s secret")
+        serde_yaml_bw::to_string(&sec).expect("unable to serialize k8s secret")
     }
 
     fn deserialize<T>(serialized: String) -> T
@@ -256,7 +257,7 @@ mod tests {
             + std::fmt::Debug,
     {
         let k8s_secret: stackable_operator::k8s_openapi::api::core::v1::Secret =
-            serde_yaml::from_str(&serialized).expect("unable to deserialize k8s secret");
+            serde_yaml_bw::from_str(&serialized).expect("unable to deserialize k8s secret");
 
         Secret::<T>::from(k8s_secret)
             .expect("unable to deserialize object from k8s secret")

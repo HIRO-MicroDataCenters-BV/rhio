@@ -299,9 +299,9 @@ mod tests {
     #[test]
     fn test_build_statefulset() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::statefulset::RHIO).expect("illegal rhio.yaml");
+            serde_yaml_bw::from_str(fixtures::statefulset::RHIO).expect("illegal rhio.yaml");
         let expected: StatefulSet =
-            serde_yaml::from_str(fixtures::statefulset::STS).expect("illegal statefulset.yaml");
+            serde_yaml_bw::from_str(fixtures::statefulset::STS).expect("illegal statefulset.yaml");
 
         let resolved_product_image = rhio.resolve_product_image().unwrap();
         let rolegroup = rhio.server_rolegroup_ref();
@@ -336,9 +336,9 @@ mod tests {
     #[test]
     fn test_build_server_role_service() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::service::RHIO).expect("illegal rhio.yaml");
+            serde_yaml_bw::from_str(fixtures::service::RHIO).expect("illegal rhio.yaml");
         let expected: Service =
-            serde_yaml::from_str(fixtures::service::SVC).expect("illegal service.yaml");
+            serde_yaml_bw::from_str(fixtures::service::SVC).expect("illegal service.yaml");
 
         let resolved_product_image = rhio.resolve_product_image().unwrap();
         let rolegroup = rhio.server_rolegroup_ref();

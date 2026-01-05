@@ -19,7 +19,6 @@ use s3::creds::time::OffsetDateTime;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::pin;
 use tracing::info;
 
 use crate::StreamName;

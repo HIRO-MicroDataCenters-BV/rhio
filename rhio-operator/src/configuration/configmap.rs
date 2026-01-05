@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_minimal_config() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
+            serde_yaml_bw::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
         let config_resources =
             RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![], None, None);
@@ -389,7 +389,8 @@ mod tests {
             }),
         };
 
-        let config: Config = serde_yaml::from_str(&config).expect("valid config.yaml is expected");
+        let config: Config =
+            serde_yaml_bw::from_str(&config).expect("valid config.yaml is expected");
         assert_eq!(expected_config, config);
         assert_ne!(hash, "");
     }
@@ -397,22 +398,22 @@ mod tests {
     #[test]
     fn test_full_config() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::full::RHIO).expect("illegal input rhio service");
+            serde_yaml_bw::from_str(fixtures::full::RHIO).expect("illegal input rhio service");
         let rhio_nats: stackable_operator::k8s_openapi::api::core::v1::Secret =
-            serde_yaml::from_str(fixtures::full::RHIO_NATS)
+            serde_yaml_bw::from_str(fixtures::full::RHIO_NATS)
                 .expect("illegal input nats credentials secret");
         let rhio_s3: stackable_operator::k8s_openapi::api::core::v1::Secret =
-            serde_yaml::from_str(fixtures::full::RHIO_S3)
+            serde_yaml_bw::from_str(fixtures::full::RHIO_S3)
                 .expect("illegal input s3 credentials secret");
 
         let rms: ReplicatedMessageStream =
-            serde_yaml::from_str(fixtures::full::RMS).expect("illegal input rms");
+            serde_yaml_bw::from_str(fixtures::full::RMS).expect("illegal input rms");
         let rmss: ReplicatedMessageStreamSubscription =
-            serde_yaml::from_str(fixtures::full::RMSS).expect("illegal input rmss");
+            serde_yaml_bw::from_str(fixtures::full::RMSS).expect("illegal input rmss");
         let ros: ReplicatedObjectStore =
-            serde_yaml::from_str(fixtures::full::ROS).expect("illegal input ros");
+            serde_yaml_bw::from_str(fixtures::full::ROS).expect("illegal input ros");
         let ross: ReplicatedObjectStoreSubscription =
-            serde_yaml::from_str(fixtures::full::ROSS).expect("illegal input ross");
+            serde_yaml_bw::from_str(fixtures::full::ROSS).expect("illegal input ross");
 
         let config_resources = RhioConfigMapBuilder::from(
             rhio.clone(),
@@ -496,7 +497,7 @@ mod tests {
             }),
         };
 
-        let config: Config = serde_yaml::from_str(&config).expect("fail to deserialize config");
+        let config: Config = serde_yaml_bw::from_str(&config).expect("fail to deserialize config");
         assert_eq!(config, expected_config);
         assert_ne!(hash, "");
     }
@@ -504,7 +505,7 @@ mod tests {
     #[test]
     fn test_metadata() {
         let rhio: RhioService =
-            serde_yaml::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
+            serde_yaml_bw::from_str(fixtures::minimal::RHIO).expect("illegal input yaml");
 
         let config_resources =
             RhioConfigMapBuilder::from(rhio.clone(), vec![], vec![], vec![], vec![], None, None);

@@ -1,18 +1,18 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0384"
-reason = "Low risk (unmaintained)"
+reason = "Low risk (instant is unmaintained)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0436"
-reason = "Low risk (unmaintained)"
+reason = "Low risk (paste is unmaintained)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0370"
-reason = "Low risk (unmaintained)"
+reason = "Low risk (proc-macro-error is unmaintained)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0056"
-reason = "Low risk (unmaintained)"
+reason = "Low risk (adler crate is unmaintained, use adler2 instead)"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2023-0071"
@@ -24,3 +24,6 @@ reason = "No solution yet"
 #  The only currently available workaround is to avoid using the rsa crate in settings where attackers are 
 #  able to observe timing information, e.g. local use on a non-compromised computer is fine.
 
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0134"
+reason = "Low risk (rustls-pemfile is unmaintained)"
