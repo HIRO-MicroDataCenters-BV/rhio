@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.1.tgz
     version: 0.3.1
   - apiVersion: v2
+    appVersion: 0.3.1-dev.7.main.67e6700d
+    created: "2026-01-05T11:56:23.110364281Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: d9dcb8c49d74cb8e5ac272da452bcd622506111a7bf6b33d7313e4eccd661e8b
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.1-dev.7.main.67e6700d.tgz
+    version: 0.3.1-dev.7.main.67e6700d
+  - apiVersion: v2
     appVersion: 0.3.0
     created: "2025-09-16T07:03:12.874550903Z"
     description: peer-to-peer message stream and blob storage solution
@@ -598,6 +612,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.1.tgz
     version: 0.3.1
   - apiVersion: v2
+    appVersion: 0.3.1-dev.7.main.67e6700d
+    created: "2026-01-05T11:56:23.111879767Z"
+    description: The Stackable Operator for Rhio Service
+    digest: d21b509ca663bd8487ef131178c0a55b49dcb07c4b7729880ad62408e9abdb7f
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.1-dev.7.main.67e6700d.tgz
+    version: 0.3.1-dev.7.main.67e6700d
+  - apiVersion: v2
     appVersion: 0.3.0
     created: "2025-09-16T07:03:12.875128388Z"
     description: The Stackable Operator for Rhio Service
@@ -883,4 +910,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2025-11-11T09:15:42.841787821Z"
+generated: "2026-01-05T11:56:23.109756046Z"
