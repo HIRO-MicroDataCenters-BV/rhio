@@ -4,7 +4,7 @@ on: push
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: "1.92"
+  RUST_TOOLCHAIN: "1.93"
 
 jobs:
 
