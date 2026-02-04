@@ -27,3 +27,7 @@ reason = "No solution yet"
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0134"
 reason = "Low risk (rustls-pemfile is unmaintained)"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0002"
+reason = "Unable to upgrade due to transitive iroh dependency"
