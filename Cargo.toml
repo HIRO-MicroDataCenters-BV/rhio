@@ -91,3 +91,9 @@ quinn-proto = "=0.11.7"
 
 # RUSTSEC-2026-0007
 bytes = "=1.11.1"
+
+# RUSTSEC-2026-0002
+# lru = "=0.16.3"
+
+# RUSTSEC-2026-0005
+oneshot = "=0.1.13"
