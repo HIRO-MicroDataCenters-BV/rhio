@@ -18,10 +18,9 @@ axum = "0.8.8"
 axum-prometheus = "0.10.0"
 async-nats = "0.46.0"
 async-trait = "0.1.89"
-bytes = "1.11.1"
 ciborium = "0.2.2"
 hex = "0.4.3"
-clap = { version = "4.5.56", features = ["derive"] }
+clap = { version = "4.5.57", features = ["derive"] }
 p2panda-core = { git = "https://github.com/p2panda/p2panda.git", tag="v0.4.0" }
 p2panda-net = { git = "https://github.com/p2panda/p2panda.git", default-features = false, tag="v0.4.0" }
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", features = ["cbor", "log-sync"], default-features = false, tag="v0.4.0" }
@@ -68,7 +67,7 @@ hyper-util = { version = "0.1.20", features = [
     "tokio",
 ] }
 built = { version = "0.7", features = ["chrono", "git2"] }
-stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.100.3" }
+stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.105.0" }
 product-config = { git = "https://github.com/stackabletech/product-config.git", tag = "0.8.0" }
 
 snafu = { version = "0.8.9" }
@@ -89,3 +88,6 @@ slab = "=0.4.12"
 crossbeam-channel = "=0.5.15"
 ring = "=0.17.8"
 quinn-proto = "=0.11.7"
+
+# RUSTSEC-2026-0007
+bytes = "=1.11.1"

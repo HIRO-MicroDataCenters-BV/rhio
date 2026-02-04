@@ -13,6 +13,7 @@ use stackable_operator::commons::product_image_selection::Error;
 use stackable_operator::commons::product_image_selection::ProductImage;
 use stackable_operator::commons::product_image_selection::ResolvedProductImage;
 use stackable_operator::crd::ClusterRef;
+use stackable_operator::deep_merger::ObjectOverrides;
 use stackable_operator::kube::CustomResource;
 use stackable_operator::kube::runtime::reflector::ObjectRef;
 use stackable_operator::role_utils::RoleGroupRef;
@@ -52,6 +53,8 @@ pub struct RhioServiceSpec {
     pub image: ProductImage,
     pub cluster_config: RhioServiceConfig,
     pub configuration: RhioConfig,
+    #[serde(default)]
+    pub object_overrides: ObjectOverrides,
     #[serde(default)]
     pub cluster_operation: ClusterOperation,
     pub status: Option<RhioServiceStatus>,

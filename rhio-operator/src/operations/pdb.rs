@@ -27,7 +27,7 @@ pub async fn add_pdbs(
     rhio: &RhioService,
     role: &RhioRole,
     client: &Client,
-    cluster_resources: &mut ClusterResources,
+    cluster_resources: &mut ClusterResources<'static>,
 ) -> Result<(), Error> {
     if !pdb.enabled {
         return Ok(());

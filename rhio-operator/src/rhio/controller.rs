@@ -117,6 +117,7 @@ pub async fn reconcile_rhio(
         RHIO_CONTROLLER_NAME,
         &rhio.object_ref(&()),
         ClusterResourceApplyStrategy::from(&rhio.spec.cluster_operation),
+        &rhio.spec.object_overrides,
     )
     .context(CreateClusterResourcesSnafu)?;
 
