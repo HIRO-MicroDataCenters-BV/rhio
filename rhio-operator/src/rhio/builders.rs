@@ -118,7 +118,7 @@ pub fn build_statefulset(
             Annotations::try_from([(RHIO_POD_TEMPLATE_CONFIG_HASH, config_hash)])
                 .context(InvalidAnnotationSnafu)?,
         )
-        .with_recommended_labels(labels.clone())
+        .with_recommended_labels(&labels.clone())
         .context(ObjectMetaSnafu)?
         .build();
 
@@ -151,7 +151,7 @@ pub fn build_statefulset(
         .name(rolegroup_ref.object_name())
         .ownerreference_from_resource(rhio, None, Some(true))
         .context(ObjectMissingMetadataForOwnerRefSnafu { rhio })?
-        .with_recommended_labels(labels.clone())
+        .with_recommended_labels(&labels.clone())
         .context(ObjectMetaSnafu)?
         .build();
 
@@ -258,7 +258,7 @@ pub fn build_service(
         .name(&role_svc_name)
         .ownerreference_from_resource(rhio, None, Some(true))
         .context(ObjectMissingMetadataForOwnerRefSnafu { rhio })?
-        .with_recommended_labels(recommended_labels)
+        .with_recommended_labels(&recommended_labels)
         .context(ObjectMetaSnafu)?
         .build();
 
