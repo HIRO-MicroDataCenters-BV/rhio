@@ -83,7 +83,7 @@ chrono = { version = "0.4.44" }
 schemars = { version = "1.2.1" }
 
 # pinned version due to vulnerabilities
-openssl = "=0.10.77"
+openssl = "=0.10.78"
 slab = "=0.4.12"
 crossbeam-channel = "=0.5.15"
 ring = "=0.17.14"
