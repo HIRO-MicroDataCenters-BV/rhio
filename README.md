@@ -99,7 +99,7 @@ Large files of any size can be imported into the local S3-compatible bucket (lik
 
 ### Prerequisites
 
-* Rust 1.82.0+
+* Rust 1.95+
 * [NATS Server](https://docs.nats.io/running-a-nats-service/introduction) with [JetStream](https://docs.nats.io/running-a-nats-service/configuration/resource_management) enabled
 * [NATS Command Line Tool](https://docs.nats.io/using-nats/nats-tools/nats_cli)
 * [MinIO](https://min.io/download)

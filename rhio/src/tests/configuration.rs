@@ -57,7 +57,7 @@ pub fn generate_s3_config() -> S3Config {
     let port = TEST_INSTANCE_S3_PORT.fetch_add(1, Ordering::SeqCst);
     S3Config {
         endpoint: format!("http://127.0.0.1:{}", port),
-        region: "127.0.0.1".to_string(),
+        region: "us-east-1".to_string(),
         credentials: Some(s3::creds::Credentials {
             access_key: Some("minio".into()),
             secret_key: Some("minio123".into()),
