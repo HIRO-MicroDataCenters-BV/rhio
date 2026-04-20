@@ -13,6 +13,7 @@ use crate::api::service::RhioService;
 #[derive(Snafu, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(IntoStaticStr))]
 #[allow(clippy::enum_variant_names)]
+#[allow(clippy::large_enum_variant)]
 #[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("Configuration resource is invalid"))]

@@ -248,7 +248,7 @@ impl RhioConfigMapBuilder {
             .with_context(|_| ObjectMissingMetadataForOwnerRefSnafu {
                 rhio: ObjectRef::from_obj(&self.rhio),
             })?
-            .with_recommended_labels(labels)
+            .with_recommended_labels(&labels)
             .context(MetadataBuildSnafu)?
             .build();
 
