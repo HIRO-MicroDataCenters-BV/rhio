@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use p2panda_core::PrivateKey;
-use rand::Rng;
+use rand::RngExt;
 use s3_server::FakeS3Server;
 use std::{sync::Arc, time::Duration};
 use tokio::runtime::Builder;

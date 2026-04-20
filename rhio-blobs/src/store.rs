@@ -731,7 +731,7 @@ impl ReadableStore for S3Store {
 #[cfg(test)]
 pub mod tests {
 
-    use rand::Rng;
+    use rand::RngExt;
     use s3_server::{FakeS3Server, generate_s3_config, new_s3_server};
     use tokio::runtime::{Builder, Runtime};
 
