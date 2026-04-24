@@ -11,22 +11,14 @@ id = "RUSTSEC-2024-0370"
 reason = "Low risk (proc-macro-error is unmaintained)"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2025-0056"
-reason = "Low risk (adler crate is unmaintained, use adler2 instead)"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2023-0071"
 reason = "No solution yet"
-# https://osv.dev/vulnerability/RUSTSEC-2023-0071
-# Patches
-#  No patch is yet available, however work is underway to migrate to a fully constant-time implementation.
-# Workarounds
-#  The only currently available workaround is to avoid using the rsa crate in settings where attackers are 
-#  able to observe timing information, e.g. local use on a non-compromised computer is fine.
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2025-0134"
-reason = "Low risk (rustls-pemfile is unmaintained)"
+https://osv.dev/vulnerability/RUSTSEC-2023-0071
+Patches
+ No patch is yet available, however work is underway to migrate to a fully constant-time implementation.
+Workarounds
+ The only currently available workaround is to avoid using the rsa crate in settings where attackers are
+ able to observe timing information, e.g. local use on a non-compromised computer is fine.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0002"
@@ -67,15 +59,3 @@ reason = "rustls-webpki name constraints URI - transitive dependency of iroh 0.3
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0097"
 reason = "rand 0.8.6 - transitive dependency via async-nats and iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0049"
-reason = "rustls-webpki CRL authoritative check - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0098"
-reason = "rustls-webpki name constraints URI - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0099"
-reason = "rustls-webpki name constraints wildcard - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
