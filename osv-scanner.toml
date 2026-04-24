@@ -67,3 +67,15 @@ reason = "rustls-webpki name constraints URI - transitive dependency of iroh 0.3
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0097"
 reason = "rand 0.8.6 - transitive dependency via async-nats and iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0049"
+reason = "rustls-webpki CRL authoritative check - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0098"
+reason = "rustls-webpki name constraints URI - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0099"
+reason = "rustls-webpki name constraints wildcard - transitive dependency of iroh 0.34.1 ecosystem, upgrading requires major iroh migration"
