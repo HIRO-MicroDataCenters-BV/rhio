@@ -63,3 +63,13 @@ reason = "rand 0.8.6 - transitive dependency via async-nats and iroh 0.34.1 ecos
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0104"
 reason = "rustls-webpki 0.102.8 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+#NSEC3 closest-encloser proof validation enters unbounded loop on cross-zone responses
+id = "RUSTSEC-2026-0118"
+reason = "hickory-proto 0.25.2 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+#CPU exhaustion during message encoding due to O(n²) name compression
+id = "RUSTSEC-2026-0119"
+reason = "hickory-proto 0.25.2 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
