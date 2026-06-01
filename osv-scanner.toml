@@ -73,3 +73,15 @@ reason = "hickory-proto 0.25.2 - transitive dependency of iroh-relay 0.34.1, upg
 #CPU exhaustion during message encoding due to O(n²) name compression
 id = "RUSTSEC-2026-0119"
 reason = "hickory-proto 0.25.2 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+id = "CVE-2026-45784"
+reason = "rust-openssl: Potential out-of-bounds write in `CipherCtxRef::cipher_update_inplace` for AES-KW-PAD ciphers"
+
+[[IgnoredVulns]]
+id = "CVE-2026-42327"
+reason = "rust-openssl has undefined behavior in X509Ref::ocsp_responders for certificates with non-UTF-8 OCSP URLs"
+
+[[IgnoredVulns]]
+id = "CVE-2026-44662"
+reason = "rust-openssl vulnerable to heap buffer overflow when encrypting with AES key-wrap-with-padding"
