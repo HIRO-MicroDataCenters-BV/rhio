@@ -16,7 +16,7 @@ members = [
 anyhow = "1.0.102"
 axum = "0.8.9"
 axum-prometheus = "0.10.0"
-async-nats = "0.47.0"
+async-nats = "0.49.0"
 async-trait = "0.1.89"
 ciborium = "0.2.2"
 hex = "0.4.3"
@@ -36,13 +36,13 @@ rhio-config = { path = "rhio-config" }
 rhio-http-api = { path = "rhio-http-api" }
 s3-server = { path = "s3-server" }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-serde_yaml_bw = "2.5.2"
+serde_json = "1.0.150"
+serde_yaml_bw = "2.5.6"
 futures-lite = "2.6.1"
 futures-util = "0.3.31"
-rust-s3 = { version = "0.37.1", features = ["tokio", "blocking"] }
+rust-s3 = { version = "0.37.2", features = ["tokio", "blocking"] }
 thiserror = "2.0.18"
-tokio = { version = "1.52.1", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 tokio-stream = "0.1.18"
 tokio-util = "0.7.18"
 url = "2.5.8"
@@ -55,9 +55,9 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tempfile = "3.27.0"
 rusty-hook = "^0.11.2"
 once_cell = "1.21.4"
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
-pin-project = "1.1.11"
+pin-project = "1.1.13"
 s3s-fs = { version = "0.13.0" }
 s3s = { version = "0.13.0" }
 hyper-util = { version = "0.1.20", features = [
@@ -70,20 +70,20 @@ built = { version = "0.8.0", features = ["chrono", "git2"] }
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", tag = "stackable-operator-0.110.1" }
 product-config = { git = "https://github.com/StackableTech/product-config.git", tag = "0.8.0" }
 
-snafu = { version = "0.9.0" }
+snafu = { version = "0.9.1" }
 strum = { version = "0.28.0", features = ["derive"] }
-reqwest = { version = "0.13.2", features = ["json"] }
+reqwest = { version = "0.13.4", features = ["json"] }
 pin-project-lite = { version = "0.2.17" }
 
 # pinned version of rusttls due to iroh-net and stackable-operator/kube-rs
-rustls = { version = "0.23.38" }
+rustls = { version = "0.23.40" }
 chrono = { version = "0.4.44" }
 
 # pinned version due to product-config
 schemars = { version = "1.2.1" }
 
 # pinned version due to vulnerabilities
-openssl = "=0.10.78"
+openssl = "=0.10.80"
 slab = "=0.4.12"
 crossbeam-channel = "=0.5.15"
 ring = "=0.17.14"
@@ -96,4 +96,4 @@ bytes = "=1.11.1"
 # lru = "=0.16.3"
 
 # RUSTSEC-2026-0005
-oneshot = "=0.1.13"
+oneshot = "=0.2.1"
