@@ -85,3 +85,7 @@ reason = "rust-openssl has undefined behavior in X509Ref::ocsp_responders for ce
 [[IgnoredVulns]]
 id = "CVE-2026-44662"
 reason = "rust-openssl vulnerable to heap buffer overflow when encrypting with AES key-wrap-with-padding"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0185"
+reason = "quinn-proto 0.11.14 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
