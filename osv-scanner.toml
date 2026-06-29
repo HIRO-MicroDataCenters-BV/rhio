@@ -89,3 +89,15 @@ reason = "rust-openssl vulnerable to heap buffer overflow when encrypting with A
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0185"
 reason = "quinn-proto 0.11.14 - transitive dependency of iroh-relay 0.34.1, upgrading requires major iroh migration"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0183"
+reason = "git2 Potential undefined behavior when calling Remote::list()"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0184"
+reason = "git2 Potential undefined behavior with Signature from a buffer-created BlameHunk"
+
+[[IgnoredVulns]]
+id = "GHSA-w9wp-h8wv-79jx"
+reason = "opentelemetry_sdk 0.32.1 Unbounded memory allocation in W3C Baggage propagation"
