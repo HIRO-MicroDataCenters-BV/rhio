@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.3.tgz
     version: 0.3.3
   - apiVersion: v2
+    appVersion: 0.3.3-dev.9.main.526c5311
+    created: "2026-06-29T09:53:51.923233358Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 7bf827e16ca6b11a4761d0f9dbc547471ec985a7974cce6895ad8e7b1d8c8889
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.3-dev.9.main.526c5311.tgz
+    version: 0.3.3-dev.9.main.526c5311
+  - apiVersion: v2
     appVersion: 0.3.3-dev.6.main.e2986699
     created: "2026-06-01T12:37:02.680004479Z"
     description: peer-to-peer message stream and blob storage solution
@@ -724,6 +738,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.3.tgz
     version: 0.3.3
   - apiVersion: v2
+    appVersion: 0.3.3-dev.9.main.526c5311
+    created: "2026-06-29T09:53:51.923789639Z"
+    description: The Stackable Operator for Rhio Service
+    digest: cc0e0ab1e6b42514694f9db40d1d243723b21880d53960e03b228dbd6d425f09
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.3-dev.9.main.526c5311.tgz
+    version: 0.3.3-dev.9.main.526c5311
+  - apiVersion: v2
     appVersion: 0.3.3-dev.6.main.e2986699
     created: "2026-06-01T12:37:02.681573268Z"
     description: The Stackable Operator for Rhio Service
@@ -1126,4 +1153,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2026-06-01T12:37:02.679403057Z"
+generated: "2026-06-29T09:53:51.922616605Z"
