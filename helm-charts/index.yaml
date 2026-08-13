@@ -16,6 +16,20 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.3.tgz
     version: 0.3.3
   - apiVersion: v2
+    appVersion: 0.3.3-dev.13.main.3e6bec1e
+    created: "2026-08-13T09:07:05.501171106Z"
+    description: peer-to-peer message stream and blob storage solution
+    digest: 66fa39bca81fd7475aa3a4a0932104a30a6d7abe8f83128bec789d58e746cc38
+    home: https://github.com/HIRO-MicroDataCenters-BV/rhio
+    maintainers:
+    - name: HIRO-Microdatacenters
+      url: https://hiro-microdatacenters.nl
+    name: rhio
+    type: application
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-0.3.3-dev.13.main.3e6bec1e.tgz
+    version: 0.3.3-dev.13.main.3e6bec1e
+  - apiVersion: v2
     appVersion: 0.3.3-dev.9.main.526c5311
     created: "2026-06-29T09:53:51.923233358Z"
     description: peer-to-peer message stream and blob storage solution
@@ -738,6 +752,19 @@ entries:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.3.tgz
     version: 0.3.3
   - apiVersion: v2
+    appVersion: 0.3.3-dev.13.main.3e6bec1e
+    created: "2026-08-13T09:07:05.502442043Z"
+    description: The Stackable Operator for Rhio Service
+    digest: 3c8fdde965087a5bf61b778db5c16ef4896a26e3a1dfddb8dd500cbbf6645688
+    home: docker pull ghcr.io/hiro-microdatacenters-bv/rhio/rhio-operator
+    maintainers:
+    - name: Hiro
+      url: https://hiro-microdatacenters.nl/
+    name: rhio-operator
+    urls:
+    - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.3.3-dev.13.main.3e6bec1e.tgz
+    version: 0.3.3-dev.13.main.3e6bec1e
+  - apiVersion: v2
     appVersion: 0.3.3-dev.9.main.526c5311
     created: "2026-06-29T09:53:51.923789639Z"
     description: The Stackable Operator for Rhio Service
@@ -1153,4 +1180,4 @@ entries:
     urls:
     - https://HIRO-MicroDataCenters-BV.github.io/rhio/helm-charts/rhio-operator-0.1.3-dev.116.main.a4aa22ff.tgz
     version: 0.1.3-dev.116.main.a4aa22ff
-generated: "2026-06-29T09:53:51.922616605Z"
+generated: "2026-08-13T09:07:05.500548962Z"
