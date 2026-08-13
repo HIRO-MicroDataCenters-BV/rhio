@@ -113,3 +113,20 @@ reason = "low severity: Quadratic run time when checking a start tag for duplica
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0195"
 reason = "low severity: Unbounded namespace-declaration allocation in NsReader enables memory-exhaustion denial of service"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0190"
+reason = "low severity: Unsoundness in Error::downcast_mut()"
+
+[[IgnoredVulns]]
+id = "GHSA-3rjw-m598-pq24"
+reason = "low severity: Cmov/CmovEq on aarch64 can produce wrong results if high-bits of registers are set"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0221"
+reason = "low severity: event-listener allows !Send tags to cross thread boundaries via StackSlot"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0253"
+reason = "low severity: Potential use-after-free due to lack of panic safety in LruCache::pop()"
+
