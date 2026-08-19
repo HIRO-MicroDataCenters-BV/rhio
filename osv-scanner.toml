@@ -130,3 +130,6 @@ reason = "low severity: event-listener allows !Send tags to cross thread boundar
 id = "RUSTSEC-2026-0253"
 reason = "low severity: Potential use-after-free due to lack of panic safety in LruCache::pop()"
 
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0258"
+reason = "low severity: h2 unbounded empty DATA frames"
